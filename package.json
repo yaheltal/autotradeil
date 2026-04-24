@@ -1,0 +1,18 @@
+{
+  "name": "autotradeil",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AutoTradeIL - car trading platform for Israel",
+  "scripts": {
+    "dev:web": "pnpm --filter @autotradeil/web dev",
+    "dev:api": "cd apps/api && ./scripts/dev.sh",
+    "build": "pnpm -r build",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}
