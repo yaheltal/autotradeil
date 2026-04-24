@@ -1,12 +1,12 @@
 import uuid
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
 from app.models._mixins import TimestampMixin, UUIDPrimaryKey
+from app.models.base import Base
 
 
 class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
@@ -18,8 +18,8 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=False,
         unique=True,
     )
-    business_name: Mapped[str] = mapped_column(String, nullable=False)
-    license_num: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    business_name: Mapped[str] = mapped_column(Text, nullable=False)
+    license_num: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     trust_score: Mapped[Decimal] = mapped_column(
         Numeric(5, 2),
         nullable=False,
@@ -27,7 +27,7 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         server_default="0.00",
     )
     tier: Mapped[str] = mapped_column(
-        String,
+        Text,
         nullable=False,
         default="bronze",
         server_default="bronze",
@@ -42,4 +42,7 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
             "tier IN ('bronze', 'silver', 'gold', 'platinum')",
             name="dealers_tier_check",
         ),
+        Index("idx_dealers_user_id", "user_id"),
+        Index("idx_dealers_tier", "tier"),
+        Index("idx_dealers_trust_score", text("trust_score DESC")),
     )

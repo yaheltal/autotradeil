@@ -2,12 +2,12 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Numeric, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
 from app.models._mixins import TimestampMixin, UUIDPrimaryKey
+from app.models.base import Base
 
 
 class Offer(UUIDPrimaryKey, TimestampMixin, Base):
@@ -30,7 +30,7 @@ class Offer(UUIDPrimaryKey, TimestampMixin, Base):
     )
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[str] = mapped_column(
-        String,
+        Text,
         nullable=False,
         default="pending",
         server_default="pending",
@@ -46,4 +46,8 @@ class Offer(UUIDPrimaryKey, TimestampMixin, Base):
             "status IN ('pending', 'accepted', 'rejected', 'countered', 'expired', 'withdrawn')",
             name="offers_status_check",
         ),
+        Index("idx_offers_inventory_id", "inventory_id"),
+        Index("idx_offers_from_dealer", "from_dealer"),
+        Index("idx_offers_to_dealer", "to_dealer"),
+        Index("idx_offers_status", "status"),
     )

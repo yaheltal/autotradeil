@@ -2,12 +2,21 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Numeric, String, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    Text,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
 from app.models._mixins import UUIDPrimaryKey
+from app.models.base import Base
 
 
 class Deal(UUIDPrimaryKey, Base):
@@ -28,7 +37,7 @@ class Deal(UUIDPrimaryKey, Base):
         ForeignKey("users.id"),
         nullable=False,
     )
-    deal_type: Mapped[str] = mapped_column(String, nullable=False)
+    deal_type: Mapped[str] = mapped_column(Text, nullable=False)
     final_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     closed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -43,4 +52,9 @@ class Deal(UUIDPrimaryKey, Base):
             "deal_type IN ('b2b', 'b2c')",
             name="deals_deal_type_check",
         ),
+        Index("idx_deals_inventory_id", "inventory_id"),
+        Index("idx_deals_seller", "seller"),
+        Index("idx_deals_buyer", "buyer"),
+        Index("idx_deals_deal_type", "deal_type"),
+        Index("idx_deals_closed_at", text("closed_at DESC")),
     )

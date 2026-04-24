@@ -2,12 +2,21 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Numeric, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
 from app.models._mixins import UUIDPrimaryKey
+from app.models.base import Base
 
 
 class Listing(UUIDPrimaryKey, Base):
@@ -36,4 +45,11 @@ class Listing(UUIDPrimaryKey, Base):
 
     __table_args__ = (
         CheckConstraint("public_price >= 0", name="listings_public_price_nonneg"),
+        Index("idx_listings_inventory_id", "inventory_id"),
+        Index("idx_listings_published_at", text("published_at DESC")),
+        Index(
+            "idx_listings_active",
+            "is_active",
+            postgresql_where=text("is_active = true"),
+        ),
     )

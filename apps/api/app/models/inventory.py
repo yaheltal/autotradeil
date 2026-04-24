@@ -2,12 +2,12 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import CheckConstraint, ForeignKey, Numeric, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, Numeric, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.models.base import Base
 from app.models._mixins import TimestampMixin, UUIDPrimaryKey
+from app.models.base import Base
 
 
 class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
@@ -24,7 +24,7 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     price_dealer: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_retail: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     status: Mapped[str] = mapped_column(
-        String,
+        Text,
         nullable=False,
         default="draft",
         server_default="draft",
@@ -40,4 +40,7 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
             "status IN ('draft', 'active', 'reserved', 'sold', 'archived')",
             name="inventory_status_check",
         ),
+        Index("idx_inventory_dealer_id", "dealer_id"),
+        Index("idx_inventory_status", "status"),
+        Index("idx_inventory_details", "vehicle_details", postgresql_using="gin"),
     )
