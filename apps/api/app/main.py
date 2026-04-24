@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger, log_request
-from app.routers import health
+from app.routers import auth_test, health
 
 
 @asynccontextmanager
@@ -67,6 +67,7 @@ async def request_context(request: Request, call_next):  # type: ignore[no-untyp
 
 
 app.include_router(health.router)
+app.include_router(auth_test.router)
 
 
 @app.get("/")

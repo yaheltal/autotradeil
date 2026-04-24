@@ -105,7 +105,42 @@ SELECT * FROM inventory LIMIT 1;          -- expected: 0 rows (RLS)
 SELECT * FROM public_listings LIMIT 1;    -- expected: visible rows, no price_dealer column
 ```
 
-## 7. Common gotchas
+## 7. Bootstrap admin users (Yahel + Tal)
+
+Admins exist in two places:
+
+1. `auth.users` — Supabase's identity store. Create manually once.
+2. `public.users` — our app's user row. The `on_auth_user_created`
+   trigger (see migration `10e02d1b0a76`) mirrors every new auth.users
+   row into public.users with `user_type = 'dealer'`. We then elevate
+   specific people to admin via SQL.
+
+Steps (Supabase dashboard):
+
+1. **Authentication → Users → Add user.** Create these two, each with a
+   strong password:
+   - `talyahel4@gmail.com`
+   - `talniv93@gmail.com`
+2. **SQL Editor → New query.** Paste and run the contents of
+   [`apps/api/scripts/seed_admins.sql`](../apps/api/scripts/seed_admins.sql).
+3. The trailing `SELECT` should return both rows with `user_type = 'admin'`
+   and `verified = true`.
+
+Admins can now:
+
+- Call any endpoint protected by `require_admin` (e.g. `GET /api/v1/auth/admin-only`).
+- Impersonate any dealer by adding `X-Impersonate-Dealer-Id: <uuid>` on
+  dealer-scoped endpoints. Every impersonation writes an `audit_log` row
+  (`action = 'impersonate.begin'`).
+
+## 8. JWT secret for the backend
+
+`apps/api/.env` needs `SUPABASE_JWT_SECRET`. Get it from
+**Project Settings → API → JWT Settings → JWT Secret** (HS256). This is
+different from the publishable/secret API keys — the backend uses it to
+verify access tokens arriving in the `Authorization: Bearer …` header.
+
+## 9. Common gotchas
 
 - **Wrong URL scheme.** `postgres://` and `postgresql://` are accepted; our
   config adapter rewrites both to `postgresql+asyncpg://`. Do not manually

@@ -8,3 +8,4 @@ python-dotenv==1.0.1
 psycopg2-binary==2.9.10
 asyncpg==0.30.0
 httpx==0.28.1
+pyjwt[crypto]==2.10.1

@@ -60,6 +60,10 @@ coverage/
 # Claude Code runtime artifacts
 .claude/
 
+# One-off test / debug scripts that exercise real credentials
+apps/api/scripts/test_admin_auth.py
+apps/api/scripts/debug_jwt.py
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts

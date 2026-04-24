@@ -1,10 +1,21 @@
-"""SQLAlchemy ORM models. Mirror packages/database/schema.sql."""
+"""SQLAlchemy ORM models. Mirror packages/database/schema.sql + migrations."""
 
+from app.models.audit_log import AuditLog
 from app.models.deal import Deal
 from app.models.dealer import Dealer
+from app.models.event import Event
 from app.models.inventory import Inventory
 from app.models.listing import Listing
 from app.models.offer import Offer
 from app.models.user import User
 
-__all__ = ["User", "Dealer", "Inventory", "Listing", "Offer", "Deal"]
+__all__ = [
+    "AuditLog",
+    "Deal",
+    "Dealer",
+    "Event",
+    "Inventory",
+    "Listing",
+    "Offer",
+    "User",
+]

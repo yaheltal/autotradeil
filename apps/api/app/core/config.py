@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     supabase_url: str = Field(default="")
     supabase_publishable_key: str = Field(default="")
     supabase_secret_key: str = Field(default="")
+    # JWT secret from Supabase Project Settings → API → JWT Settings.
+    # Used to verify access tokens on the backend.
+    supabase_jwt_secret: str = Field(default="")
+    # Expected `aud` claim on Supabase JWTs.
+    supabase_jwt_audience: str = Field(default="authenticated")
 
     # CORS — strict allowlist (JSON list or comma-separated string).
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
