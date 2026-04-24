@@ -230,8 +230,8 @@ export default function InventoryPage() {
       <DashboardSubNav />
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
-        <div className="mx-auto max-w-5xl px-6 py-10">
-          <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+          <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div>
               <h1
                 ref={headingRef}
@@ -246,7 +246,7 @@ export default function InventoryPage() {
               ref={addBtnRef}
               type="button"
               onClick={openCreate}
-              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto"
             >
               הוסף רכב
             </button>
@@ -264,7 +264,7 @@ export default function InventoryPage() {
               סינון מלאי
             </h2>
             <nav aria-label="סינון מלאי" className="border-brand-navy/10 border-b">
-              <ul className="flex gap-1">
+              <ul className="flex gap-1 overflow-x-auto">
                 {FILTERS.map((f) => {
                   const isCurrent = f.key === statusParam;
                   const href = f.key

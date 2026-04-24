@@ -155,7 +155,7 @@ export default function DashboardPage() {
 
       <DashboardSubNav />
 
-      <div className="mx-auto max-w-5xl px-6 py-12">
+      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
         <h1
           ref={headingRef}
           tabIndex={-1}
@@ -169,7 +169,7 @@ export default function DashboardPage() {
           <h2 id="profile-heading" className="text-brand-navy text-lg font-semibold">
             פרטי העסק
           </h2>
-          <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {stats.map((s) => (
               <div key={s.key} className="border-brand-navy/10 rounded-lg border bg-white p-5">
                 <dt className="text-brand-ink/60 text-sm">{s.label}</dt>

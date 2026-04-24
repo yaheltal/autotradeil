@@ -36,42 +36,44 @@ export function DeleteInventoryDialog({ open, onOpenChange, onConfirm, label }: 
         />
         <Dialog.Content
           aria-describedby="del-inv-desc"
-          className="fixed start-1/2 top-1/2 z-50 w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 shadow-xl motion-reduce:transition-none"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 motion-reduce:transition-none"
         >
-          <Dialog.Title className="text-brand-navy text-lg font-bold">מחיקת רכב</Dialog.Title>
-          <Dialog.Description id="del-inv-desc" className="text-brand-ink/80 mt-2 text-sm">
-            האם למחוק את <span className="text-brand-navy font-semibold">{label}</span> מהמלאי? הרכב
-            יעבור למצב &quot;מוסתר&quot; וניתן לשחזר מאוחר יותר.
-          </Dialog.Description>
+          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+            <Dialog.Title className="text-brand-navy text-lg font-bold">מחיקת רכב</Dialog.Title>
+            <Dialog.Description id="del-inv-desc" className="text-brand-ink/80 mt-2 text-sm">
+              האם למחוק את <span className="text-brand-navy font-semibold">{label}</span> מהמלאי?
+              הרכב יעבור למצב &quot;מוסתר&quot; וניתן לשחזר מאוחר יותר.
+            </Dialog.Description>
 
-          {error ? (
-            <p
-              role="alert"
-              className="bg-danger-bg text-danger-text mt-3 rounded-md px-3 py-2 text-sm"
-            >
-              {error}
-            </p>
-          ) : null}
+            {error ? (
+              <p
+                role="alert"
+                className="bg-danger-bg text-danger-text mt-3 rounded-md px-3 py-2 text-sm"
+              >
+                {error}
+              </p>
+            ) : null}
 
-          <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Dialog.Close asChild>
+            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  disabled={submitting}
+                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  ביטול
+                </button>
+              </Dialog.Close>
               <button
                 type="button"
+                onClick={run}
                 disabled={submitting}
-                className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                aria-busy={submitting || undefined}
+                className="bg-danger hover:bg-danger-text focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
               >
-                ביטול
+                {submitting ? "מוחק…" : "מחיקה"}
               </button>
-            </Dialog.Close>
-            <button
-              type="button"
-              onClick={run}
-              disabled={submitting}
-              aria-busy={submitting || undefined}
-              className="bg-danger hover:bg-danger-text focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-            >
-              {submitting ? "מוחק…" : "מחיקה"}
-            </button>
+            </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

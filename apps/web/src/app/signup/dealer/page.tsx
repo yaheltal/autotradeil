@@ -103,7 +103,7 @@ export default function DealerSignupPage() {
 
   return (
     <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
-      <div className="mx-auto max-w-2xl px-6 py-16 sm:py-24">
+      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24">
         <div className="flex justify-center">
           <BrandMark />
         </div>

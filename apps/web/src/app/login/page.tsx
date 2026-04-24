@@ -113,7 +113,7 @@ export default function LoginPage() {
 
   return (
     <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
-      <div className="mx-auto max-w-md px-6 py-16 sm:py-24">
+      <div className="mx-auto max-w-md px-4 py-16 sm:px-6 sm:py-24">
         <div className="flex justify-center">
           <BrandMark />
         </div>
