@@ -1,14 +1,19 @@
+"""Deal — closed B2B transaction.
+
+Phase 4.2 restructured this from a user-scoped generic-deal shape to a
+dealer-scoped marketplace shape. One `deals` row is created the moment
+BOTH buyer and seller have confirmed a marketplace offer.
+"""
+
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
-    Numeric,
-    Text,
+    Integer,
     func,
     text,
 )
@@ -22,24 +27,31 @@ from app.models.base import Base
 class Deal(UUIDPrimaryKey, Base):
     __tablename__ = "deals"
 
+    offer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("offers.id", ondelete="CASCADE"),
+        nullable=False,
+    )
     inventory_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("inventory.id"),
         nullable=False,
     )
-    seller: Mapped[uuid.UUID] = mapped_column(
+    seller_dealer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("dealers.id"),
         nullable=False,
     )
-    buyer: Mapped[uuid.UUID] = mapped_column(
+    buyer_dealer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id"),
+        ForeignKey("dealers.id"),
         nullable=False,
     )
-    deal_type: Mapped[str] = mapped_column(Text, nullable=False)
-    final_price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
-    closed_at: Mapped[datetime] = mapped_column(
+    final_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
@@ -47,14 +59,12 @@ class Deal(UUIDPrimaryKey, Base):
 
     __table_args__ = (
         CheckConstraint("final_price >= 0", name="deals_final_price_nonneg"),
-        CheckConstraint("seller <> buyer", name="deals_different_parties"),
         CheckConstraint(
-            "deal_type IN ('b2b', 'b2c')",
-            name="deals_deal_type_check",
+            "buyer_dealer_id <> seller_dealer_id",
+            name="deals_different_dealers",
         ),
+        Index("idx_deals_buyer", "buyer_dealer_id"),
+        Index("idx_deals_seller", "seller_dealer_id"),
         Index("idx_deals_inventory_id", "inventory_id"),
-        Index("idx_deals_seller", "seller"),
-        Index("idx_deals_buyer", "buyer"),
-        Index("idx_deals_deal_type", "deal_type"),
-        Index("idx_deals_closed_at", text("closed_at DESC")),
+        Index("idx_deals_created_at", text("created_at DESC")),
     )

@@ -117,6 +117,25 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
     )
     kyc_rejected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # ---- Phase 4.2: trust counters ----
+    deals_completed: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    deals_cancelled: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    offers_sent: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    offers_received: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    member_since: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=text("now()"),
+    )
+
     __table_args__ = (
         UniqueConstraint("business_id", name="uq_dealers_business_id"),
         CheckConstraint(

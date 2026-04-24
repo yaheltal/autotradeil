@@ -8,6 +8,7 @@ const ITEMS = [
   { href: "/dashboard/inventory", label: "מלאי", exact: false },
   { href: "/dashboard/marketplace", label: "שוק B2B", exact: false },
   { href: "/dashboard/offers", label: "הצעות", exact: false },
+  { href: "/dashboard/deals", label: "עסקאות", exact: false },
   { href: "/dashboard/security", label: "אבטחה", exact: false },
 ] as const;
 

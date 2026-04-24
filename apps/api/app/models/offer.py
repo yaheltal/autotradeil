@@ -1,7 +1,10 @@
 import uuid
+from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -43,6 +46,17 @@ class Offer(UUIDPrimaryKey, TimestampMixin, Base):
     )
     counter_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     counter_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Phase 4.2 — double-confirmation deal closing
+    closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    deal_confirmed_buyer: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    deal_confirmed_seller: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
 
     __table_args__ = (
         CheckConstraint("offered_price > 0", name="offers_offered_price_pos"),

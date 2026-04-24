@@ -7,6 +7,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { TrustBadge } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake } from "@/lib/car-data";
@@ -48,6 +49,7 @@ type Result = {
   seller_dealer_id: string;
   seller_business_name: string;
   seller_city: string | null;
+  seller_tier: "bronze" | "silver" | "gold" | "platinum";
   primary_image_url: string | null;
   created_at: string;
 };
@@ -566,9 +568,12 @@ function ResultCard({ v }: { v: Result }) {
             </div>
             <div className="flex items-baseline justify-between gap-2">
               <dt className="text-brand-ink/60">סוחר</dt>
-              <dd className="text-brand-ink text-end">
-                {v.seller_business_name}
-                {v.seller_city ? ` · ${v.seller_city}` : ""}
+              <dd className="text-brand-ink flex flex-wrap items-center gap-2 text-end">
+                <span>
+                  {v.seller_business_name}
+                  {v.seller_city ? ` · ${v.seller_city}` : ""}
+                </span>
+                <TrustBadge tier={v.seller_tier} compact />
               </dd>
             </div>
           </dl>

@@ -8,6 +8,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { MakeOfferDialog } from "@/components/MakeOfferDialog";
 import { NotificationBell } from "@/components/NotificationBell";
+import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
@@ -37,6 +38,8 @@ type Seller = {
   city: string | null;
   phone: string | null;
   email: string | null;
+  tier: Tier;
+  deals_completed: number;
 };
 
 type VehicleImage = {
@@ -336,10 +339,23 @@ export default function MarketplaceDetailPage() {
 
               <div className="border-brand-navy/10 rounded-lg border bg-white p-5">
                 <h2 className="text-brand-navy text-sm font-semibold">פרטי המוכר</h2>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <TrustBadge tier={data.seller.tier} />
+                  <span className="text-brand-ink/70 text-xs">
+                    {data.seller.deals_completed} עסקאות
+                  </span>
+                </div>
                 <dl className="mt-3 space-y-2 text-sm">
                   <div>
                     <dt className="text-brand-ink/60">שם העסק</dt>
-                    <dd className="text-brand-ink font-semibold">{data.seller.business_name}</dd>
+                    <dd className="text-brand-ink font-semibold">
+                      <Link
+                        href={`/dashboard/marketplace/dealer/${data.seller.id}`}
+                        className="text-brand-navy focus-visible:outline-brand-navy rounded underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                      >
+                        {data.seller.business_name}
+                      </Link>
+                    </dd>
                   </div>
                   {data.seller.city ? (
                     <div>

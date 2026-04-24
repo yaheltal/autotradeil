@@ -46,6 +46,7 @@ class VehicleSearchResult(BaseModel):
     seller_dealer_id: uuid.UUID
     seller_business_name: str
     seller_city: str | None
+    seller_tier: str
     primary_image_url: str | None
     created_at: datetime
 
@@ -73,6 +74,8 @@ class MarketplaceSellerInfo(BaseModel):
     city: str | None
     phone: str | None
     email: str | None
+    tier: str
+    deals_completed: int
 
 
 class MarketplaceVehicleImage(BaseModel):
@@ -137,6 +140,7 @@ class OfferDealerSummary(BaseModel):
     id: uuid.UUID
     business_name: str
     city: str | None
+    tier: str
 
 
 class OfferResponse(BaseModel):
@@ -186,3 +190,45 @@ class NotificationResponse(BaseModel):
 class NotificationListResponse(BaseModel):
     items: list[NotificationResponse]
     unread_count: int
+
+
+# =============================================================================
+# Deals (Phase 4.2 — post-acceptance double-confirmation)
+# =============================================================================
+
+
+class DealResponse(BaseModel):
+    """A closed B2B deal row, enriched with vehicle + counterparty basics."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    offer_id: uuid.UUID
+    inventory_id: uuid.UUID
+    buyer_dealer_id: uuid.UUID
+    seller_dealer_id: uuid.UUID
+    final_price: int
+    confirmed_at: datetime | None
+    created_at: datetime
+    vehicle: OfferVehicleSummary
+    buyer: OfferDealerSummary
+    seller: OfferDealerSummary
+
+
+class DealListResponse(BaseModel):
+    items: list[DealResponse]
+    total: int
+
+
+class DealerPublicProfile(BaseModel):
+    """Public-safe view of a dealer. No phone/email/business_id leaked."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    business_name: str
+    city: str | None
+    tier: str
+    trust_score: int
+    deals_completed: int
+    member_since: datetime

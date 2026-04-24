@@ -28,6 +28,9 @@ class EmailTemplate(str, Enum):
     OTP_CODE = "otp_code"
     KYC_APPROVED = "kyc_approved"
     KYC_REJECTED = "kyc_rejected"
+    DEAL_COMPLETED_BUYER = "deal_completed_buyer"
+    DEAL_COMPLETED_SELLER = "deal_completed_seller"
+    OFFER_REMINDER = "offer_reminder"
 
 
 def _fmt_price(v: int) -> str:
@@ -424,6 +427,99 @@ async def send_kyc_approved(to_email: str, business_name: str) -> bool:
         to=to_email,
         subject="✅ אימות הזהות שלך ב-AutoTradeIL אושר",
         html=html,
+    )
+
+
+async def send_deal_completed_buyer(
+    to_email: str,
+    seller_business_name: str,
+    vehicle: dict[str, object],
+    final_price: int,
+) -> bool:
+    veh_line = _vehicle_line(
+        str(vehicle["make"]), str(vehicle["model"]), int(vehicle["year"])
+    )
+    price_html = f'<span class="price">{_fmt_price(final_price)} ₪</span>'
+    html = _marketplace_shell(
+        title="עסקה נסגרה",
+        badge_text="עסקה נסגרה",
+        badge_class="badge-ok",
+        heading="ברכות — העסקה אושרה משני הצדדים",
+        body_html=(
+            f'<p>העסקה מול <strong>{seller_business_name}</strong> נסגרה.</p>'
+            f'<div class="vehicle-box">'
+            f'<strong>רכב:</strong> {veh_line}<br>'
+            f'<strong>מחיר סופי:</strong> {price_html}'
+            f'</div>'
+            f'<p>ניתן להשלים את המשך התהליך ישירות מול המוכר — פרטי הקשר זמינים במערכת.</p>'
+        ),
+        cta_href="https://autotradeil.co.il/dashboard/deals",
+        cta_text="צפה בעסקאות",
+    )
+    return await _send(
+        to=to_email, subject=f"✅ עסקה נסגרה: {veh_line}", html=html
+    )
+
+
+async def send_deal_completed_seller(
+    to_email: str,
+    buyer_business_name: str,
+    vehicle: dict[str, object],
+    final_price: int,
+) -> bool:
+    veh_line = _vehicle_line(
+        str(vehicle["make"]), str(vehicle["model"]), int(vehicle["year"])
+    )
+    price_html = f'<span class="price">{_fmt_price(final_price)} ₪</span>'
+    html = _marketplace_shell(
+        title="עסקה נסגרה",
+        badge_text="עסקה נסגרה",
+        badge_class="badge-ok",
+        heading="העסקה אושרה משני הצדדים",
+        body_html=(
+            f'<p>העסקה מול <strong>{buyer_business_name}</strong> נסגרה. '
+            f'הרכב סומן כנמכר במלאי שלך.</p>'
+            f'<div class="vehicle-box">'
+            f'<strong>רכב:</strong> {veh_line}<br>'
+            f'<strong>מחיר סופי:</strong> {price_html}'
+            f'</div>'
+            f'<p>ניתן להשלים את המשך התהליך מול הקונה. מומלץ לעדכן את רישיון הרכב בהתאם.</p>'
+        ),
+        cta_href="https://autotradeil.co.il/dashboard/deals",
+        cta_text="צפה בעסקאות",
+    )
+    return await _send(
+        to=to_email, subject=f"✅ עסקה נסגרה: {veh_line}", html=html
+    )
+
+
+async def send_offer_reminder(
+    to_email: str,
+    buyer_business_name: str,
+    vehicle: dict[str, object],
+    offered_price: int,
+    hours_ago: int,
+) -> bool:
+    veh_line = _vehicle_line(
+        str(vehicle["make"]), str(vehicle["model"]), int(vehicle["year"])
+    )
+    price_html = f'<span class="price">{_fmt_price(offered_price)} ₪</span>'
+    html = _marketplace_shell(
+        title="תזכורת — הצעה ממתינה",
+        badge_text="תזכורת",
+        badge_class="badge-gold",
+        heading="יש הצעה שממתינה לתגובתך",
+        body_html=(
+            f'<p>הצעה מ-<strong>{buyer_business_name}</strong> ממתינה לתגובה כבר {hours_ago} שעות.</p>'
+            f'<div class="vehicle-box">'
+            f'<strong>רכב:</strong> {veh_line}<br>'
+            f'<strong>הצעה:</strong> {price_html}'
+            f'</div>'
+            f'<p>ניתן לאשר, לדחות או להציע הצעה נגדית מתוך מערכת ההצעות.</p>'
+        ),
+    )
+    return await _send(
+        to=to_email, subject=f"⏰ תזכורת — הצעה על {veh_line}", html=html
     )
 
 

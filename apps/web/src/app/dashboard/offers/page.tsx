@@ -9,6 +9,7 @@ import { CounterOfferDialog } from "@/components/CounterOfferDialog";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { StatusBadge, type OfferStatus } from "@/components/StatusBadge";
+import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
@@ -42,6 +43,7 @@ type OfferDealer = {
   id: string;
   business_name: string;
   city: string | null;
+  tier: Tier;
 };
 
 type Offer = {
@@ -59,6 +61,10 @@ type Offer = {
   vehicle: OfferVehicle;
   buyer: OfferDealer;
   seller: OfferDealer;
+  // Phase 4.2 — double-confirmation deal closing
+  closed_at?: string | null;
+  deal_confirmed_buyer?: boolean;
+  deal_confirmed_seller?: boolean;
 };
 
 type OfferListResponse = {
@@ -88,9 +94,9 @@ export default function OffersPage() {
   const h1Ref = useRef<HTMLHeadingElement>(null);
   const tabRefs = useRef<Map<Tab, HTMLButtonElement>>(new Map());
 
-  // Confirm dialog state (accept / reject / cancel)
+  // Confirm dialog state (accept / reject / cancel / confirm-deal)
   const [confirm, setConfirm] = useState<null | {
-    action: "accept" | "reject" | "cancel";
+    action: "accept" | "reject" | "cancel" | "confirm-deal";
     offer: Offer;
   }>(null);
 
@@ -170,6 +176,15 @@ export default function OffersPage() {
       token,
     });
     setToast("ההצעה בוטלה");
+    await refresh();
+  };
+  const doConfirmDeal = async (id: string) => {
+    if (!token) return;
+    const res = await apiFetch<{ closed_at: string | null }>(
+      `/api/v1/marketplace/offers/${id}/confirm-deal`,
+      { method: "POST", token },
+    );
+    setToast(res.closed_at ? "העסקה נסגרה — שני הצדדים אישרו" : "אישורך נשמר — ממתין לצד השני");
     await refresh();
   };
 
@@ -282,6 +297,7 @@ export default function OffersPage() {
                         originalSideLabel: "הצעת הקונה",
                       })
                     }
+                    onConfirmDeal={() => setConfirm({ action: "confirm-deal", offer: o })}
                   />
                 ))}
               </ul>
@@ -322,6 +338,7 @@ export default function OffersPage() {
                         originalSideLabel: "הצעת המוכר",
                       })
                     }
+                    onConfirmDeal={() => setConfirm({ action: "confirm-deal", offer: o })}
                   />
                 ))}
               </ul>
@@ -339,27 +356,42 @@ export default function OffersPage() {
               ? "אישור הצעה"
               : confirm.action === "reject"
                 ? "דחיית הצעה"
-                : "ביטול הצעה"
+                : confirm.action === "cancel"
+                  ? "ביטול הצעה"
+                  : "אישור סגירת עסקה"
           }
           description={
             confirm.action === "accept"
               ? `האם לאשר את ההצעה על ${offerVehicleLabel(confirm.offer)}? פעולה לא ניתנת לביטול.`
               : confirm.action === "reject"
                 ? `האם לדחות את ההצעה על ${offerVehicleLabel(confirm.offer)}? פעולה לא ניתנת לביטול.`
-                : `האם לבטל את ההצעה שלך על ${offerVehicleLabel(confirm.offer)}? פעולה לא ניתנת לביטול.`
+                : confirm.action === "cancel"
+                  ? `האם לבטל את ההצעה שלך על ${offerVehicleLabel(confirm.offer)}? פעולה לא ניתנת לביטול.`
+                  : `לאחר אישור שני הצדדים הרכב ${offerVehicleLabel(confirm.offer)} יסומן כנמכר. פעולה לא ניתנת לביטול.`
           }
           confirmLabel={
             confirm.action === "accept"
               ? "אישור ההצעה"
               : confirm.action === "reject"
                 ? "דחיית ההצעה"
-                : "ביטול ההצעה"
+                : confirm.action === "cancel"
+                  ? "ביטול ההצעה"
+                  : "אשר עסקה"
           }
-          tone={confirm.action === "accept" ? "success" : "danger"}
+          // Gold/primary tone for "confirm-deal" (irreversible but positive,
+          // per a11y-lead Q H). Accept = success, reject/cancel = danger.
+          tone={
+            confirm.action === "accept"
+              ? "success"
+              : confirm.action === "confirm-deal"
+                ? "default"
+                : "danger"
+          }
           onConfirm={async () => {
             if (confirm.action === "accept") await doAccept(confirm.offer.id);
             else if (confirm.action === "reject") await doReject(confirm.offer.id);
-            else await doCancel(confirm.offer.id);
+            else if (confirm.action === "cancel") await doCancel(confirm.offer.id);
+            else await doConfirmDeal(confirm.offer.id);
             setConfirm(null);
           }}
         />
@@ -389,16 +421,154 @@ function offerVehicleLabel(o: Offer): string {
   return `${o.vehicle.make} ${o.vehicle.model} ${o.vehicle.year}`;
 }
 
+function shortDate(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Offer timeline — natural RTL <ol> (NO flex-row-reverse), with ← arrows
+ * between steps. Current step carries aria-current="step".
+ */
+function OfferTimeline({ offer, myRole }: { offer: Offer; myRole: "buyer" | "seller" }) {
+  type Step = { label: string; iso: string; current?: boolean };
+  const steps: Step[] = [];
+  steps.push({ label: `נשלח ${shortDate(offer.created_at)}`, iso: offer.created_at });
+
+  if (offer.status === "countered" || offer.counter_price != null) {
+    steps.push({
+      label: `הצעה נגדית ${shortDate(offer.updated_at)}`,
+      iso: offer.updated_at,
+    });
+  }
+
+  const terminalLabel: Record<string, string> = {
+    accepted: "אושר",
+    rejected: "נדחה",
+    cancelled: "בוטל",
+  };
+  if (terminalLabel[offer.status]) {
+    steps.push({
+      label: `${terminalLabel[offer.status]} ${shortDate(offer.updated_at)}`,
+      iso: offer.updated_at,
+      current: true,
+    });
+  } else {
+    const waitingText =
+      offer.status === "countered"
+        ? myRole === "seller"
+          ? "ממתין לקונה"
+          : "ממתין לאישורך"
+        : myRole === "seller"
+          ? "ממתין לאישורך"
+          : "ממתין למוכר";
+    steps.push({ label: waitingText, iso: offer.updated_at, current: true });
+  }
+
+  return (
+    <ol className="text-brand-ink/70 mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+      {steps.map((s, i) => (
+        <li
+          key={i}
+          aria-current={s.current ? "step" : undefined}
+          className={[
+            "inline-flex items-center gap-1",
+            s.current ? "text-brand-navy font-semibold" : "",
+          ].join(" ")}
+        >
+          <time dateTime={s.iso}>{s.label}</time>
+          {i < steps.length - 1 ? (
+            <span aria-hidden="true" className="text-brand-ink/40 mx-1">
+              ←
+            </span>
+          ) : null}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/**
+ * Double-confirmation block for accepted offers. Wrapped in aria-live so
+ * the state flip after /confirm-deal is announced politely.
+ */
+function DealConfirmationBlock({
+  offer,
+  myRole,
+  onConfirmClick,
+}: {
+  offer: Offer;
+  myRole: "buyer" | "seller";
+  onConfirmClick: () => void;
+}) {
+  if (offer.status !== "accepted") return null;
+  const closed = !!offer.closed_at;
+  const mineConfirmed =
+    myRole === "buyer" ? !!offer.deal_confirmed_buyer : !!offer.deal_confirmed_seller;
+  const theirsConfirmed =
+    myRole === "buyer" ? !!offer.deal_confirmed_seller : !!offer.deal_confirmed_buyer;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="border-brand-navy/10 bg-brand-cream/40 mt-4 rounded-md border p-3 text-sm"
+    >
+      <p className="text-brand-navy font-semibold">סגירת עסקה</p>
+      {closed ? (
+        <p className="text-ok-text mt-1">
+          <span aria-hidden="true">✓ </span>
+          העסקה נסגרה משני הצדדים
+        </p>
+      ) : (
+        <>
+          <p className="text-brand-ink/80 mt-1">
+            שני הצדדים צריכים לאשר.{" "}
+            {mineConfirmed ? (
+              <span>
+                <span aria-hidden="true">✓ </span>
+                אתה אישרת
+              </span>
+            ) : (
+              <span>אתה טרם אישרת</span>
+            )}
+            {" | "}
+            {theirsConfirmed ? (
+              <span>
+                <span aria-hidden="true">✓ </span>
+                הצד השני אישר
+              </span>
+            ) : (
+              <span>ממתין לצד השני</span>
+            )}
+          </p>
+          {!mineConfirmed ? (
+            <button
+              type="button"
+              onClick={onConfirmClick}
+              className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              אשר עסקה
+            </button>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 function ReceivedCard({
   offer,
   onAccept,
   onReject,
   onCounter,
+  onConfirmDeal,
 }: {
   offer: Offer;
   onAccept: () => void;
   onReject: () => void;
   onCounter: () => void;
+  onConfirmDeal: () => void;
 }) {
   const canAct = offer.status === "pending" || offer.status === "countered";
   const priceF = formatPrice(offer.offered_price);
@@ -413,13 +583,18 @@ function ReceivedCard({
             <h3 id={titleId} className="text-brand-navy text-lg font-bold">
               {label}
             </h3>
-            <p className="text-brand-ink/70 mt-1 text-sm">
-              קונה: <span className="font-semibold">{offer.buyer.business_name}</span>
-              {offer.buyer.city ? ` · ${offer.buyer.city}` : ""}
+            <p className="text-brand-ink/70 mt-1 flex flex-wrap items-center gap-2 text-sm">
+              <span>
+                קונה: <span className="font-semibold">{offer.buyer.business_name}</span>
+                {offer.buyer.city ? ` · ${offer.buyer.city}` : ""}
+              </span>
+              <TrustBadge tier={offer.buyer.tier} compact />
             </p>
           </div>
           <StatusBadge status={offer.status} />
         </header>
+
+        <OfferTimeline offer={offer} myRole="seller" />
 
         <dl className="mt-4 space-y-1.5 text-sm">
           <div className="flex items-baseline justify-between gap-2">
@@ -446,6 +621,8 @@ function ReceivedCard({
             {offer.message}
           </p>
         ) : null}
+
+        <DealConfirmationBlock offer={offer} myRole="seller" onConfirmClick={onConfirmDeal} />
 
         {canAct ? (
           <div className="mt-5 flex flex-wrap gap-2">
@@ -489,12 +666,14 @@ function SentCard({
   onReject,
   onCancel,
   onCounter,
+  onConfirmDeal,
 }: {
   offer: Offer;
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
   onCounter: () => void;
+  onConfirmDeal: () => void;
 }) {
   const priceF = formatPrice(offer.offered_price);
   const titleId = `offer-${offer.id}-title`;
@@ -511,13 +690,18 @@ function SentCard({
             <h3 id={titleId} className="text-brand-navy text-lg font-bold">
               {label}
             </h3>
-            <p className="text-brand-ink/70 mt-1 text-sm">
-              מוכר: <span className="font-semibold">{offer.seller.business_name}</span>
-              {offer.seller.city ? ` · ${offer.seller.city}` : ""}
+            <p className="text-brand-ink/70 mt-1 flex flex-wrap items-center gap-2 text-sm">
+              <span>
+                מוכר: <span className="font-semibold">{offer.seller.business_name}</span>
+                {offer.seller.city ? ` · ${offer.seller.city}` : ""}
+              </span>
+              <TrustBadge tier={offer.seller.tier} compact />
             </p>
           </div>
           <StatusBadge status={offer.status} />
         </header>
+
+        <OfferTimeline offer={offer} myRole="buyer" />
 
         <dl className="mt-4 space-y-1.5 text-sm">
           <div className="flex items-baseline justify-between gap-2">
@@ -555,6 +739,8 @@ function SentCard({
             {offer.counter_message}
           </p>
         ) : null}
+
+        <DealConfirmationBlock offer={offer} myRole="buyer" onConfirmClick={onConfirmDeal} />
 
         {isCountered ? (
           <div className="mt-5 flex flex-wrap gap-2">

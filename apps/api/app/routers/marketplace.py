@@ -42,14 +42,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import require_verified_dealer
 from app.core.email import (
     send_counter_offer,
+    send_deal_completed_buyer,
+    send_deal_completed_seller,
     send_offer_accepted,
     send_offer_received,
     send_offer_rejected,
 )
+from app.core.trust import recalculate_trust_score
 from app.core.events import emit_event
 from app.core.logging import get_logger
 from app.database import get_db
 from app.models import (
+    Deal,
     Dealer,
     Inventory,
     InventoryImage,
@@ -59,6 +63,9 @@ from app.models import (
 )
 from app.schemas.marketplace import (
     CounterOfferCreate,
+    DealerPublicProfile,
+    DealListResponse,
+    DealResponse,
     MarketplaceSellerInfo,
     MarketplaceVehicleDetail,
     MarketplaceVehicleImage,
@@ -209,10 +216,16 @@ def _offer_response(
             primary_image_url=primary_image_url,
         ),
         buyer=OfferDealerSummary(
-            id=buyer.id, business_name=buyer.business_name, city=buyer.city
+            id=buyer.id,
+            business_name=buyer.business_name,
+            city=buyer.city,
+            tier=buyer.tier,
         ),
         seller=OfferDealerSummary(
-            id=seller.id, business_name=seller.business_name, city=seller.city
+            id=seller.id,
+            business_name=seller.business_name,
+            city=seller.city,
+            tier=seller.tier,
         ),
     )
 
@@ -239,6 +252,7 @@ async def search_vehicles(
         default=None, pattern="^(petrol|diesel|electric|hybrid)$"
     ),
     city: str | None = Query(default=None, max_length=100),
+    seller_dealer_id: uuid.UUID | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=50),
 ) -> VehicleSearchResponse:
@@ -251,6 +265,8 @@ async def search_vehicles(
         Inventory.status == "active",
         Inventory.dealer_id != caller_dealer.id,
     ]
+    if seller_dealer_id:
+        conds.append(Inventory.dealer_id == seller_dealer_id)
 
     if q:
         needle = f"%{q.strip()}%"
@@ -323,6 +339,7 @@ async def search_vehicles(
             seller_dealer_id=dealer.id,
             seller_business_name=dealer.business_name,
             seller_city=dealer.city,
+            seller_tier=dealer.tier,
             primary_image_url=primary_images.get(inv.id),
             created_at=inv.created_at,
         )
@@ -413,6 +430,8 @@ async def get_vehicle_detail(
             city=seller.city,
             phone=seller.phone,
             email=seller_user.email,
+            tier=seller.tier,
+            deals_completed=seller.deals_completed,
         ),
         images=[
             MarketplaceVehicleImage(id=img.id, url=img.url, position=img.position)
@@ -489,6 +508,13 @@ async def make_offer(
     )
     db.add(offer)
     await db.flush()
+
+    # Phase 4.2: bump trust counters
+    buyer.offers_sent = (buyer.offers_sent or 0) + 1
+    seller.offers_received = (seller.offers_received or 0) + 1
+    await db.flush()
+    await recalculate_trust_score(buyer.id, db)
+    await recalculate_trust_score(seller.id, db)
 
     veh_line = f"{vehicle.make} {vehicle.model} {vehicle.year}"
 
@@ -933,15 +959,26 @@ async def cancel_offer(
     if not _action_allowed(offer, role, "cancel"):
         raise HTTPException(status_code=400, detail="פעולה אינה חוקית במצב הנוכחי")
 
+    was_accepted = offer.status == "accepted"
     offer.status = "cancelled"
     await db.flush()
+
+    # Phase 4.2: if cancel happens after accept (i.e. backing out of a deal),
+    # apply the cancellation penalty to BOTH parties. Plain cancels of
+    # pending/countered offers don't count as broken deals.
+    if was_accepted:
+        buyer.deals_cancelled = (buyer.deals_cancelled or 0) + 1
+        seller.deals_cancelled = (seller.deals_cancelled or 0) + 1
+        await db.flush()
+        await recalculate_trust_score(buyer.id, db)
+        await recalculate_trust_score(seller.id, db)
 
     await emit_event(
         db,
         event_type="offer.cancelled",
         aggregate_type="offer",
         aggregate_id=offer.id,
-        payload={"by_role": role},
+        payload={"by_role": role, "was_accepted": was_accepted},
         actor_user_id=user.id,
     )
 
@@ -1014,6 +1051,268 @@ async def mark_notification_read(
         await db.commit()
 
     return {"ok": True, "id": str(notification_id)}
+
+
+# =============================================================================
+# Phase 4.2 — deal closing (double-confirmation) + history + profile
+# =============================================================================
+
+
+@marketplace_router.post("/offers/{offer_id}/confirm-deal", response_model=OfferResponse)
+async def confirm_deal(
+    offer_id: uuid.UUID,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OfferResponse:
+    """Called by the buyer OR seller after an offer has been accepted.
+
+    Both sides must confirm. When the second confirmation arrives we:
+      - mark the offer closed (closed_at = now)
+      - create a `deals` row
+      - flip the inventory status to 'sold'
+      - increment deals_completed on BOTH dealers
+      - recalculate trust scores
+      - fan out notifications + emails to both sides
+    """
+    user, dealer = ud
+    loaded = await _load_offer_context(offer_id, db)
+    if loaded is None:
+        raise HTTPException(status_code=404, detail="הצעה לא נמצאה")
+    offer, vehicle, buyer, seller, buyer_user, seller_user = loaded
+
+    role = _require_involved(offer, dealer)
+
+    if offer.status != "accepted":
+        raise HTTPException(
+            status_code=400, detail="ניתן לאשר רק הצעה שאושרה"
+        )
+    if offer.closed_at is not None:
+        raise HTTPException(status_code=400, detail="העסקה כבר נסגרה")
+
+    if role == "buyer":
+        if offer.deal_confirmed_buyer:
+            raise HTTPException(status_code=400, detail="כבר אישרת את העסקה")
+        offer.deal_confirmed_buyer = True
+    else:
+        if offer.deal_confirmed_seller:
+            raise HTTPException(status_code=400, detail="כבר אישרת את העסקה")
+        offer.deal_confirmed_seller = True
+
+    await db.flush()
+
+    both_confirmed = offer.deal_confirmed_buyer and offer.deal_confirmed_seller
+    final_price = offer.counter_price or offer.offered_price
+
+    if both_confirmed:
+        from datetime import datetime, timezone as _tz
+
+        now = datetime.now(tz=_tz.utc)
+        offer.closed_at = now
+
+        # Create deal row
+        deal = Deal(
+            offer_id=offer.id,
+            inventory_id=vehicle.id,
+            buyer_dealer_id=buyer.id,
+            seller_dealer_id=seller.id,
+            final_price=final_price,
+            confirmed_at=now,
+        )
+        db.add(deal)
+
+        # Flip inventory to sold
+        vehicle.status = "sold"
+
+        # Bump completed counters on BOTH sides
+        buyer.deals_completed = (buyer.deals_completed or 0) + 1
+        seller.deals_completed = (seller.deals_completed or 0) + 1
+
+        await db.flush()
+
+        await recalculate_trust_score(buyer.id, db)
+        await recalculate_trust_score(seller.id, db)
+
+        # Notifications
+        veh_line = f"{vehicle.make} {vehicle.model} {vehicle.year}"
+        await _notify(
+            db,
+            buyer.id,
+            type_="deal.completed",
+            title=f"עסקה נסגרה: {veh_line}",
+            body=f"מחיר סופי: {final_price:,} ₪",
+            data={"offer_id": str(offer.id), "inventory_id": str(vehicle.id)},
+        )
+        await _notify(
+            db,
+            seller.id,
+            type_="deal.completed",
+            title=f"עסקה נסגרה: {veh_line}",
+            body=f"מחיר סופי: {final_price:,} ₪",
+            data={"offer_id": str(offer.id), "inventory_id": str(vehicle.id)},
+        )
+
+        await emit_event(
+            db,
+            event_type="deal.closed",
+            aggregate_type="offer",
+            aggregate_id=offer.id,
+            payload={
+                "inventory_id": str(vehicle.id),
+                "final_price": final_price,
+                "buyer_dealer_id": str(buyer.id),
+                "seller_dealer_id": str(seller.id),
+            },
+            actor_user_id=user.id,
+        )
+    else:
+        await emit_event(
+            db,
+            event_type="deal.half_confirmed",
+            aggregate_type="offer",
+            aggregate_id=offer.id,
+            payload={"by_role": role},
+            actor_user_id=user.id,
+        )
+
+    await db.commit()
+    await db.refresh(offer)
+
+    if both_confirmed:
+        veh_payload = {
+            "make": vehicle.make,
+            "model": vehicle.model,
+            "year": vehicle.year,
+        }
+        try:
+            await send_deal_completed_buyer(
+                to_email=buyer_user.email,
+                seller_business_name=seller.business_name,
+                vehicle=veh_payload,
+                final_price=final_price,
+            )
+            await send_deal_completed_seller(
+                to_email=seller_user.email,
+                buyer_business_name=buyer.business_name,
+                vehicle=veh_payload,
+                final_price=final_price,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("deal.completed email fanout failed: %s", exc)
+
+    primary = await _primary_image_url_for(vehicle.id, db)
+    return _offer_response(offer, vehicle, buyer, seller, primary)
+
+
+@marketplace_router.get("/deals", response_model=DealListResponse)
+async def list_deals(
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DealListResponse:
+    """Dealer's own deal history — as buyer or seller."""
+    _, dealer = ud
+
+    deals = (
+        (
+            await db.execute(
+                select(Deal)
+                .where(
+                    or_(
+                        Deal.buyer_dealer_id == dealer.id,
+                        Deal.seller_dealer_id == dealer.id,
+                    )
+                )
+                .order_by(Deal.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not deals:
+        return DealListResponse(items=[], total=0)
+
+    inv_ids = list({d.inventory_id for d in deals})
+    dealer_ids = list(
+        {d.buyer_dealer_id for d in deals} | {d.seller_dealer_id for d in deals}
+    )
+
+    vehicles = {
+        v.id: v
+        for v in (
+            (await db.execute(select(Inventory).where(Inventory.id.in_(inv_ids))))
+            .scalars()
+            .all()
+        )
+    }
+    dealers = {
+        d.id: d
+        for d in (
+            (await db.execute(select(Dealer).where(Dealer.id.in_(dealer_ids))))
+            .scalars()
+            .all()
+        )
+    }
+    primary_images = await _primary_images_bulk(inv_ids, db)
+
+    items: list[DealResponse] = []
+    for d in deals:
+        veh = vehicles.get(d.inventory_id)
+        buyer = dealers.get(d.buyer_dealer_id)
+        seller = dealers.get(d.seller_dealer_id)
+        if veh is None or buyer is None or seller is None:
+            continue
+        items.append(
+            DealResponse(
+                id=d.id,
+                offer_id=d.offer_id,
+                inventory_id=d.inventory_id,
+                buyer_dealer_id=d.buyer_dealer_id,
+                seller_dealer_id=d.seller_dealer_id,
+                final_price=d.final_price,
+                confirmed_at=d.confirmed_at,
+                created_at=d.created_at,
+                vehicle=OfferVehicleSummary(
+                    id=veh.id,
+                    make=veh.make,
+                    model=veh.model,
+                    year=veh.year,
+                    primary_image_url=primary_images.get(veh.id),
+                ),
+                buyer=OfferDealerSummary(
+                    id=buyer.id, business_name=buyer.business_name, city=buyer.city
+                ),
+                seller=OfferDealerSummary(
+                    id=seller.id, business_name=seller.business_name, city=seller.city
+                ),
+            )
+        )
+
+    return DealListResponse(items=items, total=len(items))
+
+
+@marketplace_router.get(
+    "/dealers/{dealer_id}/profile", response_model=DealerPublicProfile
+)
+async def dealer_public_profile(
+    dealer_id: uuid.UUID,
+    _ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DealerPublicProfile:
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.id == dealer_id))
+    ).scalar_one_or_none()
+    if dealer is None or not dealer.verified:
+        raise HTTPException(status_code=404, detail="סוחר לא נמצא")
+
+    return DealerPublicProfile(
+        id=dealer.id,
+        business_name=dealer.business_name,
+        city=dealer.city,
+        tier=dealer.tier,
+        trust_score=int(dealer.trust_score or 0),
+        deals_completed=dealer.deals_completed,
+        member_since=dealer.member_since,
+    )
 
 
 @notifications_router.post("/read-all")
