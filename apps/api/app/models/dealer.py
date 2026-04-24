@@ -3,6 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
@@ -134,6 +135,14 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=False,
         server_default=text("now()"),
+    )
+
+    # ---- Phase 4.3: aggregate counters ----
+    total_views: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    total_offers_value: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
     )
 
     __table_args__ = (

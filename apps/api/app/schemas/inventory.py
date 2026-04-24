@@ -38,6 +38,8 @@ class InventoryItemUpdate(BaseModel):
     status: str | None = Field(default=None, pattern="^(active|sold|hidden)$")
     is_b2b: bool | None = Field(default=None)
     b2b_price: int | None = Field(default=None, ge=0)
+    visibility: str | None = Field(default=None, pattern="^(private|b2b|b2c|both)$")
+    b2c_price: int | None = Field(default=None, ge=0)
 
 
 class InventoryItemResponse(BaseModel):
@@ -58,6 +60,10 @@ class InventoryItemResponse(BaseModel):
     status: str
     is_b2b: bool
     b2b_price: int | None
+    visibility: str
+    b2c_price: int | None
+    paused_until: datetime | None
+    pause_reason: str | None
     created_at: datetime
     updated_at: datetime
 

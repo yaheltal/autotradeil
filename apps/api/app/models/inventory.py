@@ -1,9 +1,12 @@
 import uuid
 from decimal import Decimal
 
+from datetime import datetime
+
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -68,6 +71,19 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     )
     b2b_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    # ---- Phase 4.3: visibility + B2C + pause ----
+    visibility: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="private",
+        server_default="private",
+    )
+    b2c_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paused_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    pause_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "year >= 1900 AND year <= 2030",
@@ -94,6 +110,14 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
         CheckConstraint(
             "b2b_price IS NULL OR b2b_price >= 0",
             name="inventory_b2b_price_nonneg",
+        ),
+        CheckConstraint(
+            "visibility IN ('private', 'b2b', 'b2c', 'both')",
+            name="inventory_visibility_check",
+        ),
+        CheckConstraint(
+            "b2c_price IS NULL OR b2c_price >= 0",
+            name="inventory_b2c_price_nonneg",
         ),
         Index("idx_inventory_dealer_id", "dealer_id"),
         Index("idx_inventory_status", "status"),

@@ -15,10 +15,12 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, EmailStr
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.email import send_password_reset
 from app.core.events import emit_event
 from app.core.logging import get_logger
 from app.core.rate_limit import rate_limit
@@ -163,3 +165,88 @@ async def signup_dealer(
         await _delete_supabase_auth_user(auth_user_id)
         logger.error("Dealer signup failed: %s", exc, exc_info=True)
         raise HTTPException(status_code=500, detail="Registration failed, please retry")
+
+
+# ==========================================================================
+# Password reset — send our own Hebrew RTL email via Resend
+# ==========================================================================
+
+
+forgot_password_rate_limit = rate_limit("5/hour", scope="forgot_password")
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    # Redirect URL the user lands on after clicking the link. Supplied by
+    # the frontend so we don't need to hardcode environments here.
+    redirect_to: str | None = None
+
+
+async def _supabase_generate_recovery_link(
+    email: str, redirect_to: str
+) -> str | None:
+    """Ask Supabase to mint a one-time recovery link for this email.
+
+    Returns the link on success. On "user not found" returns None — we
+    swallow that so the endpoint can stay always-200 (don't leak which
+    emails are registered).
+    """
+    url = f"{settings.supabase_url}/auth/v1/admin/generate_link"
+    headers = {
+        "apikey": settings.supabase_secret_key,
+        "Authorization": f"Bearer {settings.supabase_secret_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "type": "recovery",
+        "email": email,
+        "options": {"redirect_to": redirect_to},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+    except httpx.HTTPError as exc:
+        logger.warning("supabase generate_link network error: %s", exc)
+        return None
+
+    if resp.status_code == 404 or resp.status_code == 422:
+        # User not found — swallow silently.
+        return None
+    if resp.status_code not in (200, 201):
+        logger.warning(
+            "supabase generate_link unexpected status=%s body=%r",
+            resp.status_code,
+            resp.text,
+        )
+        return None
+
+    data = resp.json()
+    # Response shape: { properties: { action_link: "..." }, ... }
+    props = data.get("properties") or {}
+    link = props.get("action_link") or data.get("action_link")
+    return link if isinstance(link, str) else None
+
+
+@router.post(
+    "/forgot-password",
+    dependencies=[Depends(forgot_password_rate_limit)],
+)
+async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
+    """Trigger a password-reset email. Always returns 200 so callers can
+    not enumerate valid emails."""
+    redirect_to = body.redirect_to or "http://localhost:3010/reset-password"
+    # Basic allowlist so we don't turn this into an open redirect.
+    if not redirect_to.startswith(("http://localhost", "https://autotradeil.co.il")):
+        redirect_to = "https://autotradeil.co.il/reset-password"
+
+    try:
+        link = await _supabase_generate_recovery_link(body.email, redirect_to)
+        if link:
+            await send_password_reset(to_email=body.email, reset_link=link)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("forgot-password handler failed: %s", exc)
+
+    # Always-200; do not reveal existence.
+    return {
+        "message": "אם הכתובת קיימת במערכת, נשלח אליה קישור לאיפוס סיסמה.",
+    }

@@ -155,6 +155,17 @@ export default function AdminHomePage() {
             </li>
             <li>
               <Link
+                href="/admin/inventory"
+                className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                <p className="text-brand-navy font-semibold">כל הרכבים במערכת</p>
+                <p className="text-brand-ink/70 mt-1 text-sm">
+                  מלאי מכלל הסוחרים — סינון לפי חשיפה, סטטוס, יצרן
+                </p>
+              </Link>
+            </li>
+            <li>
+              <Link
                 href="/admin/audit-log"
                 className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
               >

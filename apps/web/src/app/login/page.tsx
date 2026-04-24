@@ -36,6 +36,16 @@ export default function LoginPage() {
   const params = useSearchParams();
   const next = params.get("next") ?? "";
   const signedOut = params.get("signedOut") === "1";
+  const [resetToast, setResetToast] = useState(false);
+
+  useEffect(() => {
+    if (params.get("reset") !== "1" || typeof window === "undefined") return;
+    setResetToast(true);
+    // Strip ?reset=1 so refresh doesn't re-announce (a11y-lead rule H).
+    const url = new URL(window.location.href);
+    url.searchParams.delete("reset");
+    window.history.replaceState({}, "", url.toString());
+  }, [params]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -189,7 +199,26 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-brand-ink/70 mt-8 text-center text-sm">
+        {resetToast ? (
+          <p
+            role="status"
+            aria-live="polite"
+            className="bg-ok-bg text-ok-text mt-4 rounded-md px-4 py-3 text-sm"
+          >
+            הסיסמה עודכנה בהצלחה — ניתן להתחבר עם הסיסמה החדשה
+          </p>
+        ) : null}
+
+        <p className="text-brand-ink/70 mt-6 text-center text-sm">
+          <Link
+            href="/forgot-password"
+            className="text-brand-navy decoration-brand-gold focus-visible:outline-brand-navy rounded-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            שכחתי סיסמה
+          </Link>
+        </p>
+
+        <p className="text-brand-ink/70 mt-6 text-center text-sm">
           אין לך חשבון?{" "}
           <Link
             href="/signup/dealer"

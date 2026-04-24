@@ -1,0 +1,301 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { apiFetch } from "@/lib/api";
+import { useAdminAuth } from "@/hooks/useAdminAuth";
+
+/*
+ * Admin all-inventory page (Phase 4.3).
+ *
+ * A11y (approved):
+ *   - Real <table> with sr-only <caption> + <th scope="col"> per req #5.
+ *   - Filter bar inside <form role="search"> with labeled inputs.
+ *   - Only the first cell (vehicle) is a <Link>; per-row click avoided.
+ *   - H1 focusable on load; pagination status has aria-live="polite".
+ */
+
+type Row = {
+  id: string;
+  make: string;
+  model: string;
+  year: number;
+  price: number;
+  b2b_price: number | null;
+  b2c_price: number | null;
+  visibility: "private" | "b2b" | "b2c" | "both";
+  status: "active" | "sold" | "hidden";
+  paused_until: string | null;
+  dealer_id: string;
+  dealer_business_name: string;
+  dealer_city: string | null;
+};
+
+type Resp = {
+  items: Row[];
+  total: number;
+  page: number;
+  pages: number;
+  per_page: number;
+};
+
+const VISIBILITY_LABEL: Record<Row["visibility"], string> = {
+  private: "פרטי",
+  b2b: "B2B",
+  b2c: "B2C",
+  both: "שניהם",
+};
+
+const STATUS_LABEL: Record<Row["status"], string> = {
+  active: "פעיל",
+  sold: "נמכר",
+  hidden: "מוסתר",
+};
+
+export default function AdminInventoryPage() {
+  const { token, loading } = useAdminAuth();
+  const [data, setData] = useState<Resp | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [f, setF] = useState({ visibility: "", status: "", make: "", model: "" });
+  const [pageAnnounce, setPageAnnounce] = useState("");
+
+  const h1Ref = useRef<HTMLHeadingElement>(null);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    try {
+      const qs = new URLSearchParams({ page: String(page), per_page: "20" });
+      if (f.visibility) qs.set("visibility", f.visibility);
+      if (f.status) qs.set("status", f.status);
+      if (f.make) qs.set("make", f.make);
+      if (f.model) qs.set("model", f.model);
+      const res = await apiFetch<Resp>(`/api/v1/admin/inventory?${qs}`, { token });
+      setData(res);
+      setPageAnnounce(`מציג ${res.items.length} מתוך ${res.total} רכבים`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "שגיאה בטעינה");
+    }
+  }, [token, page, f]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    if (data) h1Ref.current?.focus();
+  }, [data]);
+
+  if (loading || !token) {
+    return (
+      <main id="main" tabIndex={-1} className="focus:outline-none">
+        <p role="status" className="text-brand-ink/70 p-10">
+          טוען…
+        </p>
+      </main>
+    );
+  }
+
+  return (
+    <main id="main" tabIndex={-1} className="focus:outline-none">
+      <div className="mx-auto max-w-7xl px-6 py-10">
+        <Link
+          href="/admin"
+          className="text-brand-navy focus-visible:outline-brand-navy inline-flex items-center gap-1 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <span aria-hidden="true">→</span>
+          חזרה ללוח ניהול
+        </Link>
+
+        <h1
+          ref={h1Ref}
+          tabIndex={-1}
+          className="text-brand-navy mt-4 text-3xl font-bold tracking-tight focus:outline-none"
+        >
+          כל הרכבים במערכת
+        </h1>
+
+        <p role="status" aria-live="polite" className="sr-only" key={pageAnnounce}>
+          {pageAnnounce}
+        </p>
+
+        <form
+          role="search"
+          aria-label="סינון רכבים"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setPage(1);
+            void load();
+          }}
+          className="border-brand-navy/10 mt-6 grid gap-3 rounded-lg border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4"
+        >
+          <div>
+            <label htmlFor="f-vis" className="text-brand-navy block text-xs font-semibold">
+              חשיפה
+            </label>
+            <select
+              id="f-vis"
+              dir="rtl"
+              value={f.visibility}
+              onChange={(e) => setF({ ...f, visibility: e.target.value })}
+              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              <option value="">הכל</option>
+              <option value="private">פרטי</option>
+              <option value="b2b">B2B</option>
+              <option value="b2c">B2C</option>
+              <option value="both">שניהם</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="f-status" className="text-brand-navy block text-xs font-semibold">
+              סטטוס
+            </label>
+            <select
+              id="f-status"
+              dir="rtl"
+              value={f.status}
+              onChange={(e) => setF({ ...f, status: e.target.value })}
+              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              <option value="">הכל</option>
+              <option value="active">פעיל</option>
+              <option value="sold">נמכר</option>
+              <option value="hidden">מוסתר</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="f-make" className="text-brand-navy block text-xs font-semibold">
+              יצרן
+            </label>
+            <input
+              id="f-make"
+              type="text"
+              value={f.make}
+              onChange={(e) => setF({ ...f, make: e.target.value })}
+              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            />
+          </div>
+          <div>
+            <label htmlFor="f-model" className="text-brand-navy block text-xs font-semibold">
+              דגם
+            </label>
+            <input
+              id="f-model"
+              type="text"
+              value={f.model}
+              onChange={(e) => setF({ ...f, model: e.target.value })}
+              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            />
+          </div>
+          <div className="flex justify-end sm:col-span-2 lg:col-span-4">
+            <button
+              type="submit"
+              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              חפש
+            </button>
+          </div>
+        </form>
+
+        {error ? (
+          <p role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
+            {error}
+          </p>
+        ) : null}
+
+        {data === null ? (
+          <p role="status" className="text-brand-ink/60 mt-8 p-8">
+            טוען…
+          </p>
+        ) : data.items.length === 0 ? (
+          <p className="border-brand-navy/10 text-brand-ink/60 mt-6 rounded-lg border bg-white p-10 text-center">
+            לא נמצאו רכבים תואמים
+          </p>
+        ) : (
+          <>
+            <div className="border-brand-navy/10 mt-6 overflow-x-auto rounded-lg border bg-white">
+              <table className="w-full text-start text-sm">
+                <caption className="sr-only">כל הרכבים במערכת</caption>
+                <thead className="bg-brand-navy/5">
+                  <tr>
+                    <th scope="col" className="text-brand-navy px-4 py-2 text-start font-semibold">
+                      רכב
+                    </th>
+                    <th scope="col" className="text-brand-navy px-4 py-2 text-start font-semibold">
+                      סוחר
+                    </th>
+                    <th scope="col" className="text-brand-navy px-4 py-2 text-start font-semibold">
+                      חשיפה
+                    </th>
+                    <th scope="col" className="text-brand-navy px-4 py-2 text-start font-semibold">
+                      סטטוס
+                    </th>
+                    <th scope="col" className="text-brand-navy px-4 py-2 text-start font-semibold">
+                      מחיר
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.items.map((r) => (
+                    <tr key={r.id} className="border-brand-navy/10 border-t">
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/dashboard/marketplace/${r.id}`}
+                          className="text-brand-navy focus-visible:outline-brand-navy rounded font-semibold underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        >
+                          {r.make} {r.model} {r.year}
+                        </Link>
+                      </td>
+                      <td className="text-brand-ink/80 px-4 py-3">
+                        {r.dealer_business_name}
+                        {r.dealer_city ? ` · ${r.dealer_city}` : ""}
+                      </td>
+                      <td className="px-4 py-3">{VISIBILITY_LABEL[r.visibility]}</td>
+                      <td className="px-4 py-3">
+                        {STATUS_LABEL[r.status]}
+                        {r.paused_until ? (
+                          <span className="text-brand-ink/60 ms-2 text-xs">
+                            ⏸ עד {new Date(r.paused_until).toLocaleString("he-IL")}
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3 font-semibold">
+                        ₪ {r.price.toLocaleString("he-IL")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {data.pages > 1 ? (
+              <nav aria-label="ניווט עמודים" className="mt-4 flex justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                >
+                  הקודם
+                </button>
+                <span className="text-brand-ink/70 inline-flex items-center px-3 text-sm">
+                  עמוד {page} מתוך {data.pages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(data.pages, p + 1))}
+                  disabled={page >= data.pages}
+                  className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                >
+                  הבא
+                </button>
+              </nav>
+            ) : null}
+          </>
+        )}
+      </div>
+    </main>
+  );
+}

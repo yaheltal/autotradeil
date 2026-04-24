@@ -60,6 +60,31 @@ async def _get_own_or_404(
     return item
 
 
+async def _auto_unpause_expired(dealer_id: uuid.UUID, db: AsyncSession) -> None:
+    """Flip paused-and-expired inventory rows back to active on list fetch.
+
+    Triggered on every /inventory list call. Uses a single UPDATE with
+    a predicate so we never touch rows that don't need it. Caller owns
+    the commit — we only flush here.
+    """
+    from sqlalchemy import update
+
+    from datetime import datetime, timezone as _tz
+
+    now = datetime.now(tz=_tz.utc)
+    await db.execute(
+        update(Inventory)
+        .where(
+            Inventory.dealer_id == dealer_id,
+            Inventory.status == "hidden",
+            Inventory.paused_until.isnot(None),
+            Inventory.paused_until <= now,
+        )
+        .values(status="active", paused_until=None, pause_reason=None)
+    )
+    await db.flush()
+
+
 @router.get("", response_model=InventoryListResponse)
 async def list_inventory(
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
@@ -69,6 +94,9 @@ async def list_inventory(
     per_page: int = Query(default=20, ge=1, le=100),
 ) -> InventoryListResponse:
     _, dealer = ud
+
+    # Phase 4.3: flip paused-and-expired rows back to active.
+    await _auto_unpause_expired(dealer.id, db)
 
     base_q = select(Inventory).where(Inventory.dealer_id == dealer.id)
     count_q = (
@@ -468,6 +496,87 @@ async def _get_govil_price(make: str, model: str, year: int) -> int | None:
         return int(sum(pool) / len(pool))
     except Exception:  # noqa: BLE001
         return None
+
+
+# ==========================================================================
+# Phase 4.3 — pause / unpause
+# ==========================================================================
+
+
+from pydantic import BaseModel as _BM  # noqa: E402
+
+
+class _PauseBody(_BM):
+    hours: int | None = None  # None = indefinite
+    reason: str | None = None
+
+
+@router.post("/{item_id}/pause", response_model=InventoryItemResponse)
+async def pause_item(
+    item_id: uuid.UUID,
+    body: _PauseBody,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> InventoryItemResponse:
+    """Pause a vehicle temporarily — hides it from marketplace/B2C until
+    paused_until (or until /unpause for indefinite pauses)."""
+    from datetime import datetime, timedelta, timezone as _tz
+
+    user, dealer = ud
+    item = await _get_own_or_404(item_id, dealer, db)
+
+    if body.hours is not None and (body.hours < 1 or body.hours > 24 * 30):
+        raise HTTPException(status_code=400, detail="מספר שעות לא תקין")
+
+    reason = (body.reason or "").strip()[:100] or None
+
+    item.paused_until = (
+        datetime.now(tz=_tz.utc) + timedelta(hours=body.hours) if body.hours else None
+    )
+    item.pause_reason = reason
+    item.status = "hidden"
+
+    await emit_event(
+        db,
+        event_type="inventory.paused",
+        aggregate_type="inventory",
+        aggregate_id=item.id,
+        payload={
+            "dealer_id": str(dealer.id),
+            "hours": body.hours,
+            "reason": reason,
+        },
+        actor_user_id=user.id,
+    )
+    await db.commit()
+    await db.refresh(item)
+    return InventoryItemResponse.model_validate(item)
+
+
+@router.post("/{item_id}/unpause", response_model=InventoryItemResponse)
+async def unpause_item(
+    item_id: uuid.UUID,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> InventoryItemResponse:
+    user, dealer = ud
+    item = await _get_own_or_404(item_id, dealer, db)
+
+    item.paused_until = None
+    item.pause_reason = None
+    item.status = "active"
+
+    await emit_event(
+        db,
+        event_type="inventory.unpaused",
+        aggregate_type="inventory",
+        aggregate_id=item.id,
+        payload={"dealer_id": str(dealer.id)},
+        actor_user_id=user.id,
+    )
+    await db.commit()
+    await db.refresh(item)
+    return InventoryItemResponse.model_validate(item)
 
 
 @router.get("/lookup/price-hint")

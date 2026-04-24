@@ -11,6 +11,8 @@ import { SearchableSelect } from "@/components/SearchableSelect";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake, matchMake, matchModel } from "@/lib/car-data";
 
+export type Visibility = "private" | "b2b" | "b2c" | "both";
+
 export type InventoryPayload = {
   make: string;
   model: string;
@@ -22,6 +24,9 @@ export type InventoryPayload = {
   fuel_type: "petrol" | "diesel" | "electric" | "hybrid" | null;
   engine_volume: number | null;
   notes: string | null;
+  visibility: Visibility;
+  b2b_price: number | null;
+  b2c_price: number | null;
 };
 
 export type InventoryInitial = Partial<InventoryPayload> & { id?: string };
@@ -108,6 +113,15 @@ const schema = z.object({
     "0.0",
   ]),
   notes: z.string().max(2000, "הערות ארוכות מדי").optional().or(z.literal("")),
+  visibility: z.enum(["private", "b2b", "b2c", "both"]),
+  b2b_price: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^\d+$/.test(v), "יש להזין מספר"),
+  b2c_price: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^\d+$/.test(v), "יש להזין מספר"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -134,6 +148,9 @@ function toFormValues(v: InventoryInitial | null | undefined): FormValues {
     fuel_type: (v?.fuel_type ?? "") as FormValues["fuel_type"],
     engine_volume: normalizeEngineVolume(v?.engine_volume ?? null),
     notes: v?.notes ?? "",
+    visibility: (v?.visibility ?? "private") as Visibility,
+    b2b_price: v?.b2b_price != null ? String(v.b2b_price) : "",
+    b2c_price: v?.b2c_price != null ? String(v.b2c_price) : "",
   };
 }
 
@@ -445,6 +462,15 @@ export function InventoryFormDialog({
           ? parseFloat(values.engine_volume)
           : null,
       notes: values.notes ? values.notes : null,
+      visibility: values.visibility,
+      b2b_price:
+        (values.visibility === "b2b" || values.visibility === "both") && values.b2b_price
+          ? parseInt(values.b2b_price, 10)
+          : null,
+      b2c_price:
+        (values.visibility === "b2c" || values.visibility === "both") && values.b2c_price
+          ? parseInt(values.b2c_price, 10)
+          : null,
     };
     try {
       await onSubmit(payload);
@@ -818,6 +844,88 @@ export function InventoryFormDialog({
                   </p>
                 ) : null}
               </div>
+
+              {/* Phase 4.3 — visibility selector */}
+              <fieldset className="border-brand-navy/15 rounded-lg border bg-white p-4">
+                <legend className="text-brand-navy px-2 text-sm font-semibold">חשיפת הרכב</legend>
+                <div className="mt-2 space-y-2">
+                  {(
+                    [
+                      ["private", "פרטי — רק אני רואה"],
+                      ["b2b", "B2B — סוחרים בלבד"],
+                      ["b2c", "B2C — לקוחות בלבד"],
+                      ["both", "שניהם — סוחרים + לקוחות"],
+                    ] as const
+                  ).map(([v, label]) => (
+                    <label
+                      key={v}
+                      className="border-brand-navy/20 hover:bg-brand-navy/5 flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2"
+                    >
+                      <input
+                        type="radio"
+                        value={v}
+                        {...register("visibility")}
+                        className="accent-brand-navy"
+                      />
+                      <span className="text-brand-navy text-sm font-medium">{label}</span>
+                    </label>
+                  ))}
+                </div>
+
+                {watch("visibility") === "b2b" || watch("visibility") === "both" ? (
+                  <div className="mt-4">
+                    <label
+                      htmlFor="inv-b2b-price"
+                      className="text-brand-navy block text-sm font-medium"
+                    >
+                      מחיר B2B ₪ (אופציונלי)
+                    </label>
+                    <p id="inv-b2b-price-hint" className="text-brand-navy/70 mt-1 text-xs">
+                      אם לא הוזן — יוצג המחיר המבוקש הרגיל
+                    </p>
+                    <input
+                      id="inv-b2b-price"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      {...register("b2b_price")}
+                      aria-describedby="inv-b2b-price-hint"
+                      aria-invalid={errors.b2b_price?.message ? true : undefined}
+                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                    />
+                    {errors.b2b_price?.message ? (
+                      <p className="text-danger-text mt-1 text-sm">{errors.b2b_price.message}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {watch("visibility") === "b2c" || watch("visibility") === "both" ? (
+                  <div className="mt-4">
+                    <label
+                      htmlFor="inv-b2c-price"
+                      className="text-brand-navy block text-sm font-medium"
+                    >
+                      מחיר קמעונאי ₪ (אופציונלי)
+                    </label>
+                    <p id="inv-b2c-price-hint" className="text-brand-navy/70 mt-1 text-xs">
+                      המחיר המוצג ללקוחות הקצה
+                    </p>
+                    <input
+                      id="inv-b2c-price"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      {...register("b2c_price")}
+                      aria-describedby="inv-b2c-price-hint"
+                      aria-invalid={errors.b2c_price?.message ? true : undefined}
+                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                    />
+                    {errors.b2c_price?.message ? (
+                      <p className="text-danger-text mt-1 text-sm">{errors.b2c_price.message}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </fieldset>
 
               {/* Images link-button */}
               <div className="border-brand-navy/10 rounded-lg border bg-white p-4">

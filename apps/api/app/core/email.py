@@ -31,6 +31,7 @@ class EmailTemplate(str, Enum):
     DEAL_COMPLETED_BUYER = "deal_completed_buyer"
     DEAL_COMPLETED_SELLER = "deal_completed_seller"
     OFFER_REMINDER = "offer_reminder"
+    PASSWORD_RESET = "password_reset"
 
 
 def _fmt_price(v: int) -> str:
@@ -523,6 +524,65 @@ async def send_offer_reminder(
     )
 
 
+async def send_password_reset(to_email: str, reset_link: str) -> bool:
+    """Send password-reset email via Resend (supersedes Supabase default).
+
+    A11y/email decisions (approved):
+      - `<html dir="rtl" lang="he">` (set by _BASE_STYLE's shell below).
+      - CTA is a real `<a>` with meaningful text ("אפס סיסמה") — no role=button,
+        no "click here", and underlined + navy bg so the affordance is not
+        color-only.
+      - Plain-text fallback URL rendered below the button so users whose
+        mail client strips styling, or who prefer to copy/paste, get the link.
+    """
+    # Minimal inline underline on the CTA to ensure a non-color affordance.
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>איפוס סיסמה ב-AutoTradeIL</title>
+  <style>{_BASE_STYLE}
+    a.cta {{ text-decoration: underline; }}
+    .url-box {{ background: #f8f8f6; border: 1px solid #e5e5e0;
+                padding: 12px 14px; border-radius: 6px; margin: 16px 0;
+                word-break: break-all; font-size: 13px; color: #1a1a2e; }}
+    .url-box a {{ color: #1a1a2e; text-decoration: underline; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>AutoTradeIL</h1></div>
+    <div class="body">
+      <h2>איפוס סיסמה</h2>
+      <p>קיבלנו בקשה לאיפוס הסיסמה שלך. לחץ על הכפתור למטה לאיפוס.</p>
+      <p style="text-align:center;">
+        <a class="cta" href="{reset_link}">אפס סיסמה</a>
+      </p>
+      <p>או העתק את הקישור הבא לדפדפן:</p>
+      <p class="url-box"><a href="{reset_link}">{reset_link}</a></p>
+      <p>אם לא ביקשת איפוס סיסמה, התעלם מהודעה זו.</p>
+    </div>
+    <div class="footer">
+      AutoTradeIL &copy; 2026 &middot; המערכת המקצועית לסחר רכבים
+    </div>
+  </div>
+</body>
+</html>"""
+    text = (
+        "איפוס סיסמה ב-AutoTradeIL\n\n"
+        "קיבלנו בקשה לאיפוס הסיסמה שלך. השתמש בקישור הבא לאיפוס:\n\n"
+        f"{reset_link}\n\n"
+        "אם לא ביקשת איפוס סיסמה, התעלם מהודעה זו.\n"
+    )
+    return await _send(
+        to=to_email,
+        subject="איפוס סיסמה ב-AutoTradeIL",
+        html=html,
+        text=text,
+    )
+
+
 async def send_kyc_rejected(to_email: str, business_name: str, reason: str) -> bool:
     html = f"""<!DOCTYPE html>
 <html dir="rtl" lang="he">
@@ -558,8 +618,15 @@ async def send_kyc_rejected(to_email: str, business_name: str, reason: str) -> b
     )
 
 
-async def _send(to: str, subject: str, html: str) -> bool:
-    """Internal send. Never raises — logs failures instead."""
+async def _send(
+    to: str, subject: str, html: str, text: str | None = None
+) -> bool:
+    """Internal send. Never raises — logs failures instead.
+
+    `text` is an optional plain-text MIME alternative (multipart/alternative).
+    Improves deliverability and is preferred by screen-reader-friendly mail
+    clients that disable HTML.
+    """
     if not settings.resend_api_key:
         logger.warning("RESEND_API_KEY not configured — skipping email to %s", to)
         return False
@@ -572,6 +639,8 @@ async def _send(to: str, subject: str, html: str) -> bool:
             "subject": subject,
             "html": html,
         }
+        if text:
+            params["text"] = text  # type: ignore[typeddict-item]
         response = resend.Emails.send(params)
         logger.info(
             "email sent id=%s to=%s subject=%r",

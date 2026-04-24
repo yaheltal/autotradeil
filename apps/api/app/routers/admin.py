@@ -22,7 +22,7 @@ from app.core.impersonation import (
 )
 from app.core.logging import get_logger
 from app.database import get_db
-from app.models import AuditLog, Dealer, User
+from app.models import AuditLog, Dealer, Inventory, User
 from app.schemas.admin import (
     AdminStatsResponse,
     AuditLogItem,
@@ -409,3 +409,86 @@ async def get_audit_log(
     ]
 
     return AuditLogResponse(items=items, total=total)
+
+
+# ==========================================================================
+# Phase 4.3 — admin inventory: ALL vehicles from ALL dealers
+# ==========================================================================
+
+
+@router.get("/inventory")
+async def admin_list_inventory(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    dealer_id: uuid.UUID | None = Query(default=None),
+    visibility: str | None = Query(
+        default=None, pattern="^(private|b2b|b2c|both)$"
+    ),
+    status_filter: str | None = Query(
+        default=None, alias="status", pattern="^(active|sold|hidden)$"
+    ),
+    make: str | None = Query(default=None, max_length=100),
+    model: str | None = Query(default=None, max_length=100),
+    page: int = Query(default=1, ge=1),
+    per_page: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
+    """Admin sees ALL inventory from ALL dealers — every status, every
+    visibility, including paused rows. Scoped by filters below."""
+    conds = []
+    if dealer_id:
+        conds.append(Inventory.dealer_id == dealer_id)
+    if visibility:
+        conds.append(Inventory.visibility == visibility)
+    if status_filter:
+        conds.append(Inventory.status == status_filter)
+    if make:
+        conds.append(Inventory.make == make)
+    if model:
+        conds.append(Inventory.model == model)
+
+    total = (
+        await db.execute(
+            select(func.count()).select_from(Inventory).where(*conds)
+        )
+    ).scalar_one()
+
+    rows = (
+        await db.execute(
+            select(Inventory, Dealer)
+            .join(Dealer, Dealer.id == Inventory.dealer_id)
+            .where(*conds)
+            .order_by(Inventory.created_at.desc())
+            .offset((page - 1) * per_page)
+            .limit(per_page)
+        )
+    ).all()
+
+    items = [
+        {
+            "id": str(inv.id),
+            "make": inv.make,
+            "model": inv.model,
+            "year": inv.year,
+            "price": inv.price,
+            "b2b_price": inv.b2b_price,
+            "b2c_price": inv.b2c_price,
+            "visibility": inv.visibility,
+            "status": inv.status,
+            "paused_until": inv.paused_until.isoformat() if inv.paused_until else None,
+            "dealer_id": str(dealer.id),
+            "dealer_business_name": dealer.business_name,
+            "dealer_city": dealer.city,
+            "created_at": inv.created_at.isoformat(),
+        }
+        for inv, dealer in rows
+    ]
+
+    pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "pages": pages,
+        "per_page": per_page,
+    }

@@ -13,6 +13,7 @@ import {
   InventoryFormDialog,
 } from "@/components/InventoryFormDialog";
 import { NotificationBell } from "@/components/NotificationBell";
+import { PauseDialog } from "@/components/PauseDialog";
 import { StatusBadge, type InventoryStatus } from "@/components/StatusBadge";
 import { VehicleImagesDialog } from "@/components/VehicleImagesDialog";
 import { apiFetch } from "@/lib/api";
@@ -54,6 +55,10 @@ type Item = {
   status: InventoryStatus;
   is_b2b: boolean;
   b2b_price: number | null;
+  visibility: "private" | "b2b" | "b2c" | "both";
+  b2c_price: number | null;
+  paused_until: string | null;
+  pause_reason: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -98,6 +103,10 @@ export default function InventoryPage() {
 
   const [imagesOpen, setImagesOpen] = useState(false);
   const [imagesVehicle, setImagesVehicle] = useState<Item | null>(null);
+
+  // Phase 4.3: pause dialog state
+  const [pauseOpen, setPauseOpen] = useState(false);
+  const [pauseVehicle, setPauseVehicle] = useState<Item | null>(null);
 
   // Auth bootstrap
   useEffect(() => {
@@ -160,6 +169,9 @@ export default function InventoryPage() {
       fuel_type: item.fuel_type,
       engine_volume: item.engine_volume == null ? null : Number(item.engine_volume),
       notes: item.notes,
+      visibility: item.visibility,
+      b2b_price: item.b2b_price,
+      b2c_price: item.b2c_price,
     });
     setFormOpen(true);
   };
@@ -189,77 +201,21 @@ export default function InventoryPage() {
     setDeleteOpen(true);
   };
 
-  // Optimistic B2B toggle — calls PATCH; announcement via toast region.
-  // B2B price field focus-moves to the newly-revealed input per a11y req #3.
-  // Focus target is resolved by id (`b2b-price-<id>`) which is unique per row.
-  const b2bPriceDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Phase 4.3 superseded the B2B boolean toggle + inline price with a
+  // visibility radio group in InventoryFormDialog (edit a vehicle to change).
 
-  const toggleB2b = async (item: Item, next: boolean) => {
+  const unpauseVehicle = async (item: Item) => {
     if (!token) return;
-    // Optimistic local update
-    setData((prev) =>
-      prev
-        ? { ...prev, items: prev.items.map((i) => (i.id === item.id ? { ...i, is_b2b: next } : i)) }
-        : prev,
-    );
     try {
-      await apiFetch(`/api/v1/inventory/${item.id}`, {
-        method: "PUT",
+      await apiFetch(`/api/v1/inventory/${item.id}/unpause`, {
+        method: "POST",
         token,
-        body: JSON.stringify({ is_b2b: next }),
       });
-      setToast(next ? "הרכב פורסם בשוק B2B" : "הרכב הוסר משוק B2B");
-      // Focus newly-revealed price input when the switch turns on.
-      // Wait one tick so React has rendered the input before we reach for it.
-      if (next) {
-        queueMicrotask(() => {
-          const el = document.getElementById(`b2b-price-${item.id}`);
-          if (el instanceof HTMLInputElement) el.focus();
-        });
-      }
+      setToast("הרכב חודש");
+      await refresh();
     } catch (e) {
-      // Roll back
-      setData((prev) =>
-        prev
-          ? {
-              ...prev,
-              items: prev.items.map((i) => (i.id === item.id ? { ...i, is_b2b: !next } : i)),
-            }
-          : prev,
-      );
-      setError(e instanceof Error ? e.message : "שגיאה בעדכון סטטוס B2B");
+      setError(e instanceof Error ? e.message : "שגיאה בחידוש הרכב");
     }
-  };
-
-  const saveB2bPrice = (item: Item, rawValue: string) => {
-    // Optimistic local update (numeric or null for empty)
-    const digits = rawValue.replace(/[^\d]/g, "");
-    const parsed = digits === "" ? null : parseInt(digits, 10);
-    setData((prev) =>
-      prev
-        ? {
-            ...prev,
-            items: prev.items.map((i) => (i.id === item.id ? { ...i, b2b_price: parsed } : i)),
-          }
-        : prev,
-    );
-    // Debounce PATCH
-    const existing = b2bPriceDebounceRef.current.get(item.id);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(async () => {
-      if (!token) return;
-      try {
-        await apiFetch(`/api/v1/inventory/${item.id}`, {
-          method: "PUT",
-          token,
-          body: JSON.stringify({ b2b_price: parsed }),
-        });
-        setToast("מחיר B2B נשמר");
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "שגיאה בשמירת מחיר B2B");
-      }
-    }, 700);
-    b2bPriceDebounceRef.current.set(item.id, timer);
   };
 
   const confirmDelete = async () => {
@@ -436,54 +392,56 @@ export default function InventoryPage() {
                           ) : null}
                         </dl>
 
-                        {/* B2B marketplace toggle — native checkbox with role=switch */}
+                        {/* Phase 4.3: visibility chip + pause controls */}
                         <div className="border-brand-navy/10 bg-brand-cream/40 mt-5 rounded-md border p-3">
-                          <label
-                            htmlFor={`b2b-${item.id}`}
-                            className="flex items-center justify-between gap-3"
-                          >
-                            <span className="text-brand-navy text-sm font-semibold">
-                              הצג בשוק B2B
+                          <p className="text-brand-navy text-sm font-semibold">
+                            חשיפה:&nbsp;
+                            <span className="text-brand-ink font-normal">
+                              {item.visibility === "private"
+                                ? "פרטי"
+                                : item.visibility === "b2b"
+                                  ? "סוחרים (B2B)"
+                                  : item.visibility === "b2c"
+                                    ? "לקוחות (B2C)"
+                                    : "סוחרים + לקוחות"}
                             </span>
-                            <input
-                              id={`b2b-${item.id}`}
-                              type="checkbox"
-                              role="switch"
-                              checked={item.is_b2b}
-                              onChange={(e) => void toggleB2b(item, e.target.checked)}
-                              className="focus-visible:outline-brand-navy accent-brand-gold h-5 w-10 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
-                              aria-describedby={`b2b-${item.id}-desc`}
-                            />
-                          </label>
-                          <p id={`b2b-${item.id}-desc`} className="text-brand-ink/60 mt-1 text-xs">
-                            הרכב יופיע לסוחרים אחרים עם אפשרות לשלוח הצעה
                           </p>
-                          {item.is_b2b ? (
-                            <div className="mt-3">
-                              <label
-                                htmlFor={`b2b-price-${item.id}`}
-                                className="text-brand-navy block text-sm font-medium"
-                              >
-                                מחיר B2B ₪ (אופציונלי)
-                              </label>
-                              <p
-                                id={`b2b-price-${item.id}-hint`}
-                                className="text-brand-ink/60 mt-0.5 text-xs"
-                              >
-                                אם לא הוזן — יוצג המחיר המבוקש הרגיל
-                              </p>
-                              <input
-                                id={`b2b-price-${item.id}`}
-                                type="text"
-                                inputMode="numeric"
-                                autoComplete="off"
-                                value={item.b2b_price == null ? "" : String(item.b2b_price)}
-                                onChange={(e) => saveB2bPrice(item, e.target.value)}
-                                aria-describedby={`b2b-price-${item.id}-hint`}
-                                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                              />
-                            </div>
+                          {item.paused_until || item.pause_reason ? (
+                            <p className="text-brand-ink/70 mt-1 text-xs">
+                              <span aria-hidden="true">⏸ </span>
+                              מושהה
+                              {item.paused_until
+                                ? ` עד ${new Date(item.paused_until).toLocaleString("he-IL")}`
+                                : " ללא הגבלה"}
+                              {item.pause_reason ? ` · ${item.pause_reason}` : ""}
+                            </p>
                           ) : null}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {item.status === "active" ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setPauseVehicle(item);
+                                  setPauseOpen(true);
+                                }}
+                                aria-label={`השהיית ${fullLabel}`}
+                                className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center gap-1.5 rounded-md border bg-white px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                              >
+                                <span aria-hidden="true">⏸</span>
+                                השהה זמנית
+                              </button>
+                            ) : item.paused_until !== null || item.pause_reason !== null ? (
+                              <button
+                                type="button"
+                                onClick={() => void unpauseVehicle(item)}
+                                aria-label={`חידוש ${fullLabel}`}
+                                className="bg-ok hover:bg-ok/90 focus-visible:outline-ok inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2"
+                              >
+                                <span aria-hidden="true">▶</span>
+                                חדש כעת
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
 
                         <div className="mt-3 space-y-2">
@@ -555,6 +513,23 @@ export default function InventoryPage() {
           deletingItem ? `${deletingItem.make} ${deletingItem.model} שנת ${deletingItem.year}` : ""
         }
       />
+
+      {pauseVehicle ? (
+        <PauseDialog
+          open={pauseOpen}
+          onOpenChange={(v) => {
+            setPauseOpen(v);
+            if (!v) setPauseVehicle(null);
+          }}
+          token={token}
+          inventoryId={pauseVehicle.id}
+          vehicleLabel={`${pauseVehicle.make} ${pauseVehicle.model} ${pauseVehicle.year}`}
+          onDone={() => {
+            setToast("הרכב הושהה");
+            void refresh();
+          }}
+        />
+      ) : null}
 
       {imagesVehicle ? (
         <VehicleImagesDialog

@@ -260,10 +260,18 @@ async def search_vehicles(
     (is_b2b=true, status='active') and excludes the caller's own inventory."""
     _, caller_dealer = ud
 
+    from datetime import datetime, timezone as _tz
+
+    now = datetime.now(tz=_tz.utc)
     conds = [
-        Inventory.is_b2b.is_(True),
+        Inventory.visibility.in_(["b2b", "both"]),
         Inventory.status == "active",
         Inventory.dealer_id != caller_dealer.id,
+        # Filter out paused items — either paused_until is NULL-and-not-paused
+        # (caller is looking at active rows only, so status=active is already
+        # the authoritative gate) OR paused_until has passed. We include the
+        # check as belt-and-suspenders so a race on auto-unpause doesn't leak.
+        (Inventory.paused_until.is_(None)) | (Inventory.paused_until <= now),
     ]
     if seller_dealer_id:
         conds.append(Inventory.dealer_id == seller_dealer_id)
@@ -386,11 +394,23 @@ async def get_vehicle_detail(
 
     # Must be B2B-published AND not caller's own — unless caller IS the seller.
     if seller.id != caller_dealer.id:
-        if not inv.is_b2b or inv.status != "active":
+        if inv.visibility not in ("b2b", "both") or inv.status != "active":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="רכב לא נמצא",
             )
+        # Track the view (skip if the seller is viewing their own listing).
+        from app.models import InventoryView
+
+        db.add(
+            InventoryView(
+                inventory_id=inv.id,
+                viewer_dealer_id=caller_dealer.id,
+                source="marketplace",
+            )
+        )
+        seller.total_views = (seller.total_views or 0) + 1
+        await db.commit()
 
     seller_user = (
         await db.execute(select(User).where(User.id == seller.user_id))
@@ -464,7 +484,7 @@ async def make_offer(
     if vehicle is None:
         raise HTTPException(status_code=404, detail="רכב לא נמצא")
 
-    if not vehicle.is_b2b or vehicle.status != "active":
+    if vehicle.visibility not in ("b2b", "both") or vehicle.status != "active":
         raise HTTPException(
             status_code=400, detail="הרכב אינו זמין בשוק הסיטונאי"
         )
@@ -1313,6 +1333,126 @@ async def dealer_public_profile(
         deals_completed=dealer.deals_completed,
         member_since=dealer.member_since,
     )
+
+
+@marketplace_router.get("/analytics")
+async def dealer_analytics(
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, Any]:
+    """Self-analytics for the calling dealer."""
+    from datetime import datetime, timedelta, timezone as _tz
+
+    from app.models import InventoryView
+
+    _, dealer = ud
+    week_ago = datetime.now(tz=_tz.utc) - timedelta(days=7)
+
+    # Vehicle counts
+    inv_rows = (
+        await db.execute(
+            select(Inventory.status, func.count()).where(
+                Inventory.dealer_id == dealer.id
+            ).group_by(Inventory.status)
+        )
+    ).all()
+    counts_by_status = {row[0]: row[1] for row in inv_rows}
+    total_vehicles = sum(counts_by_status.values())
+    paused_count = (
+        await db.execute(
+            select(func.count()).where(
+                Inventory.dealer_id == dealer.id,
+                Inventory.paused_until.isnot(None),
+            )
+        )
+    ).scalar_one()
+
+    # Views this week
+    views_week = (
+        await db.execute(
+            select(func.count())
+            .select_from(InventoryView)
+            .join(Inventory, Inventory.id == InventoryView.inventory_id)
+            .where(
+                Inventory.dealer_id == dealer.id,
+                InventoryView.viewed_at >= week_ago,
+            )
+        )
+    ).scalar_one()
+
+    # Total offers received + sent (lifetime)
+    offers_received = (
+        await db.execute(
+            select(func.count()).where(Offer.seller_dealer_id == dealer.id)
+        )
+    ).scalar_one()
+    offers_sent = (
+        await db.execute(
+            select(func.count()).where(Offer.buyer_dealer_id == dealer.id)
+        )
+    ).scalar_one()
+
+    # Deal aggregates
+    from app.models import Deal
+
+    deal_rows = (
+        await db.execute(
+            select(func.count(), func.coalesce(func.sum(Deal.final_price), 0)).where(
+                or_(
+                    Deal.buyer_dealer_id == dealer.id,
+                    Deal.seller_dealer_id == dealer.id,
+                )
+            )
+        )
+    ).first()
+    deals_completed_rows = deal_rows[0] if deal_rows else 0
+    deals_value = int(deal_rows[1]) if deal_rows else 0
+
+    # Top vehicles by views (own inventory only)
+    top_rows = (
+        await db.execute(
+            select(Inventory, func.count(InventoryView.id).label("views"))
+            .outerjoin(InventoryView, InventoryView.inventory_id == Inventory.id)
+            .where(Inventory.dealer_id == dealer.id)
+            .group_by(Inventory.id)
+            .order_by(func.count(InventoryView.id).desc())
+            .limit(5)
+        )
+    ).all()
+
+    top_vehicles: list[dict[str, Any]] = []
+    for inv, views in top_rows:
+        offer_count = (
+            await db.execute(
+                select(func.count()).where(Offer.inventory_id == inv.id)
+            )
+        ).scalar_one()
+        top_vehicles.append(
+            {
+                "id": str(inv.id),
+                "make": inv.make,
+                "model": inv.model,
+                "year": inv.year,
+                "views": int(views or 0),
+                "offers": int(offer_count),
+            }
+        )
+
+    return {
+        "total_vehicles": total_vehicles,
+        "active_vehicles": counts_by_status.get("active", 0),
+        "paused_vehicles": int(paused_count),
+        "sold_vehicles": counts_by_status.get("sold", 0),
+        "total_views": int(dealer.total_views or 0),
+        "views_this_week": int(views_week),
+        "total_offers_received": int(offers_received),
+        "total_offers_sent": int(offers_sent),
+        "deals_completed": dealer.deals_completed,
+        "deals_value": deals_value,
+        "trust_score": int(dealer.trust_score or 0),
+        "tier": dealer.tier,
+        "top_vehicles": top_vehicles,
+    }
 
 
 @notifications_router.post("/read-all")
