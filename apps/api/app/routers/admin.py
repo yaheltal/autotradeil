@@ -15,6 +15,11 @@ from app.core.audit import log_admin_action
 from app.core.auth import require_admin
 from app.core.email import send_dealer_rejected, send_dealer_verified
 from app.core.events import emit_event
+from app.core.impersonation import (
+    IMPERSONATION_TTL_SECONDS,
+    create_impersonation_token,
+    decode_impersonation_token,
+)
 from app.core.logging import get_logger
 from app.database import get_db
 from app.models import AuditLog, Dealer, User
@@ -24,6 +29,7 @@ from app.schemas.admin import (
     AuditLogResponse,
     DealerListItem,
     DealerListResponse,
+    ImpersonationResponse,
     RejectDealerRequest,
 )
 
@@ -284,6 +290,89 @@ async def get_stats(
         new_this_week=new_this_week,
         verified_this_week=verified_this_week,
         avg_hours_to_verify=float(avg_hours) if avg_hours is not None else None,
+    )
+
+
+@router.post("/impersonate/end")
+async def impersonate_end(
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, bool]:
+    """Record the end of an impersonation session. Token expiry is client-side.
+
+    NOTE: Must be registered BEFORE `/impersonate/{dealer_id}` — otherwise
+    FastAPI routes POST /impersonate/end to the UUID param handler and
+    returns 422 on the literal string "end".
+    """
+    await log_admin_action(
+        db,
+        actor_user_id=admin.id,
+        action="dealer.impersonate.end",
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/impersonate/verify")
+async def impersonate_verify(
+    admin: Annotated[User, Depends(require_admin)],
+    token: str = Query(..., min_length=1),
+) -> dict[str, object]:
+    """Decode + validate an impersonation token. Admin-only."""
+    payload = decode_impersonation_token(token)
+    return {
+        "valid": True,
+        "admin_id": payload["sub"],
+        "dealer_id": payload["act_as"],
+        "expires_at": payload["exp"],
+    }
+
+
+@router.post(
+    "/impersonate/{dealer_id}",
+    response_model=ImpersonationResponse,
+)
+async def impersonate_dealer(
+    dealer_id: uuid.UUID,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ImpersonationResponse:
+    """Issue a 1-hour impersonation token so the admin can act as the dealer."""
+    dealer, _user = await _get_dealer_or_404(dealer_id, db)
+
+    if not dealer.verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot impersonate an unverified dealer",
+        )
+
+    token = create_impersonation_token(admin.id, dealer.id)
+
+    await log_admin_action(
+        db,
+        actor_user_id=admin.id,
+        action="dealer.impersonate.start",
+        target_type="dealer",
+        target_id=dealer.id,
+        impersonated_dealer_id=dealer.id,
+        metadata={"business_name": dealer.business_name},
+    )
+    await emit_event(
+        db,
+        event_type="admin.impersonation.started",
+        aggregate_type="dealer",
+        aggregate_id=dealer.id,
+        payload={"admin_id": str(admin.id), "business_name": dealer.business_name},
+        actor_user_id=admin.id,
+    )
+
+    await db.commit()
+
+    return ImpersonationResponse(
+        impersonation_token=token,
+        dealer_id=dealer.id,
+        business_name=dealer.business_name,
+        expires_in_seconds=IMPERSONATION_TTL_SECONDS,
     )
 
 

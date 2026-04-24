@@ -70,3 +70,10 @@ class AuditLogItem(BaseModel):
 class AuditLogResponse(BaseModel):
     items: list[AuditLogItem]
     total: int
+
+
+class ImpersonationResponse(BaseModel):
+    impersonation_token: str
+    dealer_id: uuid.UUID
+    business_name: str
+    expires_in_seconds: int

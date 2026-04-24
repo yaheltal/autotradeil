@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     resend_api_key: str = Field(default="")
     resend_from_email: str = Field(default="onboarding@resend.dev")
 
+    # Impersonation — HS256 secret for short-lived admin-as-dealer tokens.
+    # Generate with:  python3 -c 'import secrets; print(secrets.token_hex(32))'
+    impersonation_secret: str = Field(default="")
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:

@@ -4,6 +4,7 @@ from app.schemas.admin import (
     AuditLogResponse,
     DealerListItem,
     DealerListResponse,
+    ImpersonationResponse,
     RejectDealerRequest,
     VerifyDealerRequest,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "DealerListResponse",
     "DealerResponse",
     "DealerSignupRequest",
+    "ImpersonationResponse",
     "RejectDealerRequest",
     "SignupResponse",
     "VerifyDealerRequest",

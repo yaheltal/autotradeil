@@ -64,6 +64,9 @@ coverage/
 apps/api/scripts/test_admin_auth.py
 apps/api/scripts/debug_jwt.py
 
+# IDE-created .env backups
+apps/api/.env.backup
+
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts

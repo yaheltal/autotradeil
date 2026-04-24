@@ -204,18 +204,70 @@ _decode_supabase_jwt = verify_jwt
 # --------------------------------------------------------------------------
 
 
+def _peek_token_type(token: str) -> str | None:
+    """Unverified peek at the `type` claim so we can branch before verify."""
+    try:
+        unverified = pyjwt.decode(
+            token,
+            options={
+                "verify_signature": False,
+                "verify_exp": False,
+                "verify_aud": False,
+            },
+        )
+    except pyjwt.InvalidTokenError:
+        return None
+    if isinstance(unverified, dict):
+        value = unverified.get("type")
+        return value if isinstance(value, str) else None
+    return None
+
+
 async def get_current_user(
     request: Request,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> User:
     """Resolve the current authenticated user.
 
-    Raises 401 if the token is missing/invalid/expired.
-    Raises 404 if the JWT is valid but no matching row exists in
-    `public.users` yet (the auth.users → public.users trigger should
-    prevent this, but we surface it explicitly).
+    Handles two token flavors:
+      * Supabase access token — normal login; sub = auth user UUID.
+      * Impersonation token   — signed by backend, sub = admin, act_as =
+                                dealer UUID. The caller is resolved to the
+                                IMPERSONATED dealer's user so downstream
+                                dealer-scoped endpoints (/dealers/me, etc.)
+                                see the dealer as the current identity.
+                                Admin endpoints (`require_admin`) will
+                                correctly reject because the resolved user
+                                is user_type='dealer', not 'admin'.
+
+    Raises 401 on bad/missing/expired tokens, 404 if the resolved user row
+    isn't present in public.users.
     """
     token = _extract_bearer(request)
+
+    if _peek_token_type(token) == "impersonation":
+        # Deferred import — impersonation.py is a higher-level module that
+        # imports settings (fine), but keeping the import lazy makes the
+        # dependency direction obvious.
+        from app.core.impersonation import decode_impersonation_token
+
+        payload = decode_impersonation_token(token)
+        dealer_id = uuid.UUID(payload["act_as"])
+        dealer = await db.get(Dealer, dealer_id)
+        if dealer is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Impersonated dealer not found",
+            )
+        user = await db.get(User, dealer.user_id)
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User row for impersonated dealer is missing",
+            )
+        return user
+
+    # Default: Supabase JWT path.
     payload = _decode_supabase_jwt(token)
 
     sub = payload.get("sub")
