@@ -21,6 +21,61 @@ logger = logging.getLogger(__name__)
 class EmailTemplate(str, Enum):
     DEALER_VERIFIED = "dealer_verified"
     DEALER_REJECTED = "dealer_rejected"
+    OFFER_RECEIVED = "offer_received"
+    OFFER_ACCEPTED = "offer_accepted"
+    OFFER_REJECTED = "offer_rejected"
+    COUNTER_OFFER = "counter_offer"
+
+
+def _fmt_price(v: int) -> str:
+    return f"{v:,}".replace(",", ",")
+
+
+def _marketplace_shell(
+    title: str,
+    badge_text: str,
+    badge_class: str,
+    heading: str,
+    body_html: str,
+    cta_href: str = "https://autotradeil.co.il/dashboard/offers",
+    cta_text: str = "פתיחת מערכת ההצעות",
+) -> str:
+    return f"""<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{title}</title>
+  <style>{_BASE_STYLE}
+    .vehicle-box {{ background: #f8f8f6; border-radius: 8px;
+                    padding: 16px 20px; margin: 20px 0; color: #1a1a2e;
+                    font-size: 15px; }}
+    .vehicle-box strong {{ color: #1a1a2e; }}
+    .price {{ color: #1a1a2e; font-weight: 700; font-size: 18px; }}
+    .message-box {{ background: #fffbeb; border-right: 4px solid #e8b84b;
+                    padding: 16px 20px; border-radius: 4px; margin: 20px 0;
+                    color: #1a1a2e; font-size: 15px; }}
+    .badge-info {{ background: #1a1a2e; }}
+    .badge-gold {{ background: #e8b84b; color: #1a1a2e; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>AutoTradeIL</h1></div>
+    <div class="body">
+      <span class="badge {badge_class}">{badge_text}</span>
+      <h2>{heading}</h2>
+      {body_html}
+      <p style="text-align:center;">
+        <a class="cta" href="{cta_href}">{cta_text}</a>
+      </p>
+    </div>
+    <div class="footer">
+      AutoTradeIL &copy; 2026 &middot; המערכת המקצועית לסחר רכבים
+    </div>
+  </div>
+</body>
+</html>"""
 
 
 # --------------------------------------------------------------------------
@@ -137,6 +192,158 @@ async def send_dealer_rejected(
         to=to_email,
         subject="עדכון על בקשת ההצטרפות שלך ל-AutoTradeIL",
         html=_get_rejected_html(business_name, reason),
+    )
+
+
+# --------------------------------------------------------------------------
+# Marketplace (Phase 4.1)
+# --------------------------------------------------------------------------
+
+
+def _vehicle_line(make: str, model: str, year: int) -> str:
+    return f"{make} {model} {year}"
+
+
+async def send_offer_received(
+    to_email: str,
+    seller_business_name: str,
+    buyer_business_name: str,
+    vehicle: dict[str, object],
+    offered_price: int,
+    message: str | None,
+) -> bool:
+    veh_line = _vehicle_line(str(vehicle["make"]), str(vehicle["model"]), int(vehicle["year"]))
+    price_html = f'<span class="price">{_fmt_price(offered_price)} ₪</span>'
+    message_html = (
+        f'<div class="message-box"><strong>הודעה מהקונה:</strong><br>{message}</div>'
+        if message
+        else ""
+    )
+    html = _marketplace_shell(
+        title="התקבלה הצעת רכישה חדשה",
+        badge_text="הצעה חדשה",
+        badge_class="badge-gold",
+        heading=f"שלום, {seller_business_name}",
+        body_html=(
+            f'<p>התקבלה הצעת רכישה חדשה מהסוחר <strong>{buyer_business_name}</strong>.</p>'
+            f'<div class="vehicle-box">'
+            f'<strong>רכב:</strong> {veh_line}<br>'
+            f'<strong>הצעה:</strong> {price_html}'
+            f'</div>'
+            f'{message_html}'
+            f'<p>ניתן לאשר, לדחות או לשלוח הצעה נגדית מתוך מערכת ההצעות.</p>'
+        ),
+    )
+    return await _send(
+        to=to_email,
+        subject=f"💰 הצעה חדשה: {veh_line}",
+        html=html,
+    )
+
+
+async def send_offer_accepted(
+    to_email: str,
+    buyer_business_name: str,
+    seller_business_name: str,
+    vehicle: dict[str, object],
+    offered_price: int,
+) -> bool:
+    veh_line = _vehicle_line(str(vehicle["make"]), str(vehicle["model"]), int(vehicle["year"]))
+    price_html = f'<span class="price">{_fmt_price(offered_price)} ₪</span>'
+    html = _marketplace_shell(
+        title="ההצעה אושרה",
+        badge_text="ההצעה אושרה",
+        badge_class="badge-ok",
+        heading=f"ברכות, {buyer_business_name}!",
+        body_html=(
+            f'<p>הסוחר <strong>{seller_business_name}</strong> אישר את ההצעה שלך.</p>'
+            f'<div class="vehicle-box">'
+            f'<strong>רכב:</strong> {veh_line}<br>'
+            f'<strong>מחיר מוסכם:</strong> {price_html}'
+            f'</div>'
+            f'<p>ניתן כעת ליצור קשר עם המוכר להשלמת העסקה. פרטי הקשר זמינים במערכת.</p>'
+        ),
+    )
+    return await _send(
+        to=to_email,
+        subject=f"✅ ההצעה אושרה: {veh_line}",
+        html=html,
+    )
+
+
+async def send_offer_rejected(
+    to_email: str,
+    buyer_business_name: str,
+    seller_business_name: str,
+    vehicle: dict[str, object],
+    offered_price: int,
+) -> bool:
+    veh_line = _vehicle_line(str(vehicle["make"]), str(vehicle["model"]), int(vehicle["year"]))
+    price_html = f'<span class="price">{_fmt_price(offered_price)} ₪</span>'
+    html = _marketplace_shell(
+        title="ההצעה נדחתה",
+        badge_text="ההצעה נדחתה",
+        badge_class="badge-no",
+        heading=f"שלום, {buyer_business_name}",
+        body_html=(
+            f'<p>הסוחר <strong>{seller_business_name}</strong> דחה את ההצעה שלך.</p>'
+            f'<div class="vehicle-box">'
+            f'<strong>רכב:</strong> {veh_line}<br>'
+            f'<strong>הצעה שהוגשה:</strong> {price_html}'
+            f'</div>'
+            f'<p>ניתן להמשיך לחפש רכבים נוספים בשוק הסיטונאי שלנו.</p>'
+        ),
+        cta_href="https://autotradeil.co.il/dashboard/marketplace",
+        cta_text="חזרה לשוק",
+    )
+    return await _send(
+        to=to_email,
+        subject=f"עדכון על הצעת הרכישה: {veh_line}",
+        html=html,
+    )
+
+
+async def send_counter_offer(
+    to_email: str,
+    recipient_business_name: str,
+    from_business_name: str,
+    vehicle: dict[str, object],
+    original_price: int,
+    counter_price: int,
+    counter_message: str | None,
+    role: str,  # "buyer" | "seller" — recipient's role
+) -> bool:
+    """Sent when either side posts a counter-offer. `role` describes who the
+    email recipient is — controls the wording."""
+    veh_line = _vehicle_line(str(vehicle["make"]), str(vehicle["model"]), int(vehicle["year"]))
+    orig_html = f'<span class="price">{_fmt_price(original_price)} ₪</span>'
+    cnt_html = f'<span class="price">{_fmt_price(counter_price)} ₪</span>'
+    message_html = (
+        f'<div class="message-box"><strong>הודעה:</strong><br>{counter_message}</div>'
+        if counter_message
+        else ""
+    )
+    side_word = "מהמוכר" if role == "buyer" else "מהקונה"
+    html = _marketplace_shell(
+        title="התקבלה הצעה נגדית",
+        badge_text="הצעה נגדית",
+        badge_class="badge-info",
+        heading=f"שלום, {recipient_business_name}",
+        body_html=(
+            f'<p>התקבלה הצעה נגדית {side_word} <strong>{from_business_name}</strong>.</p>'
+            f'<div class="vehicle-box">'
+            f'<strong>רכב:</strong> {veh_line}<br>'
+            f'<strong>הצעה קודמת:</strong> {orig_html}<br>'
+            f'<strong>הצעה נגדית:</strong> {cnt_html}'
+            f'</div>'
+            f'{message_html}'
+            f'<p>ניתן לאשר, לדחות או להגיב בהצעה נגדית נוספת.</p>'
+        ),
+    )
+    return await _send(
+        to=to_email,
+        subject=f"🔄 הצעה נגדית: {veh_line}",
+        html=html,
     )
 
 

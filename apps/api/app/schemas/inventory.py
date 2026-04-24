@@ -36,6 +36,8 @@ class InventoryItemUpdate(BaseModel):
     engine_volume: Decimal | None = Field(default=None, ge=Decimal("0.5"), le=Decimal("9.9"))
     notes: str | None = Field(default=None, max_length=2000)
     status: str | None = Field(default=None, pattern="^(active|sold|hidden)$")
+    is_b2b: bool | None = Field(default=None)
+    b2b_price: int | None = Field(default=None, ge=0)
 
 
 class InventoryItemResponse(BaseModel):
@@ -54,6 +56,8 @@ class InventoryItemResponse(BaseModel):
     engine_volume: Decimal | None
     notes: str | None
     status: str
+    is_b2b: bool
+    b2b_price: int | None
     created_at: datetime
     updated_at: datetime
 

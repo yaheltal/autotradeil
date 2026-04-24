@@ -7,6 +7,7 @@ from app.models.event import Event
 from app.models.inventory import Inventory
 from app.models.inventory_image import InventoryImage
 from app.models.listing import Listing
+from app.models.notification import Notification
 from app.models.offer import Offer
 from app.models.user import User
 
@@ -18,6 +19,7 @@ __all__ = [
     "Inventory",
     "InventoryImage",
     "Listing",
+    "Notification",
     "Offer",
     "User",
 ]

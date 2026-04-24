@@ -12,6 +12,7 @@ import {
   type InventoryPayload,
   InventoryFormDialog,
 } from "@/components/InventoryFormDialog";
+import { NotificationBell } from "@/components/NotificationBell";
 import { StatusBadge, type InventoryStatus } from "@/components/StatusBadge";
 import { VehicleImagesDialog } from "@/components/VehicleImagesDialog";
 import { apiFetch } from "@/lib/api";
@@ -51,6 +52,8 @@ type Item = {
   engine_volume: number | string | null;
   notes: string | null;
   status: InventoryStatus;
+  is_b2b: boolean;
+  b2b_price: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -186,6 +189,79 @@ export default function InventoryPage() {
     setDeleteOpen(true);
   };
 
+  // Optimistic B2B toggle — calls PATCH; announcement via toast region.
+  // B2B price field focus-moves to the newly-revealed input per a11y req #3.
+  // Focus target is resolved by id (`b2b-price-<id>`) which is unique per row.
+  const b2bPriceDebounceRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const toggleB2b = async (item: Item, next: boolean) => {
+    if (!token) return;
+    // Optimistic local update
+    setData((prev) =>
+      prev
+        ? { ...prev, items: prev.items.map((i) => (i.id === item.id ? { ...i, is_b2b: next } : i)) }
+        : prev,
+    );
+    try {
+      await apiFetch(`/api/v1/inventory/${item.id}`, {
+        method: "PUT",
+        token,
+        body: JSON.stringify({ is_b2b: next }),
+      });
+      setToast(next ? "הרכב פורסם בשוק B2B" : "הרכב הוסר משוק B2B");
+      // Focus newly-revealed price input when the switch turns on.
+      // Wait one tick so React has rendered the input before we reach for it.
+      if (next) {
+        queueMicrotask(() => {
+          const el = document.getElementById(`b2b-price-${item.id}`);
+          if (el instanceof HTMLInputElement) el.focus();
+        });
+      }
+    } catch (e) {
+      // Roll back
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((i) => (i.id === item.id ? { ...i, is_b2b: !next } : i)),
+            }
+          : prev,
+      );
+      setError(e instanceof Error ? e.message : "שגיאה בעדכון סטטוס B2B");
+    }
+  };
+
+  const saveB2bPrice = (item: Item, rawValue: string) => {
+    // Optimistic local update (numeric or null for empty)
+    const digits = rawValue.replace(/[^\d]/g, "");
+    const parsed = digits === "" ? null : parseInt(digits, 10);
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            items: prev.items.map((i) => (i.id === item.id ? { ...i, b2b_price: parsed } : i)),
+          }
+        : prev,
+    );
+    // Debounce PATCH
+    const existing = b2bPriceDebounceRef.current.get(item.id);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(async () => {
+      if (!token) return;
+      try {
+        await apiFetch(`/api/v1/inventory/${item.id}`, {
+          method: "PUT",
+          token,
+          body: JSON.stringify({ b2b_price: parsed }),
+        });
+        setToast("מחיר B2B נשמר");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "שגיאה בשמירת מחיר B2B");
+      }
+    }, 700);
+    b2bPriceDebounceRef.current.set(item.id, timer);
+  };
+
   const confirmDelete = async () => {
     if (!token || !deletingItem) return;
     await apiFetch(`/api/v1/inventory/${deletingItem.id}?mode=soft`, {
@@ -227,8 +303,9 @@ export default function InventoryPage() {
   return (
     <div className="bg-brand-cream text-brand-ink min-h-screen">
       <header className="border-brand-navy/10 border-b bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
           <BrandMark />
+          <NotificationBell token={token} />
         </div>
       </header>
 
@@ -359,7 +436,57 @@ export default function InventoryPage() {
                           ) : null}
                         </dl>
 
-                        <div className="mt-5 space-y-2">
+                        {/* B2B marketplace toggle — native checkbox with role=switch */}
+                        <div className="border-brand-navy/10 bg-brand-cream/40 mt-5 rounded-md border p-3">
+                          <label
+                            htmlFor={`b2b-${item.id}`}
+                            className="flex items-center justify-between gap-3"
+                          >
+                            <span className="text-brand-navy text-sm font-semibold">
+                              הצג בשוק B2B
+                            </span>
+                            <input
+                              id={`b2b-${item.id}`}
+                              type="checkbox"
+                              role="switch"
+                              checked={item.is_b2b}
+                              onChange={(e) => void toggleB2b(item, e.target.checked)}
+                              className="focus-visible:outline-brand-navy accent-brand-gold h-5 w-10 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2"
+                              aria-describedby={`b2b-${item.id}-desc`}
+                            />
+                          </label>
+                          <p id={`b2b-${item.id}-desc`} className="text-brand-ink/60 mt-1 text-xs">
+                            הרכב יופיע לסוחרים אחרים עם אפשרות לשלוח הצעה
+                          </p>
+                          {item.is_b2b ? (
+                            <div className="mt-3">
+                              <label
+                                htmlFor={`b2b-price-${item.id}`}
+                                className="text-brand-navy block text-sm font-medium"
+                              >
+                                מחיר B2B ₪ (אופציונלי)
+                              </label>
+                              <p
+                                id={`b2b-price-${item.id}-hint`}
+                                className="text-brand-ink/60 mt-0.5 text-xs"
+                              >
+                                אם לא הוזן — יוצג המחיר המבוקש הרגיל
+                              </p>
+                              <input
+                                id={`b2b-price-${item.id}`}
+                                type="text"
+                                inputMode="numeric"
+                                autoComplete="off"
+                                value={item.b2b_price == null ? "" : String(item.b2b_price)}
+                                onChange={(e) => saveB2bPrice(item, e.target.value)}
+                                aria-describedby={`b2b-price-${item.id}-hint`}
+                                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+
+                        <div className="mt-3 space-y-2">
                           <button
                             type="button"
                             onClick={() => {

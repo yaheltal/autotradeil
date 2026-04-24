@@ -6,6 +6,8 @@ import { usePathname } from "next/navigation";
 const ITEMS = [
   { href: "/dashboard", label: "פרופיל", exact: true },
   { href: "/dashboard/inventory", label: "מלאי", exact: false },
+  { href: "/dashboard/marketplace", label: "שוק B2B", exact: false },
+  { href: "/dashboard/offers", label: "הצעות", exact: false },
 ] as const;
 
 function isActive(pathname: string, item: (typeof ITEMS)[number]): boolean {

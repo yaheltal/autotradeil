@@ -1,8 +1,13 @@
 import uuid
-from datetime import datetime
-from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Numeric, Text
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -18,36 +23,42 @@ class Offer(UUIDPrimaryKey, TimestampMixin, Base):
         ForeignKey("inventory.id", ondelete="CASCADE"),
         nullable=False,
     )
-    from_dealer: Mapped[uuid.UUID] = mapped_column(
+    buyer_dealer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("dealers.id"),
+        ForeignKey("dealers.id", ondelete="CASCADE"),
         nullable=False,
     )
-    to_dealer: Mapped[uuid.UUID] = mapped_column(
+    seller_dealer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("dealers.id"),
+        ForeignKey("dealers.id", ondelete="CASCADE"),
         nullable=False,
     )
-    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    offered_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
-        Text,
+        String(20),
         nullable=False,
         default="pending",
         server_default="pending",
     )
-    expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    counter_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    counter_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
-        CheckConstraint("amount >= 0", name="offers_amount_nonneg"),
-        CheckConstraint("from_dealer <> to_dealer", name="offers_different_dealers"),
+        CheckConstraint("offered_price > 0", name="offers_offered_price_pos"),
         CheckConstraint(
-            "status IN ('pending', 'accepted', 'rejected', 'countered', 'expired', 'withdrawn')",
+            "counter_price IS NULL OR counter_price > 0",
+            name="offers_counter_price_pos",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'accepted', 'rejected', 'countered', 'cancelled')",
             name="offers_status_check",
         ),
+        CheckConstraint(
+            "buyer_dealer_id <> seller_dealer_id", name="offers_different_dealers"
+        ),
         Index("idx_offers_inventory_id", "inventory_id"),
-        Index("idx_offers_from_dealer", "from_dealer"),
-        Index("idx_offers_to_dealer", "to_dealer"),
+        Index("idx_offers_buyer", "buyer_dealer_id"),
+        Index("idx_offers_seller", "seller_dealer_id"),
         Index("idx_offers_status", "status"),
     )

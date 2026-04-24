@@ -26,3 +26,30 @@ export function formatMileage(value: number): Formatted {
     sr: `קילומטראז' ${value} קילומטר`,
   };
 }
+
+/**
+ * "לפני X דקות" / "לפני שעה" / "לפני 3 ימים" style Hebrew time-ago.
+ * Precise enough for a notification feed. Input is ISO 8601; we also
+ * return the ISO value so callers can render `<time datetime=...>`.
+ */
+export function formatRelativeTime(iso: string): { visual: string; iso: string } {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return { visual: "", iso };
+  const diffMs = Date.now() - then;
+  const sec = Math.max(0, Math.floor(diffMs / 1000));
+  const min = Math.floor(sec / 60);
+  const hr = Math.floor(min / 60);
+  const day = Math.floor(hr / 24);
+
+  if (sec < 45) return { visual: "לפני רגע", iso };
+  if (min < 2) return { visual: "לפני דקה", iso };
+  if (min < 60) return { visual: `לפני ${min} דקות`, iso };
+  if (hr < 2) return { visual: "לפני שעה", iso };
+  if (hr < 24) return { visual: `לפני ${hr} שעות`, iso };
+  if (day < 2) return { visual: "אתמול", iso };
+  if (day < 30) return { visual: `לפני ${day} ימים`, iso };
+  const months = Math.floor(day / 30);
+  if (months < 12) return { visual: `לפני ${months} חודשים`, iso };
+  const years = Math.floor(day / 365);
+  return { visual: `לפני ${years} שנים`, iso };
+}

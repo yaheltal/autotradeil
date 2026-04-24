@@ -2,6 +2,7 @@ import uuid
 from decimal import Decimal
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -58,6 +59,15 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
         server_default="active",
     )
 
+    # ---- B2B marketplace (Phase 4.1) ----
+    is_b2b: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    b2b_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "year >= 1900 AND year <= 2030",
@@ -80,6 +90,10 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
         CheckConstraint(
             "status IN ('active', 'sold', 'hidden')",
             name="inventory_status_check",
+        ),
+        CheckConstraint(
+            "b2b_price IS NULL OR b2b_price >= 0",
+            name="inventory_b2b_price_nonneg",
         ),
         Index("idx_inventory_dealer_id", "dealer_id"),
         Index("idx_inventory_status", "status"),
