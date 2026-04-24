@@ -138,6 +138,32 @@ export default function AdminHomePage() {
             </Link>
           </div>
         ) : null}
+
+        <section aria-labelledby="admin-links-heading" className="mt-10">
+          <h2 id="admin-links-heading" className="text-brand-navy text-lg font-semibold">
+            ניהול נוסף
+          </h2>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            <li>
+              <Link
+                href="/admin/kyc"
+                className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                <p className="text-brand-navy font-semibold">אימות זהות (KYC)</p>
+                <p className="text-brand-ink/70 mt-1 text-sm">בקשות ממתינות לבדיקת מסמכים</p>
+              </Link>
+            </li>
+            <li>
+              <Link
+                href="/admin/audit-log"
+                className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                <p className="text-brand-navy font-semibold">יומן פעולות</p>
+                <p className="text-brand-ink/70 mt-1 text-sm">היסטוריית פעולות מנהל מלאה</p>
+              </Link>
+            </li>
+          </ul>
+        </section>
       </div>
     </main>
   );

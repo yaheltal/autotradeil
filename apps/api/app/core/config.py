@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     # Anthropic — vision model for AI image-based vehicle identification.
     anthropic_api_key: str = Field(default="")
 
+    # Twilio — SMS OTP delivery (Phase 3.5)
+    twilio_account_sid: str = Field(default="")
+    twilio_auth_token: str = Field(default="")
+    twilio_phone_number: str = Field(default="")
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:

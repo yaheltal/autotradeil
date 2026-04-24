@@ -66,6 +66,74 @@ async def upload_vehicle_image(
     }
 
 
+async def upload_kyc_document(
+    file_bytes: bytes,
+    dealer_id: str,
+    document_type: str,
+    content_type: str,
+) -> dict[str, Any]:
+    """Upload a KYC document with `type=authenticated` so the delivered
+    URL requires a signed view. Folder is `autotradeil/kyc/{dealer_id}/`.
+
+    `document_type` is one of `id_front`, `id_back`, `dealer_license` —
+    used as the public_id so re-uploads overwrite the old copy.
+
+    PDFs are kept as-is (resource_type=raw/auto). Images get a size cap.
+    """
+    init_cloudinary()
+
+    is_image = content_type.startswith("image/")
+    kwargs: dict[str, Any] = {
+        "folder": f"autotradeil/kyc/{dealer_id}",
+        "public_id": document_type,
+        "overwrite": True,
+        "type": "authenticated",
+        "resource_type": "image" if is_image else "auto",
+    }
+    if is_image:
+        kwargs["transformation"] = [
+            {"width": 2000, "height": 2000, "crop": "limit", "quality": "auto:good"},
+        ]
+
+    result = cloudinary.uploader.upload(file_bytes, **kwargs)
+    logger.info(
+        "cloudinary kyc upload ok dealer=%s type=%s public_id=%s",
+        dealer_id,
+        document_type,
+        result.get("public_id"),
+    )
+    return {
+        "url": result["secure_url"],
+        "public_id": result["public_id"],
+        "resource_type": result.get("resource_type"),
+    }
+
+
+async def sign_kyc_url(public_id: str, resource_type: str = "image") -> str:
+    """Return a short-lived signed URL for a KYC document.
+
+    Cloudinary's `utils.cloudinary_url` with `sign_url=True` + `type=authenticated`
+    produces a URL that expires after the configured window. We set
+    `expires_at` 10 minutes out — long enough for an admin to view but
+    short enough that a leaked URL is useless quickly.
+    """
+    import time
+
+    import cloudinary.utils
+
+    init_cloudinary()
+    url, _ = cloudinary.utils.cloudinary_url(
+        public_id,
+        type="authenticated",
+        resource_type=resource_type,
+        sign_url=True,
+        secure=True,
+        auth_token={"duration": 600},  # 10 minutes
+        expires_at=int(time.time()) + 600,
+    )
+    return url
+
+
 async def delete_vehicle_image(public_id: str) -> bool:
     """Best-effort delete. Returns True if Cloudinary confirmed."""
     init_cloudinary()

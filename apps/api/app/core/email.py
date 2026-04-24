@@ -25,6 +25,9 @@ class EmailTemplate(str, Enum):
     OFFER_ACCEPTED = "offer_accepted"
     OFFER_REJECTED = "offer_rejected"
     COUNTER_OFFER = "counter_offer"
+    OTP_CODE = "otp_code"
+    KYC_APPROVED = "kyc_approved"
+    KYC_REJECTED = "kyc_rejected"
 
 
 def _fmt_price(v: int) -> str:
@@ -343,6 +346,118 @@ async def send_counter_offer(
     return await _send(
         to=to_email,
         subject=f"🔄 הצעה נגדית: {veh_line}",
+        html=html,
+    )
+
+
+# --------------------------------------------------------------------------
+# Security (Phase 3.5) — OTP, KYC approval/rejection
+# --------------------------------------------------------------------------
+
+
+async def send_otp_email(to_email: str, business_name: str, code: str) -> bool:
+    """Email OTP code. Valid for 10 minutes."""
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>קוד אימות</title>
+  <style>{_BASE_STYLE}
+    .otp-code {{ font-size: 36px; font-weight: 700; letter-spacing: 8px;
+                 color: #1a1a2e; background: #f8f8f6; padding: 20px 30px;
+                 border-radius: 8px; text-align: center; margin: 24px 0;
+                 font-family: 'Courier New', monospace; direction: ltr; }}
+    .badge-info {{ background: #1a1a2e; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>AutoTradeIL</h1></div>
+    <div class="body">
+      <span class="badge badge-info">קוד אימות</span>
+      <h2>שלום, {business_name}</h2>
+      <p>להלן קוד האימות שלך. הקוד תקף ל-10 דקות בלבד.</p>
+      <div class="otp-code">{code}</div>
+      <p>אם לא ביקשת קוד אימות — ניתן להתעלם מהמייל הזה.</p>
+    </div>
+    <div class="footer">
+      AutoTradeIL &copy; 2026 &middot; המערכת המקצועית לסחר רכבים
+    </div>
+  </div>
+</body>
+</html>"""
+    return await _send(
+        to=to_email,
+        subject=f"🔐 קוד אימות AutoTradeIL: {code}",
+        html=html,
+    )
+
+
+async def send_kyc_approved(to_email: str, business_name: str) -> bool:
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>אימות הזהות אושר</title>
+  <style>{_BASE_STYLE}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>AutoTradeIL</h1></div>
+    <div class="body">
+      <span class="badge badge-ok">✓ אומת</span>
+      <h2>ברכות, {business_name}!</h2>
+      <p>אימות הזהות שלך (KYC) <strong>אושר</strong>. כעת יש לך גישה מלאה לשוק הסיטונאי B2B ולכל תכונות המערכת.</p>
+      <p style="text-align:center;">
+        <a class="cta" href="https://autotradeil.co.il/dashboard/marketplace">כניסה לשוק</a>
+      </p>
+    </div>
+    <div class="footer">
+      AutoTradeIL &copy; 2026 &middot; המערכת המקצועית לסחר רכבים
+    </div>
+  </div>
+</body>
+</html>"""
+    return await _send(
+        to=to_email,
+        subject="✅ אימות הזהות שלך ב-AutoTradeIL אושר",
+        html=html,
+    )
+
+
+async def send_kyc_rejected(to_email: str, business_name: str, reason: str) -> bool:
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>אימות הזהות נדחה</title>
+  <style>{_BASE_STYLE}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>AutoTradeIL</h1></div>
+    <div class="body">
+      <span class="badge badge-no">✗ לא אושר</span>
+      <h2>שלום, {business_name}</h2>
+      <p>אימות המסמכים שלך לא אושר בשלב זה.</p>
+      <div class="reason-box"><strong>סיבה:</strong> {reason}</div>
+      <p>ניתן להעלות מסמכים מתוקנים מתוך אזור "אבטחה" בלוח הבקרה.</p>
+      <p style="text-align:center;">
+        <a class="cta" href="https://autotradeil.co.il/dashboard/security">לאזור אבטחה</a>
+      </p>
+    </div>
+    <div class="footer">
+      AutoTradeIL &copy; 2026 &middot; המערכת המקצועית לסחר רכבים
+    </div>
+  </div>
+</body>
+</html>"""
+    return await _send(
+        to=to_email,
+        subject="עדכון על אימות הזהות ב-AutoTradeIL",
         html=html,
     )
 

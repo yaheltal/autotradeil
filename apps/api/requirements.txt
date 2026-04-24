@@ -15,3 +15,6 @@ resend==2.10.0
 cloudinary==1.44.2
 python-multipart==0.0.20
 anthropic==0.97.0
+twilio==9.10.5
+pyotp==2.9.0
+qrcode[pil]==8.2

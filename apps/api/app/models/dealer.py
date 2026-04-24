@@ -81,6 +81,42 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=True,
     )
 
+    # ---- Phase 3.5: OTP ----
+    otp_code_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    otp_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    otp_method: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="email",
+        server_default="email",
+    )
+    otp_send_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    otp_send_window_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # ---- Phase 3.5: TOTP 2FA ----
+    totp_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+
+    # ---- Phase 3.5: KYC ----
+    id_card_front_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    id_card_back_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dealer_license_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    kyc_status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+    kyc_rejected_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     __table_args__ = (
         UniqueConstraint("business_id", name="uq_dealers_business_id"),
         CheckConstraint(
