@@ -7,8 +7,28 @@
     "dev:web": "pnpm --filter @autotradeil/web dev",
     "dev:api": "cd apps/api && ./scripts/dev.sh",
     "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck"
+    "lint": "pnpm -r lint && pnpm format:check",
+    "lint:fix": "pnpm -r --no-bail exec eslint . --fix && pnpm format",
+    "typecheck": "pnpm -r typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css,yml,yaml}\"",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "eslint-config-prettier": "^9.1.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.11",
+    "prettier": "^3.4.2",
+    "prettier-plugin-tailwindcss": "^0.6.9"
+  },
+  "lint-staged": {
+    "apps/web/**/*.{ts,tsx,js,jsx}": [
+      "prettier --write",
+      "pnpm --filter @autotradeil/web exec eslint --fix"
+    ],
+    "**/*.{json,md,css,yml,yaml}": [
+      "prettier --write"
+    ]
   },
   "packageManager": "pnpm@9.15.0",
   "engines": {
