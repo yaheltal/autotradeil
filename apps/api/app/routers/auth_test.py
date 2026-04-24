@@ -42,3 +42,20 @@ async def dealer_only(
         "dealer_id": str(dealer.id),
         "business_name": dealer.business_name,
     }
+
+
+@router.get("/test/send-email")
+async def test_send_email() -> dict[str, object]:
+    """Dev-only: send both template emails to the admin address."""
+    from app.core.email import send_dealer_rejected, send_dealer_verified
+
+    ok1 = await send_dealer_verified(
+        to_email="talyahel4@gmail.com",
+        business_name="אוטו טסט בע״מ",
+    )
+    ok2 = await send_dealer_rejected(
+        to_email="talyahel4@gmail.com",
+        business_name="אוטו טסט בע״מ",
+        reason="רישיון סחר ברכב לא תקף",
+    )
+    return {"verified_sent": ok1, "rejected_sent": ok2}

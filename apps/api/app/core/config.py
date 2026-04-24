@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     # CORS — strict allowlist (JSON list or comma-separated string).
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
+    # Resend — transactional email
+    resend_api_key: str = Field(default="")
+    resend_from_email: str = Field(default="onboarding@resend.dev")
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:
