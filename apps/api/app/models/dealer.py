@@ -8,8 +8,10 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -28,8 +30,17 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=False,
         unique=True,
     )
+
+    # ---- business identity ----
     business_name: Mapped[str] = mapped_column(Text, nullable=False)
-    license_num: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    business_id: Mapped[str] = mapped_column(Text, nullable=False)
+    license_number: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    phone: Mapped[str] = mapped_column(Text, nullable=False)
+    city: Mapped[str] = mapped_column(Text, nullable=False)
+    lot_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    contact_name: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # ---- reputation / tier ----
     trust_score: Mapped[Decimal] = mapped_column(
         Numeric(5, 2),
         nullable=False,
@@ -71,6 +82,7 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
     )
 
     __table_args__ = (
+        UniqueConstraint("business_id", name="uq_dealers_business_id"),
         CheckConstraint(
             "trust_score >= 0 AND trust_score <= 100",
             name="dealers_trust_score_range",
@@ -78,6 +90,14 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         CheckConstraint(
             "tier IN ('bronze', 'silver', 'gold', 'platinum')",
             name="dealers_tier_check",
+        ),
+        CheckConstraint(
+            "business_id ~ '^[0-9]{9}$'",
+            name="ck_dealers_business_id_format",
+        ),
+        CheckConstraint(
+            "lot_size >= 1 AND lot_size <= 1000",
+            name="ck_dealers_lot_size_range",
         ),
         CheckConstraint(
             "(rejection_reason IS NULL) = (rejected_at IS NULL) "
@@ -105,4 +125,5 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
             postgresql_using="gin",
             postgresql_ops={"business_name": "gin_trgm_ops"},
         ),
+        Index("idx_dealers_city", "city"),
     )

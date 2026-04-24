@@ -262,10 +262,11 @@ async def require_verified_dealer(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Dealer profile not found",
         )
-    # `verified` lives on the user today; on the dealer profile we use
-    # User.verified as the gate. Adjust once a per-dealer verified field
-    # is added.
-    if not user.verified:
+    # Phase 2.1 added `dealers.verified` as the authoritative per-dealer
+    # gate. This is distinct from `users.verified` (which is Supabase's
+    # email-confirmation signal). A dealer is operable only once an admin
+    # approves their application.
+    if not dealer.verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Dealer not yet verified",
