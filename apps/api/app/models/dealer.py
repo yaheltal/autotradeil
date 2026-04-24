@@ -1,7 +1,17 @@
 import uuid
+from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, Numeric, Text, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Numeric,
+    Text,
+    text,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -33,6 +43,33 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         server_default="bronze",
     )
 
+    # ---- verification audit ----
+    verified: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verified_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # ---- rejection audit ----
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rejected_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    rejected_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         CheckConstraint(
             "trust_score >= 0 AND trust_score <= 100",
@@ -42,7 +79,30 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
             "tier IN ('bronze', 'silver', 'gold', 'platinum')",
             name="dealers_tier_check",
         ),
+        CheckConstraint(
+            "(rejection_reason IS NULL) = (rejected_at IS NULL) "
+            "AND (rejected_at IS NULL) = (rejected_by IS NULL)",
+            name="ck_dealers_rejection_consistency",
+        ),
+        CheckConstraint(
+            "(verified = false AND verified_at IS NULL AND verified_by IS NULL) "
+            "OR (verified = true AND verified_at IS NOT NULL "
+            "AND verified_by IS NOT NULL)",
+            name="ck_dealers_verification_consistency",
+        ),
         Index("idx_dealers_user_id", "user_id"),
         Index("idx_dealers_tier", "tier"),
         Index("idx_dealers_trust_score", text("trust_score DESC")),
+        Index(
+            "idx_dealers_verified_status",
+            "verified",
+            postgresql_where=text("verified = false"),
+        ),
+        Index("idx_dealers_created_at", text("created_at DESC")),
+        Index(
+            "idx_dealers_business_name_trgm",
+            "business_name",
+            postgresql_using="gin",
+            postgresql_ops={"business_name": "gin_trgm_ops"},
+        ),
     )
