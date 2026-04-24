@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import { Heebo } from "next/font/google";
+
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
+
 import "./globals.css";
 
 const heebo = Heebo({
@@ -28,6 +31,7 @@ export default function RootLayout({
         >
           דלג לתוכן הראשי
         </a>
+        <ImpersonationBanner />
         {children}
       </body>
     </html>
