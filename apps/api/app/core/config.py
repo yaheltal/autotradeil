@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     cloudinary_api_key: str = Field(default="")
     cloudinary_api_secret: str = Field(default="")
 
+    # Anthropic — vision model for AI image-based vehicle identification.
+    anthropic_api_key: str = Field(default="")
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:

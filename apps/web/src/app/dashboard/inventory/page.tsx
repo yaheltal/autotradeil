@@ -146,6 +146,7 @@ export default function InventoryPage() {
     setFormMode("edit");
     setEditingId(item.id);
     setEditingInitial({
+      id: item.id,
       make: item.make,
       model: item.model,
       year: item.year,
@@ -409,6 +410,14 @@ export default function InventoryPage() {
         onSubmit={submitItem}
         initial={editingInitial}
         mode={formMode}
+        token={token}
+        onManageImages={(vehicleId) => {
+          const vehicle = data?.items.find((v) => v.id === vehicleId);
+          if (!vehicle) return;
+          setFormOpen(false);
+          setImagesVehicle(vehicle);
+          setImagesOpen(true);
+        }}
       />
 
       <DeleteInventoryDialog

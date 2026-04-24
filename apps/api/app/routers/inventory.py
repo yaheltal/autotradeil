@@ -407,3 +407,198 @@ async def delete_image(
         )
 
     return {"ok": True, "id": str(image_id)}
+
+
+# ==========================================================================
+# Smart lookups — government plate registry + AI image recognition
+# ==========================================================================
+
+
+@router.get("/lookup/plate/{plate_number}")
+async def lookup_by_plate(
+    plate_number: str,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+) -> dict[str, object]:
+    """Israeli transport-ministry lookup (data.gov.il vehicle registry)."""
+    import httpx
+
+    clean = "".join(c for c in plate_number if c.isdigit())
+    if len(clean) < 6 or len(clean) > 9:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="מספר רכב לא תקין — יש להזין 6–9 ספרות",
+        )
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            resp = await client.get(
+                "https://data.gov.il/api/3/action/datastore_search",
+                params={
+                    "resource_id": "053cea08-09bc-40ec-8f7a-156f0677aff3",
+                    "q": clean,
+                    "limit": 1,
+                },
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("gov plate lookup network error: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="שגיאת רשת בחיפוש מספר הרכב",
+            )
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="שגיאה בחיפוש מספר הרכב",
+        )
+
+    records = resp.json().get("result", {}).get("records", [])
+    if not records:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="מספר רכב לא נמצא ברישומי רשות הרישוי",
+        )
+
+    r = records[0]
+
+    # gov.il fuel names → our enum
+    fuel_map = {
+        "בנזין": "petrol",
+        "דיזל": "diesel",
+        "חשמלי": "electric",
+        "היברידי": "hybrid",
+        "גז": "petrol",  # LPG falls back to petrol
+    }
+    fuel_raw = (r.get("sug_delek_nm") or "").strip()
+    fuel_type = fuel_map.get(fuel_raw)
+
+    # The registry's `kinuy_mishari` is "ALFA ROMEO 159" — strip the make prefix
+    # so the model field gets just the model name.
+    make_he = (r.get("tozeret_nm") or "").strip()
+    model_raw = (r.get("kinuy_mishari") or r.get("degem_nm") or "").strip()
+    # Remove common English make prefix (case-insensitive) from model if present
+    make_prefixes = [make_he.upper(), make_he.split()[0].upper() if make_he else ""]
+    model_clean = model_raw
+    for prefix in make_prefixes:
+        if prefix and model_clean.upper().startswith(prefix):
+            model_clean = model_clean[len(prefix):].strip()
+            break
+
+    return {
+        "make": make_he,
+        "model": model_clean or model_raw,
+        "year": r.get("shnat_yitzur"),
+        "color": (r.get("tzeva_rechev") or "").strip() or None,
+        "fuel_type": fuel_type,
+        "plate_number": clean,
+    }
+
+
+@router.post("/lookup/image")
+async def lookup_by_image(
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    file: UploadFile = File(...),
+) -> dict[str, object | None]:
+    """Identify vehicle (make/model/year/color) from a user-supplied image
+    using Claude's vision model. Returns best-effort guess or nulls."""
+    import base64
+    import json as json_stdlib
+
+    import anthropic
+
+    from app.core.config import settings as app_settings
+
+    if not app_settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="שירות זיהוי לא מוגדר",
+        )
+
+    if file.content_type not in ALLOWED_IMAGE_MIME:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="סוג קובץ לא נתמך",
+        )
+
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="הקובץ גדול מדי (מקסימום 10MB)",
+        )
+
+    image_b64 = base64.standard_b64encode(contents).decode("ascii")
+    media_type = (
+        "image/jpeg" if file.content_type == "image/heic" else file.content_type
+    )
+
+    client = anthropic.Anthropic(api_key=app_settings.anthropic_api_key)
+
+    try:
+        message = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=300,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_b64,
+                            },
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Identify the vehicle in this image. Return ONLY a JSON object "
+                                "with these fields:\n"
+                                "{\n"
+                                '  "make": "manufacturer in Hebrew when there is an Israeli market name, otherwise English",\n'
+                                '  "model": "model name (Hebrew if applicable, otherwise English)",\n'
+                                '  "year": estimated year as integer or null,\n'
+                                '  "color": "color in Hebrew"\n'
+                                "}\n"
+                                'If you cannot identify, return {"make": null, "model": null, "year": null, "color": null}.\n'
+                                "Return ONLY the JSON, no other text."
+                            ),
+                        },
+                    ],
+                }
+            ],
+        )
+    except anthropic.APIError as exc:
+        logger.warning("anthropic vision call failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="שירות הזיהוי לא זמין כרגע",
+        )
+
+    # First content block is text in the happy path
+    text_block = ""
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            text_block = block.text
+            break
+
+    try:
+        # Be tolerant of leading/trailing whitespace or code fences
+        cleaned = text_block.strip()
+        if cleaned.startswith("```"):
+            cleaned = cleaned.split("```")[1]
+            if cleaned.startswith("json"):
+                cleaned = cleaned[4:]
+            cleaned = cleaned.strip()
+        parsed = json_stdlib.loads(cleaned)
+    except (json_stdlib.JSONDecodeError, IndexError):
+        parsed = {"make": None, "model": None, "year": None, "color": None}
+
+    # Normalize output
+    return {
+        "make": parsed.get("make") or None,
+        "model": parsed.get("model") or None,
+        "year": parsed.get("year") if isinstance(parsed.get("year"), int) else None,
+        "color": parsed.get("color") or None,
+    }
