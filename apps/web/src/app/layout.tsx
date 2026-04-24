@@ -10,8 +10,7 @@ const heebo = Heebo({
 
 export const metadata: Metadata = {
   title: "AutoTradeIL — פלטפורמת מסחר רכב לסוחרים וצרכנים בישראל",
-  description:
-    "זירת מסחר ברכבים לסוחרים מוסמכים ולצרכנים פרטיים — מלאי, הצעות, ועסקאות במקום אחד.",
+  description: "זירת מסחר ברכבים לסוחרים מוסמכים ולצרכנים פרטיים — מלאי, הצעות, ועסקאות במקום אחד.",
 };
 
 export default function RootLayout({
@@ -21,12 +20,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl">
-      <body
-        className={`${heebo.variable} font-sans antialiased bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100`}
-      >
+      <body className={`${heebo.variable} bg-brand-cream text-brand-ink font-sans antialiased`}>
+        {/* Skip link — always first focusable. Navy background + cream text ≥ 15:1 contrast. */}
         <a
           href="#main"
-          className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:start-4 focus:z-50 focus:bg-blue-700 focus:text-white focus:px-4 focus:py-2 focus:rounded-md focus:outline-none focus:ring-2 focus:ring-white"
+          className="focus:bg-brand-navy focus:text-brand-cream focus:ring-brand-gold sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:px-4 focus:py-2 focus:outline-none focus:ring-2"
         >
           דלג לתוכן הראשי
         </a>
