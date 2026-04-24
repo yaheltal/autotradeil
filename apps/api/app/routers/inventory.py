@@ -414,6 +414,79 @@ async def delete_image(
 # ==========================================================================
 
 
+# TODO Phase 6: replace gov.il price with internal market price calculated
+# from our own inventory data (as dealer activity accumulates, our own
+# aggregate is more trustworthy than the ministry's average list).
+async def _get_govil_price(make: str, model: str, year: int) -> int | None:
+    """Best-effort new-car price lookup against the gov.il importers price
+    list (resource `39f455bf-…`, dataset `יבואנים ומחירוני רכב חדש`).
+
+    Fields on that resource: tozeret_nm, degem_nm, kinuy_mishari,
+    shnat_yitzur, mehir. We take the mean of matching rows, preferring
+    rows within ±1 year of the requested year. On any network or parsing
+    failure returns None — this is a nice-to-have hint, never blocks the
+    plate/image lookup flow.
+    """
+    import httpx
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                "https://data.gov.il/api/3/action/datastore_search",
+                params={
+                    "resource_id": "39f455bf-6db0-4926-859d-017f34eacbcb",
+                    "q": f"{make} {model}".strip(),
+                    "limit": 20,
+                },
+            )
+        if resp.status_code != 200:
+            return None
+        records = resp.json().get("result", {}).get("records", [])
+        if not records:
+            return None
+
+        preferred: list[int] = []
+        fallback: list[int] = []
+        for r in records:
+            try:
+                price = int(r.get("mehir") or 0)
+            except (TypeError, ValueError):
+                continue
+            if price <= 0:
+                continue
+            try:
+                rec_year = int(r.get("shnat_yitzur") or 0)
+            except (TypeError, ValueError):
+                rec_year = 0
+            fallback.append(price)
+            if rec_year == 0 or abs(rec_year - year) <= 1:
+                preferred.append(price)
+
+        pool = preferred or fallback
+        if not pool:
+            return None
+        return int(sum(pool) / len(pool))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@router.get("/lookup/price-hint")
+async def lookup_price_hint(
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    make: str = Query(min_length=1, max_length=100),
+    model: str = Query(min_length=1, max_length=100),
+    year: int = Query(ge=1900, le=2030),
+) -> dict[str, int | None]:
+    """Live market-price hint for a given make/model/year.
+
+    Used by the inventory form dialog to display a non-binding hint
+    below the price field as the dealer fills in identity fields.
+    Never fails — returns `{"price": null}` when nothing is found.
+    """
+    price = await _get_govil_price(make, model, year)
+    return {"price": price}
+
+
 @router.get("/lookup/plate/{plate_number}")
 async def lookup_by_plate(
     plate_number: str,
@@ -484,6 +557,14 @@ async def lookup_by_plate(
             model_clean = model_clean[len(prefix):].strip()
             break
 
+    try:
+        year_int = int(r.get("shnat_yitzur") or 0)
+    except (TypeError, ValueError):
+        year_int = 0
+
+    # Market price hint — best-effort, never blocks the response.
+    market_price = await _get_govil_price(make_he, model_clean or model_raw, year_int)
+
     return {
         "make": make_he,
         "model": model_clean or model_raw,
@@ -491,6 +572,7 @@ async def lookup_by_plate(
         "color": (r.get("tzeva_rechev") or "").strip() or None,
         "fuel_type": fuel_type,
         "plate_number": clean,
+        "market_price": market_price,
     }
 
 
@@ -596,9 +678,19 @@ async def lookup_by_image(
         parsed = {"make": None, "model": None, "year": None, "color": None}
 
     # Normalize output
-    return {
+    result: dict[str, object | None] = {
         "make": parsed.get("make") or None,
         "model": parsed.get("model") or None,
         "year": parsed.get("year") if isinstance(parsed.get("year"), int) else None,
         "color": parsed.get("color") or None,
     }
+
+    # Market price hint — only if we have all three identity bits.
+    if result["make"] and result["model"] and isinstance(result["year"], int):
+        result["market_price"] = await _get_govil_price(
+            str(result["make"]), str(result["model"]), int(result["year"])
+        )
+    else:
+        result["market_price"] = None
+
+    return result

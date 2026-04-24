@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes } from "react";
+import type { InputHTMLAttributes, ReactNode } from "react";
 import type { UseFormRegisterReturn } from "react-hook-form";
 
 /**
@@ -16,7 +16,7 @@ import type { UseFormRegisterReturn } from "react-hook-form";
 type FormFieldProps = {
   id: string;
   label: string;
-  hint?: string;
+  hint?: ReactNode;
   error?: string;
   type?: InputHTMLAttributes<HTMLInputElement>["type"];
   inputMode?: InputHTMLAttributes<HTMLInputElement>["inputMode"];

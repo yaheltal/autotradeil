@@ -41,6 +41,24 @@ type Props = {
 
 const IL_NUMERIC = /^\d+$/;
 
+// Engine displacement options — closed list. "0.0" is the electric
+// sentinel (submitted as null so the backend's >= 0.5 check passes).
+const ENGINE_OPTIONS: { value: string; label: string }[] = [
+  { value: "", label: "בחר נפח מנוע..." },
+  { value: "1.0", label: '1.0 ליטר (1000 סמ"ק)' },
+  { value: "1.2", label: '1.2 ליטר (1200 סמ"ק)' },
+  { value: "1.4", label: '1.4 ליטר (1400 סמ"ק)' },
+  { value: "1.5", label: '1.5 ליטר (1500 סמ"ק)' },
+  { value: "1.6", label: '1.6 ליטר (1600 סמ"ק)' },
+  { value: "1.8", label: '1.8 ליטר (1800 סמ"ק)' },
+  { value: "2.0", label: '2.0 ליטר (2000 סמ"ק)' },
+  { value: "2.5", label: '2.5 ליטר (2500 סמ"ק)' },
+  { value: "3.0", label: '3.0 ליטר (3000 סמ"ק)' },
+  { value: "3.5", label: '3.5 ליטר (3500 סמ"ק)' },
+  { value: "4.0", label: '4.0 ליטר (4000 סמ"ק)' },
+  { value: "0.0", label: "חשמלי (ללא מנוע)" },
+];
+
 const schema = z.object({
   // `make` / `model` validated via the combobox component; zod still
   // enforces non-empty so the form can flag them on submit.
@@ -72,19 +90,37 @@ const schema = z.object({
       z.literal(""),
     ])
     .optional(),
-  engine_volume: z
-    .string()
-    .optional()
-    .refine((v) => {
-      if (!v) return true;
-      if (!/^\d+(\.\d+)?$/.test(v)) return false;
-      const n = parseFloat(v);
-      return n >= 0.5 && n <= 9.9;
-    }, "נפח מנוע בין 0.5 ל-9.9"),
+  // Closed allowlist — values must match ENGINE_OPTIONS below.
+  // "" = not selected, "0.0" = electric sentinel (submitted as null).
+  engine_volume: z.enum([
+    "",
+    "1.0",
+    "1.2",
+    "1.4",
+    "1.5",
+    "1.6",
+    "1.8",
+    "2.0",
+    "2.5",
+    "3.0",
+    "3.5",
+    "4.0",
+    "0.0",
+  ]),
   notes: z.string().max(2000, "הערות ארוכות מדי").optional().or(z.literal("")),
 });
 
 type FormValues = z.infer<typeof schema>;
+
+// Coerce any incoming engine_volume (free-text from pre-allowlist rows) to
+// the closed set. Values outside the list fall back to "" so the form
+// resolver doesn't throw on legacy inventory rows.
+function normalizeEngineVolume(n: number | null | undefined): FormValues["engine_volume"] {
+  if (n == null) return "";
+  const s = String(n);
+  const allowed = ENGINE_OPTIONS.map((o) => o.value);
+  return (allowed.includes(s) ? s : "") as FormValues["engine_volume"];
+}
 
 function toFormValues(v: InventoryInitial | null | undefined): FormValues {
   return {
@@ -96,7 +132,7 @@ function toFormValues(v: InventoryInitial | null | undefined): FormValues {
     color: v?.color ?? "",
     transmission: (v?.transmission ?? "") as FormValues["transmission"],
     fuel_type: (v?.fuel_type ?? "") as FormValues["fuel_type"],
-    engine_volume: v?.engine_volume != null ? String(v.engine_volume) : "",
+    engine_volume: normalizeEngineVolume(v?.engine_volume ?? null),
     notes: v?.notes ?? "",
   };
 }
@@ -109,12 +145,14 @@ type PlateLookupResult = {
   color: string | null;
   fuel_type: FuelType | null;
   plate_number: string;
+  market_price: number | null;
 };
 type ImageLookupResult = {
   make: string | null;
   model: string | null;
   year: number | null;
   color: string | null;
+  market_price: number | null;
 };
 
 export function InventoryFormDialog({
@@ -174,6 +212,27 @@ export function InventoryFormDialog({
   // Live-region for combobox revert announcements
   const [comboStatus, setComboStatus] = useState<string>("");
 
+  // TODO Phase 6: replace gov.il price with internal market price calculated
+  // from our own inventory data. Until then we display the ministry's
+  // new-car list price as a non-binding hint.
+  const [marketPriceHint, setMarketPriceHint] = useState<number | null>(null);
+  // Separate sr-only live region — announcement-only, NOT wired into
+  // aria-describedby. Keyed on value to force re-render of the status
+  // message when a new price arrives (SRs reliably re-announce then).
+  const [priceHintStatus, setPriceHintStatus] = useState<string>("");
+  // Dedupe across plate/image lookups AND the live effect: never announce
+  // the same price twice in a row.
+  const lastAnnouncedPrice = useRef<number | null>(null);
+
+  const announcePrice = useCallback((price: number | null) => {
+    // Announce only on transition-to-number, and only if the value differs
+    // from the previously announced one. Never announce on transition-to-null.
+    if (price == null || price <= 0) return;
+    if (lastAnnouncedPrice.current === price) return;
+    lastAnnouncedPrice.current = price;
+    setPriceHintStatus(`מחיר מחירון חדש: ${price.toLocaleString("he-IL")} שקלים`);
+  }, []);
+
   // Reset when dialog opens for a different item
   useEffect(() => {
     if (open) {
@@ -186,8 +245,56 @@ export function InventoryFormDialog({
       setImgStatus("");
       setImgError("");
       setComboStatus("");
+      setMarketPriceHint(null);
+      setPriceHintStatus("");
+      lastAnnouncedPrice.current = null;
     }
   }, [open, initial, reset]);
+
+  // Live market-price hint — debounced fetch whenever make+model+year
+  // are all valid. Clears synchronously on invalid input so stale hints
+  // never flash under the price field.
+  const watchedModel = watch("model");
+  const watchedYear = watch("year");
+
+  useEffect(() => {
+    if (!open) return;
+    const yearNum = parseInt(String(watchedYear), 10);
+    const allValid =
+      !!watchMake &&
+      !!watchedModel &&
+      Number.isFinite(yearNum) &&
+      yearNum >= 1900 &&
+      yearNum <= 2030 &&
+      !!token;
+
+    if (!allValid) {
+      setMarketPriceHint(null);
+      lastAnnouncedPrice.current = null;
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({
+          make: watchMake,
+          model: watchedModel,
+          year: String(yearNum),
+        });
+        const res = await apiFetch<{ price: number | null }>(
+          `/api/v1/inventory/lookup/price-hint?${params.toString()}`,
+          { token },
+        );
+        const mp = res.price && res.price > 0 ? res.price : null;
+        setMarketPriceHint(mp);
+        announcePrice(mp);
+      } catch {
+        setMarketPriceHint(null);
+      }
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [open, watchMake, watchedModel, watchedYear, token, announcePrice]);
 
   const applyAutoFill = useCallback(
     (
@@ -270,6 +377,9 @@ export function InventoryFormDialog({
         },
         "מספר רכב",
       );
+      const mp = res.market_price && res.market_price > 0 ? res.market_price : null;
+      setMarketPriceHint(mp);
+      announcePrice(mp);
       setPlateStatus("הפרטים מולאו אוטומטית ✓");
     } catch (e) {
       setPlateStatus("");
@@ -303,6 +413,9 @@ export function InventoryFormDialog({
       const data = (await res.json()) as ImageLookupResult;
       if (data.make || data.model) {
         applyAutoFill(data, "זיהוי מתמונה");
+        const mp = data.market_price && data.market_price > 0 ? data.market_price : null;
+        setMarketPriceHint(mp);
+        announcePrice(mp);
         setImgStatus("הרכב זוהה ✓");
       } else {
         setImgStatus("");
@@ -326,7 +439,11 @@ export function InventoryFormDialog({
       color: values.color ? values.color : null,
       transmission: values.transmission === "" ? null : (values.transmission ?? null),
       fuel_type: values.fuel_type === "" ? null : (values.fuel_type ?? null),
-      engine_volume: values.engine_volume ? parseFloat(values.engine_volume) : null,
+      // "" = not selected, "0.0" = electric sentinel → both submit as null
+      engine_volume:
+        values.engine_volume && values.engine_volume !== "0.0"
+          ? parseFloat(values.engine_volume)
+          : null,
       notes: values.notes ? values.notes : null,
     };
     try {
@@ -364,6 +481,22 @@ export function InventoryFormDialog({
             {comboStatus ? (
               <p role="status" aria-live="polite" className="sr-only" key={comboStatus}>
                 {comboStatus}
+              </p>
+            ) : null}
+
+            {/* Dedicated live region for the market-price hint. Separate from
+                comboStatus so blur-revert announcements don't clobber price
+                notifications (and vice versa). Announcement-only — NOT wired
+                into any aria-describedby. */}
+            {priceHintStatus ? (
+              <p
+                role="status"
+                aria-live="polite"
+                aria-atomic="true"
+                className="sr-only"
+                key={priceHintStatus}
+              >
+                {priceHintStatus}
               </p>
             ) : null}
 
@@ -597,6 +730,14 @@ export function InventoryFormDialog({
                   autoComplete="off"
                   registration={register("price")}
                   error={errors.price?.message}
+                  hint={
+                    marketPriceHint ? (
+                      <>
+                        <span aria-hidden="true">💡 </span>
+                        {`מחיר מחירון רכב חדש: ₪${marketPriceHint.toLocaleString("he-IL")} (לצורך השוואה בלבד)`}
+                      </>
+                    ) : undefined
+                  }
                 />
                 <HighlightedField
                   id="inv-color"
@@ -638,14 +779,12 @@ export function InventoryFormDialog({
                   ]}
                 />
 
-                <HighlightedField
+                <SelectField
                   id="inv-engine"
                   label="נפח מנוע (ליטרים)"
-                  hint="בין 0.5 ל-9.9"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  registration={register("engine_volume")}
                   error={errors.engine_volume?.message}
+                  registration={register("engine_volume")}
+                  options={ENGINE_OPTIONS}
                 />
               </div>
 
@@ -774,6 +913,7 @@ function SelectField({
       </label>
       <select
         id={id}
+        dir="rtl"
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? errorId : undefined}
         {...registration}
