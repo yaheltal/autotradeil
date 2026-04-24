@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     # Generate with:  python3 -c 'import secrets; print(secrets.token_hex(32))'
     impersonation_secret: str = Field(default="")
 
+    # Cloudinary — image uploads (server-side signing; cloud name also
+    # exposed to the browser as NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME).
+    cloudinary_cloud_name: str = Field(default="")
+    cloudinary_api_key: str = Field(default="")
+    cloudinary_api_secret: str = Field(default="")
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:

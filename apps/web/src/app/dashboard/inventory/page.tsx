@@ -13,6 +13,7 @@ import {
   InventoryFormDialog,
 } from "@/components/InventoryFormDialog";
 import { StatusBadge, type InventoryStatus } from "@/components/StatusBadge";
+import { VehicleImagesDialog } from "@/components/VehicleImagesDialog";
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
 import { createClient } from "@/lib/supabase";
@@ -91,6 +92,9 @@ export default function InventoryPage() {
 
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deletingItem, setDeletingItem] = useState<Item | null>(null);
+
+  const [imagesOpen, setImagesOpen] = useState(false);
+  const [imagesVehicle, setImagesVehicle] = useState<Item | null>(null);
 
   // Auth bootstrap
   useEffect(() => {
@@ -354,27 +358,40 @@ export default function InventoryPage() {
                           ) : null}
                         </dl>
 
-                        <div className="mt-5 flex gap-2">
+                        <div className="mt-5 space-y-2">
                           <button
-                            ref={(el) => {
-                              if (el) editBtnRefs.current.set(item.id, el);
-                              else editBtnRefs.current.delete(item.id);
+                            type="button"
+                            onClick={() => {
+                              setImagesVehicle(item);
+                              setImagesOpen(true);
                             }}
-                            type="button"
-                            onClick={() => openEdit(item)}
-                            aria-label={`עריכת ${fullLabel}`}
-                            className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                            aria-label={`ניהול תמונות של ${fullLabel}`}
+                            className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
                           >
-                            עריכה
+                            ניהול תמונות
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => openDelete(item)}
-                            aria-label={`מחיקת ${fullLabel}`}
-                            className="border-danger text-danger-text hover:bg-danger-bg focus-visible:outline-danger-text inline-flex min-h-11 flex-1 items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                          >
-                            מחיקה
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                              ref={(el) => {
+                                if (el) editBtnRefs.current.set(item.id, el);
+                                else editBtnRefs.current.delete(item.id);
+                              }}
+                              type="button"
+                              onClick={() => openEdit(item)}
+                              aria-label={`עריכת ${fullLabel}`}
+                              className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                            >
+                              עריכה
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openDelete(item)}
+                              aria-label={`מחיקת ${fullLabel}`}
+                              className="border-danger text-danger-text hover:bg-danger-bg focus-visible:outline-danger-text inline-flex min-h-11 flex-1 items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                            >
+                              מחיקה
+                            </button>
+                          </div>
                         </div>
                       </article>
                     </li>
@@ -402,6 +419,23 @@ export default function InventoryPage() {
           deletingItem ? `${deletingItem.make} ${deletingItem.model} שנת ${deletingItem.year}` : ""
         }
       />
+
+      {imagesVehicle ? (
+        <VehicleImagesDialog
+          open={imagesOpen}
+          onOpenChange={(open) => {
+            setImagesOpen(open);
+            if (!open) setImagesVehicle(null);
+          }}
+          vehicle={{
+            id: imagesVehicle.id,
+            make: imagesVehicle.make,
+            model: imagesVehicle.model,
+            year: imagesVehicle.year,
+          }}
+          token={token}
+        />
+      ) : null}
     </div>
   );
 }
