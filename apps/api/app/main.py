@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger, log_request
-from app.routers import admin, auth_test, dealers, health, signup
+from app.routers import admin, auth_test, dealers, health, inventory, signup
 
 
 @asynccontextmanager
@@ -71,6 +71,7 @@ app.include_router(auth_test.router)
 app.include_router(signup.router)
 app.include_router(dealers.router)
 app.include_router(admin.router)
+app.include_router(inventory.router)
 
 
 @app.get("/")

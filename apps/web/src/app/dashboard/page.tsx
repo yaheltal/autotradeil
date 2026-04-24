@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 
@@ -151,6 +152,8 @@ export default function DashboardPage() {
           </button>
         </div>
       </header>
+
+      <DashboardSubNav />
 
       <div className="mx-auto max-w-5xl px-6 py-12">
         <h1

@@ -9,6 +9,12 @@ from app.schemas.admin import (
     VerifyDealerRequest,
 )
 from app.schemas.dealer import DealerResponse, DealerSignupRequest, SignupResponse
+from app.schemas.inventory import (
+    InventoryItemCreate,
+    InventoryItemResponse,
+    InventoryItemUpdate,
+    InventoryListResponse,
+)
 
 __all__ = [
     "AdminStatsResponse",
@@ -19,6 +25,10 @@ __all__ = [
     "DealerResponse",
     "DealerSignupRequest",
     "ImpersonationResponse",
+    "InventoryItemCreate",
+    "InventoryItemResponse",
+    "InventoryItemUpdate",
+    "InventoryListResponse",
     "RejectDealerRequest",
     "SignupResponse",
     "VerifyDealerRequest",

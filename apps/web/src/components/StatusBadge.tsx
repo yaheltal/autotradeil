@@ -1,17 +1,23 @@
 /*
- * Dealer status badge.
- * Color + border carry visual cues; accessible name carries the full
- * phrase so "not color-only" (SC 1.4.1) is satisfied.
+ * Status badge used for both dealer-approval and inventory-item status.
+ * Text labels are the primary signal; color is reinforcement (not
+ * color-only, per WCAG 1.4.1).
  *
- * Contrast (all AAA):
- *   pending  bg #fef3c7 text #78350f  → ~10:1
- *   verified bg #dcfce7 text #14532d  → 11:1
- *   rejected bg #fee2e2 text #7f1d1d  → 10.6:1
+ * Contrast (all AAA, ≥ 10:1):
+ *   pending  #fef3c7 / #78350f
+ *   verified #dcfce7 / #14532d    (dealer approved)
+ *   rejected #fee2e2 / #7f1d1d
+ *   active   #dcfce7 / #14532d    (inventory active)
+ *   sold     #e2e8f0 / #1e293b    (inventory sold — slate)
+ *   hidden   #fef3c7 / #78350f    (inventory hidden — amber)
  */
 
 export type DealerStatus = "pending" | "verified" | "rejected";
+export type InventoryStatus = "active" | "sold" | "hidden";
 
-const MAP: Record<DealerStatus, { label: string; aria: string; cls: string }> = {
+type Entry = { label: string; aria: string; cls: string };
+
+const MAP: Record<DealerStatus | InventoryStatus, Entry> = {
   pending: {
     label: "ממתין",
     aria: "סטטוס: ממתין לאישור",
@@ -27,9 +33,24 @@ const MAP: Record<DealerStatus, { label: string; aria: string; cls: string }> = 
     aria: "סטטוס: נדחה",
     cls: "bg-danger-bg text-danger-text ring-danger/30",
   },
+  active: {
+    label: "פעיל",
+    aria: "סטטוס: פעיל",
+    cls: "bg-ok-bg text-ok-text ring-ok/30",
+  },
+  sold: {
+    label: "נמכר",
+    aria: "סטטוס: נמכר",
+    cls: "bg-slate-200 text-slate-800 ring-slate-400/30",
+  },
+  hidden: {
+    label: "מוסתר",
+    aria: "סטטוס: מוסתר",
+    cls: "bg-amber-100 text-amber-900 ring-amber-600/30",
+  },
 };
 
-export function StatusBadge({ status }: { status: DealerStatus }) {
+export function StatusBadge({ status }: { status: DealerStatus | InventoryStatus }) {
   const { label, aria, cls } = MAP[status];
   return (
     <span
