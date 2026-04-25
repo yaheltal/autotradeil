@@ -196,3 +196,18 @@ Single migration + single backend deploy + single frontend deploy. No feature fl
 - Q: B2B Deal integration — auto-fill or fully manual? **A: Manual flow with smart pre-fill from Deal.** (User chose option B with hint enhancement.)
 - Q: Warranty type — dropdown or free text? **A: Dropdown enum.** (User accepted recommendation.)
 - Q: Warranty duration — DATE or months remaining? **A: DATE expiration.** (User accepted recommendation.)
+
+## Addendum (Telegram msg 171, post-approval)
+
+**Auto-set ID photo as the vehicle profile image.**
+
+When the dealer uses the "identify from photo" flow during create, the photo they chose for identification should automatically become the vehicle's primary image (position=0 in `inventory_images`). Replaceable later via the existing `VehicleImagesDialog`.
+
+Implementation:
+
+- The `InventoryFormDialog` already holds the `imgFile` in component state.
+- After the inventory row is successfully created (existing `onSubmit` succeeds with a returned `id`), if `imgFile` is set, immediately POST it to `/api/v1/inventory/{id}/images` (existing endpoint) with the default `position=0`.
+- No backend change required — the image-upload endpoint already exists and handles position assignment.
+- Surface a non-blocking toast ("התמונה נשמרה כתמונת פרופיל") and tolerate failure (image upload is best-effort, the inventory row is already created).
+
+Edit mode is unchanged — there's no implicit photo-to-profile behavior because there's no identification flow on edit.
