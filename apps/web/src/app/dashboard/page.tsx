@@ -7,6 +7,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { DealerStatsCards } from "@/components/DealerStatsCards";
 import { ProfileEditor } from "@/components/ProfileEditor";
+import { SuspensionBanner } from "@/components/SuspensionBanner";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 
@@ -152,6 +153,7 @@ export default function DashboardPage() {
 
   return (
     <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
+      <SuspensionBanner token={token} />
       <header className="border-brand-navy/10 border-b bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
           <BrandMark />

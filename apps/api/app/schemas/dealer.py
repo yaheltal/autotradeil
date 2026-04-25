@@ -64,6 +64,10 @@ class DealerResponse(BaseModel):
     logo_url: str | None = None
     suspended_at: datetime | None = None
     suspended_reason: str | None = None
+    # Phase 6.7 — admin moderation
+    suspension_silent: bool = False
+    archived_at: datetime | None = None
+    archived_reason: str | None = None
     notification_offers: bool = True
     notification_deals: bool = True
     notification_updates: bool = True
