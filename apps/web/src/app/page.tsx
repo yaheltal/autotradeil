@@ -85,10 +85,10 @@ export default function Home() {
               <Image
                 src="/logo-full.png"
                 alt="AutoTradeIL"
-                width={1408}
-                height={768}
+                width={1095}
+                height={361}
                 priority
-                className="h-11 w-auto transition-transform group-hover:scale-[1.03] sm:h-14"
+                className="h-10 w-auto transition-transform group-hover:scale-[1.03] sm:h-14"
               />
             </Link>
             <ul className="hidden items-center gap-1 sm:flex">
@@ -154,7 +154,7 @@ export default function Home() {
           <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-16 text-center sm:px-6 sm:pb-24 sm:pt-24 lg:pt-32">
             <h1
               id="hero-heading"
-              className="text-brand-navy font-serif text-4xl font-bold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl"
+              className="text-brand-navy font-serif text-[2.25rem] font-bold leading-[1.1] tracking-tight sm:text-6xl lg:text-7xl"
             >
               זירת המסחר
               <br />
@@ -163,17 +163,16 @@ export default function Home() {
               <span className="text-brand-navy/90">הרכב.</span>
             </h1>
 
-            <p className="text-brand-ink/80 mx-auto mt-7 max-w-2xl text-lg leading-relaxed sm:text-xl">
+            <p className="text-brand-ink/80 mx-auto mt-6 max-w-2xl text-base leading-relaxed sm:mt-7 sm:text-xl">
               פלטפורמה מקצועית למסחר ברכבים בין סוחרים מוסמכים — מלאי משותף, הצעות מתועדות, וזירה
               אחת לכל מחזור החיים של העסקה.
             </p>
 
-            {/* CTAs — active dealer signup + disabled buyer (coming soon).
-                Disabled <button> + sr-only explanation + visible chip + tooltip. */}
-            <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row sm:items-stretch">
+            {/* CTAs — full-width stacked on mobile (primary platform), inline on sm+. */}
+            <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:mt-10 sm:flex-row">
               <Link
                 href="/signup/dealer"
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/10 group inline-flex min-h-14 w-full max-w-sm items-center justify-center gap-2 rounded-md px-7 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto sm:text-lg"
+                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/10 group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-md px-5 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto sm:px-7 sm:text-lg"
               >
                 <span>אני סוחר — הצטרפות</span>
                 <span
@@ -189,7 +188,7 @@ export default function Home() {
                 disabled
                 title="ממש ממש עוד מעט, סבלנות 😊"
                 aria-describedby="buyer-cta-hint"
-                className="bg-brand-navy/5 text-brand-navy/60 border-brand-navy/10 inline-flex min-h-14 w-full max-w-sm cursor-not-allowed items-center justify-center gap-3 rounded-md border px-7 py-3.5 text-base font-semibold sm:w-auto sm:text-lg"
+                className="bg-brand-navy/5 text-brand-navy/60 border-brand-navy/10 inline-flex min-h-[52px] w-full cursor-not-allowed items-center justify-center gap-3 rounded-md border px-5 py-3.5 text-base font-semibold sm:w-auto sm:px-7 sm:text-lg"
               >
                 <span>אני קונה</span>
                 <span
@@ -204,7 +203,7 @@ export default function Home() {
               </span>
             </div>
 
-            <p className="text-brand-ink/60 mt-6 text-sm">
+            <p className="text-brand-ink/65 mt-6 text-sm">
               הצטרפות ללא עלות · אישור סוחר תוך 24 שעות · אימות KYC חכם בעזרת AI
             </p>
           </div>
@@ -232,7 +231,7 @@ export default function Home() {
                 <p className="text-brand-gold font-serif text-3xl font-bold leading-none sm:text-4xl lg:text-5xl">
                   {s.value}
                 </p>
-                <p className="text-brand-cream/80 mt-3 text-sm font-medium leading-snug sm:text-base">
+                <p className="text-brand-cream/80 mt-3 text-base font-medium leading-snug">
                   {s.label}
                 </p>
               </div>
@@ -305,14 +304,14 @@ export default function Home() {
               <p className="text-brand-navy/70 text-xs font-semibold uppercase tracking-[0.2em]">
                 האפליקציה לקונים — בקרוב
               </p>
-              <div className="mt-4 flex flex-col items-center justify-center gap-3 sm:flex-row">
+              <div className="mt-4 flex flex-row items-stretch justify-center gap-3">
                 {/* Apple App Store badge */}
                 <button
                   type="button"
                   disabled
                   title="ממש ממש עוד מעט, סבלנות 😊"
                   aria-describedby="appstore-hint"
-                  className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/65 inline-flex min-h-14 w-full max-w-[220px] cursor-not-allowed items-center gap-3 rounded-xl border px-5 py-2.5 text-start"
+                  className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/65 inline-flex min-h-[52px] flex-1 cursor-not-allowed items-center gap-2.5 rounded-xl border px-3 py-2.5 text-start sm:flex-initial sm:px-5"
                 >
                   {/* Apple logo */}
                   <svg
@@ -338,7 +337,7 @@ export default function Home() {
                   disabled
                   title="ממש ממש עוד מעט, סבלנות 😊"
                   aria-describedby="playstore-hint"
-                  className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/65 inline-flex min-h-14 w-full max-w-[220px] cursor-not-allowed items-center gap-3 rounded-xl border px-5 py-2.5 text-start"
+                  className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/65 inline-flex min-h-[52px] flex-1 cursor-not-allowed items-center gap-2.5 rounded-xl border px-3 py-2.5 text-start sm:flex-initial sm:px-5"
                 >
                   {/* Google Play triangle */}
                   <svg
@@ -471,28 +470,28 @@ export default function Home() {
             ================================================================= */}
         <section aria-labelledby="cta-heading" className="relative">
           <div className="mx-auto max-w-5xl px-4 pb-20 pt-4 sm:px-6 sm:pb-24">
-            <div className="border-brand-navy/15 from-brand-cream to-brand-cream/40 relative overflow-hidden rounded-2xl border bg-gradient-to-br p-8 sm:p-12 lg:p-16">
+            <div className="border-brand-navy/15 from-brand-cream to-brand-cream/40 relative overflow-hidden rounded-2xl border bg-gradient-to-br p-6 sm:p-12 lg:p-16">
               <div
                 aria-hidden="true"
                 className="bg-brand-gold absolute start-0 top-0 h-1.5 w-32 sm:w-48"
               />
-              <div className="grid gap-8 lg:grid-cols-[1.4fr_1fr] lg:items-center lg:gap-12">
+              <div className="text-center lg:grid lg:grid-cols-[1.4fr_1fr] lg:items-center lg:gap-12 lg:text-start">
                 <div>
                   <h2
                     id="cta-heading"
-                    className="text-brand-navy font-serif text-3xl font-bold leading-tight sm:text-4xl lg:text-5xl"
+                    className="text-brand-navy font-serif text-[1.75rem] font-bold leading-tight sm:text-4xl lg:text-5xl"
                   >
                     מוכן להתחיל לסחור באופן מקצועי?
                   </h2>
-                  <p className="text-brand-ink/75 mt-5 text-base leading-relaxed sm:text-lg">
+                  <p className="text-brand-ink/75 mx-auto mt-5 max-w-xl text-base leading-relaxed sm:text-lg lg:mx-0">
                     הצטרף לסוחרים שכבר משתמשים ב-AutoTradeIL לניהול מלאי, הצעות, ועסקאות. הקמת חשבון
                     לוקחת פחות מ-10 דקות.
                   </p>
                 </div>
-                <div className="flex flex-col gap-3">
+                <div className="mt-8 flex flex-col items-stretch gap-3 lg:mt-0">
                   <Link
                     href="/signup/dealer"
-                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/10 group inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-md px-7 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:text-lg"
+                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/10 group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-md px-5 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:text-lg"
                   >
                     <span>פתיחת חשבון סוחר</span>
                     <span
@@ -504,7 +503,7 @@ export default function Home() {
                   </Link>
                   <Link
                     href="/login"
-                    className="text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy decoration-brand-gold inline-flex min-h-12 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy decoration-brand-gold inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     כבר יש לי חשבון — כניסה
                   </Link>
@@ -526,14 +525,14 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
             <div>
-              {/* Footer uses the full lockup. The logo image was generated
-                  with white→transparent keying so it sits cleanly on navy. */}
+              {/* Footer uses the WHITE-recolored variant so the navy + bronze
+                  brand glyphs become cream and read clearly on the navy bg. */}
               <Image
-                src="/logo-full.png"
+                src="/logo-full-white.png"
                 alt="AutoTradeIL"
-                width={1408}
-                height={768}
-                className="h-12 w-auto"
+                width={1095}
+                height={361}
+                className="h-12 w-auto sm:h-14"
               />
               <p className="text-brand-cream/75 mt-5 max-w-xs text-sm leading-relaxed">
                 זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית עם הצעות מתועדות, מלאי משותף

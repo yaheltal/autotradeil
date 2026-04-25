@@ -48,9 +48,13 @@ def load_font(path: str, size: int) -> ImageFont.FreeTypeFont:
         return ImageFont.load_default()
 
 
-def whiten_to_alpha(img: Image.Image, threshold: int = 240) -> Image.Image:
-    """Convert near-white pixels to transparent. Preserves anti-aliased edges
-    by ramping alpha based on how white the pixel is rather than hard-cutting.
+def whiten_to_alpha(img: Image.Image, threshold: int = 215) -> Image.Image:
+    """Convert near-white/cream pixels to transparent.
+
+    The source WhatsApp file has a warm cream background (~RGB 240/240/235)
+    so the threshold has to dip below that. We additionally hard-clear any
+    pixel whose channels are all >=threshold to avoid the slight halo that
+    a soft ramp leaves on a bright surface.
     """
     img = img.convert("RGBA")
     pixels = img.load()
@@ -58,11 +62,15 @@ def whiten_to_alpha(img: Image.Image, threshold: int = 240) -> Image.Image:
     for y in range(h):
         for x in range(w):
             r, g, b, a = pixels[x, y]
-            # Distance from pure white (0..255 per channel).
             mn = min(r, g, b)
             if mn >= threshold:
-                # Soft alpha ramp: 240→0 alpha, 255→fully transparent
-                ramp = (mn - threshold) / (255 - threshold)
+                # Hard cut once we're confident this is background. Keeps
+                # the brand colors intact and eliminates the cream halo.
+                pixels[x, y] = (r, g, b, 0)
+            elif mn >= threshold - 18:
+                # Ramp alpha for the anti-aliased pixels just inside the
+                # threshold so edges blend cleanly onto any background.
+                ramp = (mn - (threshold - 18)) / 18
                 pixels[x, y] = (r, g, b, max(0, int(a * (1 - ramp))))
     return img
 
@@ -102,13 +110,36 @@ def square_pad(img: Image.Image, *, bg=(0, 0, 0, 0)) -> Image.Image:
     return canvas
 
 
+def recolor_to(img: Image.Image, rgb: tuple[int, int, int]) -> Image.Image:
+    """Replace every visible (alpha > 0) pixel with the given RGB while
+    preserving alpha. Used to derive a single-color variant of the logo
+    (e.g. all-white) for dark backgrounds. Anti-aliased edges keep their
+    softness because alpha is preserved untouched."""
+    img = img.convert("RGBA")
+    pixels = img.load()
+    w, h = img.size
+    for y in range(h):
+        for x in range(w):
+            _r, _g, _b, a = pixels[x, y]
+            if a > 0:
+                pixels[x, y] = (rgb[0], rgb[1], rgb[2], a)
+    return img
+
+
 def write_logo_full() -> Image.Image:
     src = Image.open(SRC).convert("RGBA")
-    transparent = whiten_to_alpha(src, threshold=232)
+    transparent = whiten_to_alpha(src, threshold=215)
     trimmed = trim_transparent(transparent)
     out = PUBLIC / "logo-full.png"
     trimmed.save(out, format="PNG", optimize=True)
     print(f"  wrote {out.name}  ({trimmed.size[0]}x{trimmed.size[1]})")
+
+    # White-recolored variant for dark backgrounds (footer).
+    white = recolor_to(trimmed.copy(), (248, 248, 246))
+    white_out = PUBLIC / "logo-full-white.png"
+    white.save(white_out, format="PNG", optimize=True)
+    print(f"  wrote {white_out.name}  ({white.size[0]}x{white.size[1]})")
+
     return src  # return the original (RGB) for downstream cropping
 
 
