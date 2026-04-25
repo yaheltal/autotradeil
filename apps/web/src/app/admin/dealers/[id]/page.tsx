@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ArchiveDealerDialog } from "@/components/admin/ArchiveDealerDialog";
+import { SilentSuspendDialog } from "@/components/admin/SilentSuspendDialog";
+import { SuspendWithReasonDialog } from "@/components/admin/SuspendWithReasonDialog";
 import { RejectDealerDialog } from "@/components/RejectDealerDialog";
 import { StatusBadge, deriveStatus } from "@/components/StatusBadge";
 import { TabsBar } from "@/components/TabsBar";
@@ -67,6 +70,10 @@ export default function DealerDetailPage() {
   const [toast, setToast] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
 
+  // Phase 6.7 — three new admin action dialogs
+  const [suspendWithReasonOpen, setSuspendWithReasonOpen] = useState(false);
+  const [silentSuspendOpen, setSilentSuspendOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
   // Phase 4.4 — tabs + suspend dialog
   const [tab, setTab] = useState<TabId>("details");
   const [suspendOpen, setSuspendOpen] = useState(false);
@@ -167,11 +174,15 @@ export default function DealerDetailPage() {
 
   const unsuspend = async () => {
     if (!token || !dealer) return;
+    // Phase 6.7 — backend now requires admin password re-auth.
+    const pw = window.prompt("סיסמת המנהל שלך לאישור ביטול ההשעיה:");
+    if (!pw) return;
     setActionBusy(true);
     try {
       await apiFetch(`/api/v1/admin/dealers/${dealer.id}/unsuspend`, {
         method: "POST",
         token,
+        body: JSON.stringify({ admin_password: pw }),
       });
       setToast("הושעיה בוטלה");
       await load();
@@ -347,7 +358,7 @@ export default function DealerDetailPage() {
                   aria-busy={actionBusy || undefined}
                   className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
                 >
-                  {actionBusy ? "מתחיל התחזות…" : "התחזה לסוחר"}
+                  {actionBusy ? "מתחבר…" : "התחבר בתור סוחר"}
                 </button>
                 <button
                   type="button"
@@ -368,16 +379,34 @@ export default function DealerDetailPage() {
                     בטל הושעיה
                   </button>
                 ) : (
-                  <button
-                    ref={suspendTriggerRef}
-                    type="button"
-                    onClick={() => setSuspendOpen(true)}
-                    disabled={actionBusy}
-                    className="border-danger text-danger-text hover:bg-danger-bg focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-                  >
-                    השעה סוחר
-                  </button>
+                  <>
+                    <button
+                      ref={suspendTriggerRef}
+                      type="button"
+                      onClick={() => setSuspendWithReasonOpen(true)}
+                      disabled={actionBusy}
+                      className="inline-flex min-h-11 items-center justify-center rounded-md border-2 border-amber-700 bg-white px-5 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 disabled:opacity-60"
+                    >
+                      🟡 השעה עם סיבה
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSilentSuspendOpen(true)}
+                      disabled={actionBusy}
+                      className="inline-flex min-h-11 items-center justify-center rounded-md border-2 border-amber-700 bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 disabled:opacity-60"
+                    >
+                      🟠 השעה בשקט
+                    </button>
+                  </>
                 )}
+                <button
+                  type="button"
+                  onClick={() => setArchiveOpen(true)}
+                  disabled={actionBusy}
+                  className="border-danger text-danger-text hover:bg-danger-bg focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md border-2 bg-white px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+                >
+                  🔴 מחק (העבר לארכיון)
+                </button>
               </div>
             ) : (
               <div className="mt-4">
@@ -494,8 +523,47 @@ export default function DealerDetailPage() {
           businessName={dealer.business_name}
         />
 
-        {/* Suspend dialog */}
-        <Dialog.Root open={suspendOpen} onOpenChange={setSuspendOpen}>
+        {/* Phase 6.7 — three replacement dialogs */}
+        <SuspendWithReasonDialog
+          open={suspendWithReasonOpen}
+          onOpenChange={setSuspendWithReasonOpen}
+          dealerId={dealer.id}
+          dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
+          token={token!}
+          onSuspended={() => {
+            setToast("הסוחר הושעה");
+            void load();
+            queueMicrotask(() => suspendTriggerRef.current?.focus());
+          }}
+        />
+        <SilentSuspendDialog
+          open={silentSuspendOpen}
+          onOpenChange={setSilentSuspendOpen}
+          dealerId={dealer.id}
+          dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
+          token={token!}
+          onSuspended={() => {
+            setToast("הסוחר הושעה בשקט");
+            void load();
+            queueMicrotask(() => suspendTriggerRef.current?.focus());
+          }}
+        />
+        <ArchiveDealerDialog
+          open={archiveOpen}
+          onOpenChange={setArchiveOpen}
+          dealerId={dealer.id}
+          dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
+          token={token!}
+          onArchived={() => {
+            setToast("הסוחר הועבר לארכיון");
+            void load();
+          }}
+        />
+
+        {/* Legacy suspend dialog — kept temporarily so the orphan submitSuspend
+         *  reference doesn't error. Hidden (open={false}) and unreachable
+         *  from any trigger. Will be removed in a follow-up cleanup commit. */}
+        <Dialog.Root open={false} onOpenChange={setSuspendOpen}>
           <Dialog.Portal>
             <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/40 fixed inset-0 z-40" />
             <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -503,45 +571,14 @@ export default function DealerDetailPage() {
                 <Dialog.Title className="text-brand-navy text-lg font-bold">
                   השעיית סוחר
                 </Dialog.Title>
-                <Dialog.Description className="text-brand-ink/80 mt-2 text-sm">
-                  השעיית הסוחר תמנע ממנו גישה למערכת. ניתן לבטל את ההשעיה מאוחר יותר.
-                </Dialog.Description>
-
-                <label
-                  htmlFor="susp-reason"
-                  className="text-brand-navy mt-4 block text-sm font-medium"
-                >
-                  סיבת ההשעיה
-                  <span aria-hidden="true" className="text-danger-text ms-1">
-                    *
-                  </span>
-                </label>
                 <textarea
-                  id="susp-reason"
-                  rows={4}
-                  maxLength={500}
-                  required
                   value={suspendReason}
                   onChange={(e) => setSuspendReason(e.target.value)}
-                  aria-describedby="susp-reason-count"
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                  className="hidden"
                 />
-                <p
-                  id="susp-reason-count"
-                  aria-live="polite"
-                  className="text-brand-ink/60 mt-1 text-xs"
-                >
-                  {suspendReason.length >= 450 ? `נותרו ${500 - suspendReason.length} תווים` : ""}
-                </p>
-
                 <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Dialog.Close asChild>
-                    <button
-                      type="button"
-                      className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                    >
-                      ביטול
-                    </button>
+                    <button type="button">ביטול</button>
                   </Dialog.Close>
                   <button
                     type="button"
