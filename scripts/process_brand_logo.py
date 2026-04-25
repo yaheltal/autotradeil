@@ -188,61 +188,69 @@ def write_apple_touch(icon: Image.Image) -> None:
 
 
 def write_og_image() -> None:
-    """1200x630 social card. Full lockup left, Hebrew tagline right.
+    """1200x630 social card. Navy background, white-recolored full lockup
+    on the right (RTL natural), Hebrew headline + gold subtext on the
+    left, domain centered at the bottom. No eyebrow.
 
-    BIDI: PIL renders LTR only — Hebrew strings are reversed visually
-    unless we apply the Unicode bidi algorithm. `python-bidi` reorders
-    code points so right-to-left runs render correctly.
+    BIDI: PIL renders LTR only. python-bidi reorders code points so the
+    Hebrew runs render correctly without needing a true HarfBuzz shaper.
     """
     W, H = 1200, 630
-    img = Image.new("RGB", (W, H), CREAM)
+    img = Image.new("RGB", (W, H), NAVY)
     draw = ImageDraw.Draw(img)
 
-    # Top accent bar
+    # Top + bottom gold accent bars frame the composition.
     draw.rectangle([(0, 0), (W, 6)], fill=GOLD)
+    draw.rectangle([(0, H - 6), (W, H)], fill=GOLD)
 
-    # Full logo lockup, scaled to fit ~440px wide on the left, vertically centered
-    full = Image.open(PUBLIC / "logo-full.png").convert("RGBA")
+    # Logo on the right (RTL): use the white-recolored lockup so the
+    # navy + bronze brand glyphs show up against the navy background.
+    logo_src = PUBLIC / "logo-full-white.png"
+    if not logo_src.exists():
+        logo_src = PUBLIC / "logo-full.png"
+    full = Image.open(logo_src).convert("RGBA")
     target_w = 460
     scale = target_w / full.width
     target_h = int(full.height * scale)
     full_scaled = full.resize((target_w, target_h), Image.LANCZOS)
-    img.paste(full_scaled, (80, (H - target_h) // 2), full_scaled)
+    logo_x = W - 80 - target_w
+    logo_y = (H - target_h) // 2 - 30
+    img.paste(full_scaled, (logo_x, logo_y), full_scaled)
 
-    # Right column — RTL Hebrew text
-    eyebrow = get_display("גיליון 01 · 2026")
+    # Left column — text block. Right-edge of the text aligns to the
+    # left-edge of the logo with a 60px gutter; we draw right-aligned so
+    # Hebrew reads naturally toward the logo.
+    text_right_edge = logo_x - 60
+
     headline = get_display("זירת המסחר של סוחרי הרכב")
     tagline = get_display("פלטפורמה מקצועית לסוחרים מאומתים")
 
-    # Arial Unicode for mixed-script strings; SFHebrew is fine for
-    # pure-Hebrew headline/tagline (richer Hebrew letterforms).
-    eyebrow_font = load_font(UNICODE, 22)
-    headline_font = load_font(HEBREW, 56)
-    tagline_font = load_font(HEBREW, 28)
+    # Wrap headline on two lines for visual rhythm: split at the middle
+    # word so each line is roughly equal length in Hebrew.
+    headline_l1 = get_display("זירת המסחר")
+    headline_l2 = get_display("של סוחרי הרכב")
 
-    right_edge = W - 80
+    headline_font = load_font(HEBREW, 64)
+    tagline_font = load_font(HEBREW, 30)
+
     block_y = H // 2 - 110
 
     def draw_right_aligned(y: int, text: str, font, fill):
         bbox = draw.textbbox((0, 0), text, font=font)
         w = bbox[2] - bbox[0]
-        draw.text((right_edge - w, y), text, fill=fill, font=font)
+        draw.text((text_right_edge - w, y), text, fill=fill, font=font)
 
-    draw_right_aligned(block_y, eyebrow, eyebrow_font, "#8a7028")
-    draw_right_aligned(block_y + 50, headline, headline_font, NAVY)
-    draw_right_aligned(block_y + 140, tagline, tagline_font, "#506074")
+    draw_right_aligned(block_y, headline_l1, headline_font, CREAM)
+    draw_right_aligned(block_y + 80, headline_l2, headline_font, CREAM)
+    draw_right_aligned(block_y + 180, tagline, tagline_font, GOLD)
 
-    # Bottom strip — divider + domain
-    div_y = H - 80
-    draw.line([(80, div_y), (W - 80, div_y)], fill="#1B2B4B33", width=1)
-
-    domain_font = load_font(SERIF_REG, 22)
-    draw.text((80, div_y + 20), "autotradeil.com", fill=NAVY, font=domain_font)
-
-    badge = get_display("B2B  ·  מאומת  ·  מאובטח")
-    badge_font = load_font(UNICODE, 20)
-    bb = draw.textbbox((0, 0), badge, font=badge_font)
-    draw.text((right_edge - (bb[2] - bb[0]), div_y + 22), badge, fill=NAVY, font=badge_font)
+    # Domain centered at the bottom strip.
+    domain_font = load_font(SERIF_REG, 24)
+    domain = "autotradeil.com"
+    db = draw.textbbox((0, 0), domain, font=domain_font)
+    domain_w = db[2] - db[0]
+    cream_70 = tuple(int(0.7 * c1 + 0.3 * c2) for c1, c2 in zip((248, 248, 246), (27, 43, 75)))
+    draw.text(((W - domain_w) // 2, H - 56), domain, fill=cream_70, font=domain_font)
 
     out = PUBLIC / "og-image.png"
     img.save(out, format="PNG", optimize=True)
