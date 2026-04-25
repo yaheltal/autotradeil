@@ -396,22 +396,46 @@ export default function LoginPage() {
 // Collapsed-by-default <details>; on toggle-open we move focus to email.
 // =============================================================================
 
+type OtpChannel = "sms" | "email";
+
 function OtpLoginSection({ router, next }: { router: ReturnType<typeof useRouter>; next: string }) {
-  const [step, setStep] = useState<"email" | "code">("email");
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<"identifier" | "code">("identifier");
+  // Channel = how the user is identifying themselves AND the delivery method.
+  // SMS is the default and primary path per product request.
+  const [channel, setChannel] = useState<OtpChannel>("sms");
+  const [actualChannel, setActualChannel] = useState<OtpChannel>("sms");
+  const [otpPhone, setOtpPhone] = useState("");
   const [otpEmail, setOtpEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [stepAnnounce, setStepAnnounce] = useState("");
+  const [channelAnnounce, setChannelAnnounce] = useState("");
 
+  const panelHeadingRef = useRef<HTMLHeadingElement>(null);
+  const phoneInputRef = useRef<HTMLInputElement>(null);
   const emailInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
 
-  const onToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
-    if (e.currentTarget.open) {
-      queueMicrotask(() => emailInputRef.current?.focus());
+  // a11y-lead req #3: focus moves into the panel on disclosure expand so
+  // keyboard/SR users don't get stranded on the trigger.
+  useEffect(() => {
+    if (open) {
+      queueMicrotask(() => panelHeadingRef.current?.focus());
     }
+  }, [open]);
+
+  const onChannelChange = (next: OtpChannel) => {
+    setChannel(next);
+    setChannelAnnounce(
+      next === "sms" ? "הזן מספר טלפון לקבלת קוד ב-SMS" : "הזן אימייל לקבלת קוד באימייל",
+    );
+    queueMicrotask(() => {
+      if (next === "sms") phoneInputRef.current?.focus();
+      else emailInputRef.current?.focus();
+    });
   };
 
   const requestCode = async (e: FormEvent<HTMLFormElement>) => {
@@ -420,16 +444,32 @@ function OtpLoginSection({ router, next }: { router: ReturnType<typeof useRouter
     setErr(null);
     setInfo(null);
     try {
-      await apiFetch("/api/v1/auth/otp/request", {
-        method: "POST",
-        body: JSON.stringify({ email: otpEmail.trim() }),
-      });
-      setInfo("אם הכתובת קיימת במערכת, נשלח אליה קוד חד פעמי.");
+      const body =
+        channel === "sms"
+          ? { phone: otpPhone.trim(), delivery: "sms" }
+          : { email: otpEmail.trim(), delivery: "email" };
+      const resp = await apiFetch<{ message: string; delivery: OtpChannel }>(
+        "/api/v1/auth/otp/request",
+        {
+          method: "POST",
+          body: JSON.stringify(body),
+        },
+      );
+      // Backend may downgrade sms → email if Twilio fails or no phone on
+      // file. Echo the actual channel so step 2 hint stays accurate.
+      const finalChannel: OtpChannel = resp.delivery === "sms" ? "sms" : "email";
+      setActualChannel(finalChannel);
+      setInfo(
+        finalChannel === "sms"
+          ? "אם המספר קיים במערכת, נשלח אליו קוד ב-SMS."
+          : "אם הכתובת קיימת במערכת, נשלח אליה קוד באימייל.",
+      );
       setStep("code");
-      // Announce AFTER the code input mounts (a11y-lead req #2).
       queueMicrotask(() => {
         codeInputRef.current?.focus();
-        setStepAnnounce("הוזן הקוד שהתקבל באימייל");
+        setStepAnnounce(
+          finalChannel === "sms" ? "הזן את הקוד שהתקבל ב-SMS" : "הזן את הקוד שהתקבל באימייל",
+        );
       });
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שגיאה בשליחת הקוד");
@@ -444,12 +484,16 @@ function OtpLoginSection({ router, next }: { router: ReturnType<typeof useRouter
     setBusy(true);
     setErr(null);
     try {
+      const body =
+        actualChannel === "sms"
+          ? { phone: otpPhone.trim(), code: otpCode }
+          : { email: otpEmail.trim(), code: otpCode };
       const resp = await apiFetch<{
         access_token: string;
         refresh_token: string | null;
       }>("/api/v1/auth/otp/verify", {
         method: "POST",
-        body: JSON.stringify({ email: otpEmail.trim(), code: otpCode }),
+        body: JSON.stringify(body),
       });
       const supabase = createClient();
       if (resp.refresh_token) {
@@ -468,112 +512,248 @@ function OtpLoginSection({ router, next }: { router: ReturnType<typeof useRouter
   };
 
   const goBack = () => {
-    setStep("email");
+    setStep("identifier");
     setOtpCode("");
     setErr(null);
     setInfo(null);
-    queueMicrotask(() => emailInputRef.current?.focus());
+    queueMicrotask(() => {
+      if (channel === "sms") phoneInputRef.current?.focus();
+      else emailInputRef.current?.focus();
+    });
   };
 
   return (
-    <details onToggle={onToggle} className="border-brand-navy/10 mt-8 rounded-md border bg-white">
-      <summary className="text-brand-navy cursor-pointer px-4 py-3 text-sm font-semibold">
-        כניסה ללא סיסמה — קוד חד פעמי
-      </summary>
-      <div className="border-brand-navy/10 border-t px-4 py-4">
-        {stepAnnounce ? (
-          <p role="status" aria-live="polite" className="sr-only" key={stepAnnounce}>
-            {stepAnnounce}
-          </p>
-        ) : null}
-        {err ? (
-          <p
-            role="alert"
-            className="bg-danger-bg text-danger-text mb-3 rounded-md px-3 py-2 text-sm"
-          >
-            {err}
-          </p>
-        ) : null}
-        {info && step === "code" ? (
-          <p className="bg-ok-bg text-ok-text mb-3 rounded-md px-3 py-2 text-sm">{info}</p>
-        ) : null}
+    <section aria-labelledby="alt-login-heading" className="mt-8">
+      <h2 id="alt-login-heading" className="sr-only">
+        דרכי כניסה נוספות
+      </h2>
 
-        {step === "email" ? (
-          <form onSubmit={requestCode} noValidate className="space-y-3">
-            <div>
-              <label
-                htmlFor="otp-login-email"
-                className="text-brand-navy block text-sm font-medium"
-              >
-                אימייל
-              </label>
-              <input
-                id="otp-login-email"
-                ref={emailInputRef}
-                type="email"
-                dir="ltr"
-                autoComplete="email"
-                required
-                value={otpEmail}
-                onChange={(e) => setOtpEmail(e.target.value)}
-                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={busy || !otpEmail.trim()}
-              aria-busy={busy || undefined}
-              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+      {/* Promoted "passwordless OTP" entry point — replaces the old <details>.
+       *  Disclosure pattern: aria-controls/aria-expanded on the trigger; the
+       *  panel below is hidden until expanded, and focus moves to the panel
+       *  heading on expand (a11y-lead req #3). */}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-controls="otp-panel"
+        aria-expanded={open}
+        className="border-brand-navy/30 text-brand-navy hover:border-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-md border-2 bg-white px-4 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
+        <span aria-hidden="true">🔐</span>
+        כניסה עם קוד חד פעמי (ללא סיסמה)
+      </button>
+
+      {open ? (
+        <div
+          id="otp-panel"
+          role="region"
+          aria-labelledby="otp-heading"
+          className="border-brand-navy/15 bg-brand-cream/40 mt-4 rounded-lg border-2 p-5"
+        >
+          <h3
+            id="otp-heading"
+            ref={panelHeadingRef}
+            tabIndex={-1}
+            className="text-brand-navy text-base font-bold focus:outline-none"
+          >
+            כניסה עם קוד חד פעמי
+          </h3>
+
+          {/* Step indicator — semantic list, not navigation. */}
+          <ol
+            aria-label="שלבי הכניסה"
+            className="text-brand-navy/70 mb-4 mt-2 flex list-none gap-2 text-xs"
+          >
+            <li
+              aria-current={step === "identifier" ? "step" : undefined}
+              className={step === "identifier" ? "text-brand-navy font-bold" : ""}
             >
-              {busy ? "שולח…" : "שלח קוד"}
-            </button>
-          </form>
-        ) : (
-          <form onSubmit={verifyCode} noValidate className="space-y-3">
-            <div>
-              <label htmlFor="otp-login-code" className="text-brand-navy block text-sm font-medium">
-                קוד אימות
-              </label>
-              <p id="otp-login-code-hint" className="text-brand-navy/70 mt-1 text-xs">
-                הזן את הקוד בן 6 הספרות שהתקבל באימייל
-              </p>
-              <input
-                id="otp-login-code"
-                ref={codeInputRef}
-                type="text"
-                dir="ltr"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                required
-                value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                aria-describedby="otp-login-code-hint"
-                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-40 rounded-md border bg-white px-3 py-2 font-mono text-base tracking-widest focus-visible:outline-2 focus-visible:outline-offset-2"
-              />
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
+              1. בחירת ערוץ
+            </li>
+            <li aria-hidden="true">›</li>
+            <li
+              aria-current={step === "code" ? "step" : undefined}
+              className={step === "code" ? "text-brand-navy font-bold" : ""}
+            >
+              2. הזנת הקוד
+            </li>
+          </ol>
+
+          {/* Polite announcers — sr-only, keyed so each new value re-announces. */}
+          {stepAnnounce ? (
+            <p role="status" aria-live="polite" className="sr-only" key={stepAnnounce}>
+              {stepAnnounce}
+            </p>
+          ) : null}
+          {channelAnnounce ? (
+            <p role="status" aria-live="polite" className="sr-only" key={channelAnnounce}>
+              {channelAnnounce}
+            </p>
+          ) : null}
+
+          {err ? (
+            <p
+              role="alert"
+              className="bg-danger-bg text-danger-text mb-3 rounded-md px-3 py-2 text-sm"
+            >
+              {err}
+            </p>
+          ) : null}
+          {info && step === "code" ? (
+            <p className="bg-ok-bg text-ok-text mb-3 rounded-md px-3 py-2 text-sm">{info}</p>
+          ) : null}
+
+          {step === "identifier" ? (
+            <form onSubmit={requestCode} noValidate className="space-y-4">
+              {/* Channel = identifier type + delivery method. SMS is primary. */}
+              <fieldset>
+                <legend className="text-brand-navy block text-sm font-medium">
+                  באיזה ערוץ לקבל את הקוד?
+                </legend>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      ["sms", "📱", "SMS לטלפון"],
+                      ["email", "📧", "אימייל"],
+                    ] as const
+                  ).map(([value, icon, label]) => {
+                    const selected = channel === value;
+                    return (
+                      <label
+                        key={value}
+                        className={[
+                          "inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md border-2 px-3 py-2 text-sm font-semibold transition",
+                          "has-[:focus-visible]:outline-brand-navy has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2",
+                          selected
+                            ? "border-brand-navy bg-brand-navy text-brand-cream"
+                            : "border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 bg-white",
+                        ].join(" ")}
+                      >
+                        <input
+                          type="radio"
+                          name="otp-channel"
+                          value={value}
+                          checked={selected}
+                          onChange={() => onChannelChange(value)}
+                          className="sr-only"
+                        />
+                        <span aria-hidden="true">{icon}</span>
+                        {label}
+                        {selected ? <span aria-hidden="true">✓</span> : null}
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
+              {channel === "sms" ? (
+                <div>
+                  <label
+                    htmlFor="otp-login-phone"
+                    className="text-brand-navy block text-sm font-medium"
+                  >
+                    מספר טלפון
+                  </label>
+                  <input
+                    id="otp-login-phone"
+                    ref={phoneInputRef}
+                    type="tel"
+                    dir="ltr"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    required
+                    placeholder="052-1234567"
+                    value={otpPhone}
+                    onChange={(e) => setOtpPhone(e.target.value)}
+                    className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                  />
+                  <p className="text-brand-navy/70 mt-1 text-xs">
+                    הזן את מספר הטלפון השמור בפרופיל הסוחר
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  <label
+                    htmlFor="otp-login-email"
+                    className="text-brand-navy block text-sm font-medium"
+                  >
+                    אימייל
+                  </label>
+                  <input
+                    id="otp-login-email"
+                    ref={emailInputRef}
+                    type="email"
+                    dir="ltr"
+                    autoComplete="email"
+                    required
+                    value={otpEmail}
+                    onChange={(e) => setOtpEmail(e.target.value)}
+                    className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                  />
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={busy || otpCode.length !== 6}
+                disabled={busy || (channel === "sms" ? !otpPhone.trim() : !otpEmail.trim())}
                 aria-busy={busy || undefined}
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
               >
-                {busy ? "מאמת…" : "התחבר"}
+                {busy ? "שולח…" : channel === "sms" ? "שלח קוד ב-SMS" : "שלח קוד באימייל"}
               </button>
-              <button
-                type="button"
-                onClick={goBack}
-                className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                חזרה
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </details>
+            </form>
+          ) : (
+            <form onSubmit={verifyCode} noValidate className="space-y-3">
+              <div>
+                <label
+                  htmlFor="otp-login-code"
+                  className="text-brand-navy block text-sm font-medium"
+                >
+                  קוד אימות
+                </label>
+                <p id="otp-login-code-hint" className="text-brand-navy/70 mt-1 text-xs">
+                  {actualChannel === "sms"
+                    ? "הזן את הקוד בן 6 הספרות שהתקבל ב-SMS"
+                    : "הזן את הקוד בן 6 הספרות שהתקבל באימייל"}
+                </p>
+                <input
+                  id="otp-login-code"
+                  ref={codeInputRef}
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                  aria-describedby="otp-login-code-hint"
+                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-40 rounded-md border bg-white px-3 py-2 font-mono text-base tracking-widest focus-visible:outline-2 focus-visible:outline-offset-2"
+                />
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="submit"
+                  disabled={busy || otpCode.length !== 6}
+                  aria-busy={busy || undefined}
+                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                >
+                  {busy ? "מאמת…" : "התחבר"}
+                </button>
+                <button
+                  type="button"
+                  onClick={goBack}
+                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  חזרה
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
