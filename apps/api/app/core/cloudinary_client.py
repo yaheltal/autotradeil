@@ -122,13 +122,16 @@ async def sign_kyc_url(public_id: str, resource_type: str = "image") -> str:
     import cloudinary.utils
 
     init_cloudinary()
+    # `auth_token` requires a separate cloudinary auth-token-key to be
+    # configured; we don't have one. Plain `sign_url=True` + `expires_at`
+    # is enough — Cloudinary verifies the HMAC signature against the
+    # api_secret and rejects the URL after the deadline.
     url, _ = cloudinary.utils.cloudinary_url(
         public_id,
         type="authenticated",
         resource_type=resource_type,
         sign_url=True,
         secure=True,
-        auth_token={"duration": 600},  # 10 minutes
         expires_at=int(time.time()) + 600,
     )
     return url
