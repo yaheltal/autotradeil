@@ -473,7 +473,9 @@ export function InventoryFormDialog({
       // Plate OCR populates the existing plate input so the user can edit
       // and re-search via the existing button. Track the OCR origin so the
       // input announces "auto-detected, editable" on focus.
-      if (data.plate_number) {
+      const plateDigits = data.plate_number ? data.plate_number.replace(/\D/g, "") : "";
+      const plateLooksValid = plateDigits.length >= 6 && plateDigits.length <= 9;
+      if (data.plate_number && plateLooksValid) {
         setPlate(data.plate_number);
         setPlateAutofilled(true);
         setPlateError("");
@@ -482,6 +484,16 @@ export function InventoryFormDialog({
         // flip is a direct, expected consequence of the upload they just
         // initiated. Expand-only — do NOT steal focus (WCAG 3.2.2).
         setPanelPlate(true);
+      } else if (data.plate_number && !plateLooksValid) {
+        // Phase 6.8.2 — partial detection. Don't auto-fill; surface a
+        // clear alert telling the dealer to enter the plate manually so
+        // we don't silently feed gov.il a bad number and pollute the form.
+        setPanelPlate(true);
+        setPlate("");
+        setPlateAutofilled(false);
+        setPlateError(
+          `זוהה מספר רכב חלקי בתמונה (${data.plate_number}) — אנא הזן ידנית את המספר המלא`,
+        );
       }
       if (data.make || data.model) {
         const sourceLabel =
