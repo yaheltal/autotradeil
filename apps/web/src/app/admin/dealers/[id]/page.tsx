@@ -465,7 +465,7 @@ export default function DealerDetailPage() {
         </div>
 
         {/* ====================================================
-            KYC tab — links into existing /admin/kyc
+            KYC tab — fetches docs for THIS dealer + approve/reject
             ==================================================== */}
         <div
           role="tabpanel"
@@ -474,34 +474,17 @@ export default function DealerDetailPage() {
           hidden={tab !== "kyc"}
           className="mt-8"
         >
-          <div className="border-brand-navy/10 rounded-lg border bg-white p-6">
-            <h2 className="text-brand-navy text-lg font-semibold">אימות זהות</h2>
-            <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-brand-ink/60 text-xs">סטטוס</dt>
-                <dd className="text-brand-navy mt-1 font-semibold">
-                  {
-                    {
-                      pending: "ממתין להעלאת מסמכים",
-                      submitted: "הוגש — ממתין לבדיקה",
-                      approved: "אושר",
-                      rejected: "נדחה",
-                    }[dealer.kyc_status]
-                  }
-                </dd>
-              </div>
-            </dl>
-            {dealer.kyc_status === "submitted" ? (
-              <Link
-                href="/admin/kyc"
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy mt-4 inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                פתח את כל בקשות KYC הממתינות
-              </Link>
-            ) : (
-              <p className="text-brand-ink/60 mt-4 text-sm">אין בקשת KYC ממתינה לסוחר זה כרגע.</p>
-            )}
-          </div>
+          {token ? (
+            <KycTabPanel
+              dealerId={dealer.id}
+              kycStatus={dealer.kyc_status}
+              token={token}
+              onChanged={() => {
+                setToast("סטטוס אימות הזהות עודכן");
+                void load();
+              }}
+            />
+          ) : null}
         </div>
 
         <RejectDealerDialog
@@ -586,6 +569,302 @@ function Info({ label, value, lang }: { label: string; value: string; lang?: str
       <dd lang={lang} className="text-brand-navy mt-1 break-words text-base font-medium">
         {value}
       </dd>
+    </div>
+  );
+}
+
+// =============================================================================
+// KYC tab panel — Phase 4.4 fix.
+// Fetches the per-dealer KYC status (signed image URLs) and lets the admin
+// approve/reject directly from the dealer detail page.
+// =============================================================================
+
+type _KycTabKyc = {
+  kyc_status: "pending" | "submitted" | "approved" | "rejected";
+  id_card_front_url: string | null;
+  id_card_back_url: string | null;
+  dealer_license_url: string | null;
+  kyc_rejected_reason: string | null;
+};
+
+function KycTabPanel({
+  dealerId,
+  token,
+  onChanged,
+}: {
+  dealerId: string;
+  kycStatus: "pending" | "submitted" | "approved" | "rejected";
+  token: string;
+  onChanged: () => void;
+}) {
+  // The /security/kyc/status endpoint is dealer-self only — for admins
+  // we re-use the per-dealer entry from /security/kyc/pending list, but
+  // we don't have a single-dealer admin endpoint yet. Workaround: pull
+  // the pending list and find this dealer; if not in pending list (e.g.
+  // already approved), fall back to status text only.
+  const [kyc, setKyc] = useState<_KycTabKyc | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionErr, setActionErr] = useState<string | null>(null);
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const [viewer, setViewer] = useState<{ label: string; url: string } | null>(null);
+
+  const load = useCallback(async () => {
+    setLoadErr(null);
+    try {
+      // Use the existing pending list — sufficient for "submitted" status.
+      // For other statuses we just render the status text.
+      const list = await apiFetch<
+        Array<{
+          id: string;
+          id_card_front_url: string | null;
+          id_card_back_url: string | null;
+          dealer_license_url: string | null;
+        }>
+      >("/api/v1/security/kyc/pending", { token });
+      const row = list.find((r) => r.id === dealerId);
+      setKyc({
+        kyc_status: row ? "submitted" : "pending",
+        id_card_front_url: row?.id_card_front_url ?? null,
+        id_card_back_url: row?.id_card_back_url ?? null,
+        dealer_license_url: row?.dealer_license_url ?? null,
+        kyc_rejected_reason: null,
+      });
+    } catch (e) {
+      setLoadErr(e instanceof Error ? e.message : "שגיאה בטעינת מסמכים");
+    }
+  }, [dealerId, token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const approve = async () => {
+    setBusy(true);
+    setActionErr(null);
+    try {
+      await apiFetch(`/api/v1/security/kyc/${dealerId}/approve`, {
+        method: "POST",
+        token,
+      });
+      onChanged();
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : "שגיאה");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const reject = async () => {
+    if (!reason.trim()) return;
+    setBusy(true);
+    setActionErr(null);
+    try {
+      await apiFetch(`/api/v1/security/kyc/${dealerId}/reject`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      setRejectOpen(false);
+      setReason("");
+      onChanged();
+    } catch (e) {
+      setActionErr(e instanceof Error ? e.message : "שגיאה");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remaining = 500 - reason.length;
+
+  return (
+    <div className="border-brand-navy/10 rounded-lg border bg-white p-6">
+      <h2 className="text-brand-navy text-lg font-semibold">אימות זהות (KYC)</h2>
+
+      {loadErr ? (
+        <p role="alert" className="bg-danger-bg text-danger-text mt-3 rounded-md px-3 py-2 text-sm">
+          {loadErr}
+        </p>
+      ) : null}
+      {actionErr ? (
+        <p role="alert" className="bg-danger-bg text-danger-text mt-3 rounded-md px-3 py-2 text-sm">
+          {actionErr}
+        </p>
+      ) : null}
+
+      {!kyc ? (
+        <p role="status" className="text-brand-ink/60 mt-3">
+          טוען מסמכים…
+        </p>
+      ) : kyc.kyc_status !== "submitted" ? (
+        <p className="text-brand-ink/60 mt-3 text-sm">
+          {kyc.id_card_front_url
+            ? "המסמכים אושרו או נדחו בעבר."
+            : "הסוחר עדיין לא העלה מסמכי זהות."}
+        </p>
+      ) : (
+        <>
+          <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {[
+              ["id_card_front_url", "תעודת זהות — צד קדמי"] as const,
+              ["id_card_back_url", "תעודת זהות — צד אחורי"] as const,
+              ["dealer_license_url", "רישיון סוחר רכבים"] as const,
+            ].map(([key, label]) => {
+              const url = kyc[key];
+              return (
+                <li key={key}>
+                  <p className="text-brand-ink/60 mb-1 text-xs">{label}</p>
+                  {url ? (
+                    <button
+                      type="button"
+                      onClick={() => setViewer({ label, url })}
+                      aria-label={`הצג ${label}`}
+                      className="border-brand-navy/10 focus-visible:outline-brand-navy block aspect-[4/3] w-full overflow-hidden rounded-md border bg-white focus-visible:outline-2 focus-visible:outline-offset-2"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    </button>
+                  ) : (
+                    <p className="border-brand-navy/10 text-brand-ink/50 bg-brand-cream/40 flex aspect-[4/3] items-center justify-center rounded-md border text-xs">
+                      חסר
+                    </p>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={approve}
+              disabled={busy}
+              aria-busy={busy || undefined}
+              className="bg-ok hover:bg-ok/90 focus-visible:outline-ok inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+            >
+              <span aria-hidden="true">✓</span>
+              אשר אימות זהות
+            </button>
+            <button
+              type="button"
+              onClick={() => setRejectOpen(true)}
+              disabled={busy}
+              className="bg-danger hover:bg-danger/90 focus-visible:outline-danger-text inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+            >
+              <span aria-hidden="true">✕</span>
+              דחה אימות זהות
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Doc viewer dialog */}
+      <Dialog.Root open={!!viewer} onOpenChange={(v) => !v && setViewer(null)}>
+        <Dialog.Portal>
+          <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/60 fixed inset-0 z-40" />
+          <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-brand-cream w-full max-w-3xl rounded-xl p-4 shadow-xl">
+              <div className="flex items-start justify-between gap-3">
+                <Dialog.Title className="text-brand-navy text-base font-bold">
+                  {viewer?.label}
+                </Dialog.Title>
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    aria-label="סגור"
+                    className="text-brand-ink/70 hover:text-brand-navy rounded"
+                  >
+                    ✕
+                  </button>
+                </Dialog.Close>
+              </div>
+              {viewer ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={viewer.url}
+                    alt={viewer.label}
+                    className="mt-3 max-h-[70vh] w-full rounded-md object-contain"
+                  />
+                  <a
+                    href={viewer.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-brand-navy mt-3 inline-block text-sm font-semibold underline"
+                  >
+                    פתח בכרטיסייה חדשה
+                  </a>
+                </>
+              ) : null}
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+
+      {/* Reject dialog */}
+      <Dialog.Root open={rejectOpen} onOpenChange={setRejectOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/40 fixed inset-0 z-40" />
+          <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="bg-brand-cream w-full max-w-md rounded-xl p-6 shadow-xl">
+              <Dialog.Title className="text-brand-navy text-lg font-bold">
+                דחיית אימות זהות
+              </Dialog.Title>
+              <Dialog.Description className="text-brand-ink/80 mt-2 text-sm">
+                הסוחר יקבל את הסיבה במייל. פעולה לא ניתנת לביטול.
+              </Dialog.Description>
+
+              <label
+                htmlFor="kyc-reject-reason"
+                className="text-brand-navy mt-4 block text-sm font-medium"
+              >
+                סיבת הדחייה{" "}
+                <span aria-hidden="true" className="text-danger-text ms-1">
+                  *
+                </span>
+              </label>
+              <textarea
+                id="kyc-reject-reason"
+                rows={4}
+                maxLength={500}
+                required
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                aria-describedby="kyc-reject-count"
+                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
+              <p
+                id="kyc-reject-count"
+                aria-live="polite"
+                className="text-brand-ink/60 mt-1 text-xs"
+              >
+                {remaining <= 50 ? `נותרו ${remaining} תווים` : ""}
+              </p>
+
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    ביטול
+                  </button>
+                </Dialog.Close>
+                <button
+                  type="button"
+                  onClick={() => void reject()}
+                  disabled={busy || !reason.trim()}
+                  aria-busy={busy || undefined}
+                  className="bg-danger hover:bg-danger/90 focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                >
+                  {busy ? "דוחה…" : "דחה ושלח מייל"}
+                </button>
+              </div>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

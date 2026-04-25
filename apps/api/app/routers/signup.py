@@ -174,6 +174,8 @@ async def signup_dealer(
 
 forgot_password_rate_limit = rate_limit("5/hour", scope="forgot_password")
 login_rate_limit = rate_limit("20/hour", scope="auth_login")
+otp_request_rate_limit = rate_limit("5/hour", scope="auth_otp_request")
+otp_verify_rate_limit = rate_limit("20/hour", scope="auth_otp_verify")
 
 
 # ==========================================================================
@@ -430,7 +432,7 @@ async def _supabase_generate_recovery_link(
 async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
     """Trigger a password-reset email. Always returns 200 so callers can
     not enumerate valid emails."""
-    redirect_to = body.redirect_to or "http://localhost:3010/reset-password"
+    redirect_to = body.redirect_to or "http://localhost:3000/reset-password"
     # Basic allowlist so we don't turn this into an open redirect.
     if not redirect_to.startswith(("http://localhost", "https://autotradeil.co.il")):
         redirect_to = "https://autotradeil.co.il/reset-password"
@@ -446,3 +448,163 @@ async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
     return {
         "message": "אם הכתובת קיימת במערכת, נשלח אליה קישור לאיפוס סיסמה.",
     }
+
+
+# ==========================================================================
+# Public OTP login flow (Phase 4.4 addendum) — passwordless via email code
+# ==========================================================================
+
+
+class OtpRequestBody(BaseModel):
+    email: EmailStr
+
+
+@router.post(
+    "/otp/request",
+    dependencies=[Depends(otp_request_rate_limit)],
+)
+async def public_otp_request(
+    body: OtpRequestBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Public — generate a 6-digit code and email it to the address.
+
+    Always returns 200 to prevent email enumeration. Mirrors the
+    /security/otp/send pattern but is callable without a session because
+    the user is trying to log IN, not perform a privileged action.
+    """
+    import secrets
+
+    from app.core.email import send_otp_email
+    from app.routers.security import _hash_otp, _now, OTP_TTL_MINUTES
+    from datetime import timedelta
+
+    user = (
+        await db.execute(select(User).where(User.email == body.email))
+    ).scalar_one_or_none()
+    if user is None or user.user_type != "dealer":
+        return {"message": "אם הכתובת קיימת במערכת, נשלח אליה קוד חד פעמי."}
+
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.user_id == user.id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        return {"message": "אם הכתובת קיימת במערכת, נשלח אליה קוד חד פעמי."}
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    dealer.otp_code_hash = _hash_otp(code, str(dealer.id))
+    dealer.otp_expires_at = _now() + timedelta(minutes=OTP_TTL_MINUTES)
+    dealer.otp_method = "email"
+    await db.commit()
+
+    try:
+        await send_otp_email(
+            to_email=user.email, business_name=dealer.business_name, code=code
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("public otp send failed: %s", exc)
+
+    return {"message": "אם הכתובת קיימת במערכת, נשלח אליה קוד חד פעמי."}
+
+
+class OtpVerifyBody(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+@router.post(
+    "/otp/verify",
+    response_model=LoginResponse,
+    dependencies=[Depends(otp_verify_rate_limit)],
+)
+async def public_otp_verify(
+    body: OtpVerifyBody,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LoginResponse:
+    """Public — verify OTP, mint a Supabase session via admin link.
+
+    On success:
+      - Clear the consumed OTP (single-use).
+      - Use Supabase admin `generate_link` (type=magiclink) to mint a real
+        session, then exchange the action_link for tokens via the verify
+        endpoint. Cleaner: just call admin generate_link with `type=magiclink`
+        and parse the action link's hash params — but Supabase exposes
+        `properties.access_token`+`refresh_token` directly on the response.
+    """
+    import hmac
+    from app.routers.security import _hash_otp, _now
+
+    user = (
+        await db.execute(select(User).where(User.email == body.email))
+    ).scalar_one_or_none()
+    if user is None or user.user_type != "dealer":
+        raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.user_id == user.id))
+    ).scalar_one_or_none()
+    if dealer is None or dealer.otp_code_hash is None or dealer.otp_expires_at is None:
+        raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")
+    if _now() > dealer.otp_expires_at:
+        dealer.otp_code_hash = None
+        dealer.otp_expires_at = None
+        await db.commit()
+        raise HTTPException(status_code=401, detail="הקוד פג תוקף")
+
+    expected = _hash_otp(body.code, str(dealer.id))
+    if not hmac.compare_digest(expected, dealer.otp_code_hash):
+        raise HTTPException(status_code=401, detail="קוד שגוי")
+
+    # Consume the code.
+    dealer.otp_code_hash = None
+    dealer.otp_expires_at = None
+    await db.commit()
+
+    # Mint a session via Supabase admin generate_link (type=magiclink).
+    url = f"{settings.supabase_url}/auth/v1/admin/generate_link"
+    headers = {
+        "apikey": settings.supabase_secret_key,
+        "Authorization": f"Bearer {settings.supabase_secret_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {"type": "magiclink", "email": body.email}
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+        if resp.status_code != 200:
+            logger.warning(
+                "supabase magiclink failed status=%s body=%r",
+                resp.status_code,
+                resp.text,
+            )
+            raise HTTPException(status_code=502, detail="שירות האימות לא זמין")
+        data = resp.json()
+    except httpx.HTTPError as exc:
+        logger.warning("magiclink network error: %s", exc)
+        raise HTTPException(status_code=502, detail="שגיאת רשת")
+
+    # `properties.action_link` contains hash params with the access/refresh
+    # tokens — but the cleaner shape is `properties.hashed_token` + email
+    # which the client would then submit to /auth/v1/verify. For now we
+    # parse the action_link hash to extract tokens directly.
+    from urllib.parse import urlparse, parse_qs
+
+    action_link = (data.get("properties") or {}).get("action_link", "")
+    fragment = urlparse(action_link).fragment
+    params = parse_qs(fragment)
+    access = params.get("access_token", [None])[0]
+    refresh = params.get("refresh_token", [None])[0]
+
+    if not access:
+        # Some Supabase responses return tokens at top-level instead.
+        access = data.get("access_token")
+        refresh = data.get("refresh_token")
+
+    if not access:
+        logger.error("magiclink response missing access_token: %r", data)
+        raise HTTPException(status_code=502, detail="שירות האימות לא זמין")
+
+    return LoginResponse(
+        access_token=access,
+        refresh_token=refresh,
+        token_type="bearer",
+    )

@@ -10,6 +10,7 @@ import { z } from "zod";
 import { BrandMark } from "@/components/BrandMark";
 import { FormField } from "@/components/FormField";
 import { apiFetch } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 
 /*
  * Dealer signup form — 9 fields, 3 semantic groups, Hebrew RTL.
@@ -95,6 +96,16 @@ export default function DealerSignupPage() {
         method: "POST",
         body: JSON.stringify(payload),
       });
+      // Phase 4.4 KYC fix — auto-sign-in so /pending can upload documents.
+      try {
+        const supabase = createClient();
+        await supabase.auth.signInWithPassword({
+          email: payload.email,
+          password: values.password,
+        });
+      } catch {
+        /* non-fatal — pending page will show a "log in" prompt instead */
+      }
       router.push("/signup/dealer/pending");
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "שגיאה בשליחת הטופס. נסה שוב.");

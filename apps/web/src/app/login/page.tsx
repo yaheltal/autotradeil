@@ -356,6 +356,8 @@ export default function LoginPage() {
           </form>
         )}
 
+        {!partialToken ? <OtpLoginSection router={router} next={next} /> : null}
+
         {resetToast ? (
           <p
             role="status"
@@ -386,6 +388,192 @@ export default function LoginPage() {
         </p>
       </div>
     </main>
+  );
+}
+
+// =============================================================================
+// OTP login section (Phase 4.4 fix) — passwordless via email code.
+// Collapsed-by-default <details>; on toggle-open we move focus to email.
+// =============================================================================
+
+function OtpLoginSection({ router, next }: { router: ReturnType<typeof useRouter>; next: string }) {
+  const [step, setStep] = useState<"email" | "code">("email");
+  const [otpEmail, setOtpEmail] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [stepAnnounce, setStepAnnounce] = useState("");
+
+  const emailInputRef = useRef<HTMLInputElement>(null);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  const onToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
+    if (e.currentTarget.open) {
+      queueMicrotask(() => emailInputRef.current?.focus());
+    }
+  };
+
+  const requestCode = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setBusy(true);
+    setErr(null);
+    setInfo(null);
+    try {
+      await apiFetch("/api/v1/auth/otp/request", {
+        method: "POST",
+        body: JSON.stringify({ email: otpEmail.trim() }),
+      });
+      setInfo("אם הכתובת קיימת במערכת, נשלח אליה קוד חד פעמי.");
+      setStep("code");
+      // Announce AFTER the code input mounts (a11y-lead req #2).
+      queueMicrotask(() => {
+        codeInputRef.current?.focus();
+        setStepAnnounce("הוזן הקוד שהתקבל באימייל");
+      });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "שגיאה בשליחת הקוד");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyCode = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (otpCode.length !== 6) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      const resp = await apiFetch<{
+        access_token: string;
+        refresh_token: string | null;
+      }>("/api/v1/auth/otp/verify", {
+        method: "POST",
+        body: JSON.stringify({ email: otpEmail.trim(), code: otpCode }),
+      });
+      const supabase = createClient();
+      if (resp.refresh_token) {
+        await supabase.auth.setSession({
+          access_token: resp.access_token,
+          refresh_token: resp.refresh_token,
+        });
+      }
+      router.push(next || "/dashboard");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "קוד שגוי");
+      codeInputRef.current?.focus();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const goBack = () => {
+    setStep("email");
+    setOtpCode("");
+    setErr(null);
+    setInfo(null);
+    queueMicrotask(() => emailInputRef.current?.focus());
+  };
+
+  return (
+    <details onToggle={onToggle} className="border-brand-navy/10 mt-8 rounded-md border bg-white">
+      <summary className="text-brand-navy cursor-pointer px-4 py-3 text-sm font-semibold">
+        כניסה ללא סיסמה — קוד חד פעמי
+      </summary>
+      <div className="border-brand-navy/10 border-t px-4 py-4">
+        {stepAnnounce ? (
+          <p role="status" aria-live="polite" className="sr-only" key={stepAnnounce}>
+            {stepAnnounce}
+          </p>
+        ) : null}
+        {err ? (
+          <p
+            role="alert"
+            className="bg-danger-bg text-danger-text mb-3 rounded-md px-3 py-2 text-sm"
+          >
+            {err}
+          </p>
+        ) : null}
+        {info && step === "code" ? (
+          <p className="bg-ok-bg text-ok-text mb-3 rounded-md px-3 py-2 text-sm">{info}</p>
+        ) : null}
+
+        {step === "email" ? (
+          <form onSubmit={requestCode} noValidate className="space-y-3">
+            <div>
+              <label
+                htmlFor="otp-login-email"
+                className="text-brand-navy block text-sm font-medium"
+              >
+                אימייל
+              </label>
+              <input
+                id="otp-login-email"
+                ref={emailInputRef}
+                type="email"
+                dir="ltr"
+                autoComplete="email"
+                required
+                value={otpEmail}
+                onChange={(e) => setOtpEmail(e.target.value)}
+                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={busy || !otpEmail.trim()}
+              aria-busy={busy || undefined}
+              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+            >
+              {busy ? "שולח…" : "שלח קוד"}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={verifyCode} noValidate className="space-y-3">
+            <div>
+              <label htmlFor="otp-login-code" className="text-brand-navy block text-sm font-medium">
+                קוד אימות
+              </label>
+              <p id="otp-login-code-hint" className="text-brand-navy/70 mt-1 text-xs">
+                הזן את הקוד בן 6 הספרות שהתקבל באימייל
+              </p>
+              <input
+                id="otp-login-code"
+                ref={codeInputRef}
+                type="text"
+                dir="ltr"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                required
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                aria-describedby="otp-login-code-hint"
+                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-40 rounded-md border bg-white px-3 py-2 font-mono text-base tracking-widest focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
+            </div>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <button
+                type="submit"
+                disabled={busy || otpCode.length !== 6}
+                aria-busy={busy || undefined}
+                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+              >
+                {busy ? "מאמת…" : "התחבר"}
+              </button>
+              <button
+                type="button"
+                onClick={goBack}
+                className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                חזרה
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </details>
   );
 }
 

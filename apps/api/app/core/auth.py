@@ -297,6 +297,32 @@ async def require_admin(user: CurrentUser) -> User:
     return user
 
 
+async def require_any_dealer(
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> tuple[User, Dealer]:
+    """Loosened dealer dependency — only checks the dealer row exists.
+
+    Used for endpoints that pre-verified-status dealers must access (KYC
+    upload during signup, etc). Does NOT check `dealer.verified` so a
+    pending application can still upload identity documents.
+    """
+    if user.user_type != "dealer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer access required",
+        )
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.user_id == user.id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer profile not found",
+        )
+    return user, dealer
+
+
 async def require_verified_dealer(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],

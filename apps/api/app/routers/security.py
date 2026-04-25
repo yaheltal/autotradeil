@@ -48,7 +48,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_admin, require_verified_dealer
+from app.core.auth import require_admin, require_any_dealer, require_verified_dealer
 from app.core.cloudinary_client import sign_kyc_url, upload_kyc_document
 from app.core.config import settings
 from app.core.email import send_kyc_approved, send_kyc_rejected, send_otp_email
@@ -346,7 +346,7 @@ async def _signed_kyc_url(stored_url: str | None, dealer_id: uuid.UUID, doc_type
 
 @router.post("/kyc/upload")
 async def kyc_upload(
-    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    ud: Annotated[tuple[User, Dealer], Depends(require_any_dealer)],
     db: Annotated[AsyncSession, Depends(get_db)],
     document_type: str = Form(...),
     file: UploadFile = File(...),
@@ -403,7 +403,7 @@ async def kyc_upload(
 
 @router.get("/kyc/status")
 async def kyc_status(
-    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    ud: Annotated[tuple[User, Dealer], Depends(require_any_dealer)],
 ) -> dict[str, object]:
     _, dealer = ud
     return {
