@@ -22,10 +22,15 @@ from app.core.logging import get_logger
 from app.database import get_db
 from app.models import Dealer, Inventory, InventoryImage, User
 from app.schemas.inventory import (
+    ImagePatchRequest,
     InventoryItemCreate,
     InventoryItemResponse,
     InventoryItemUpdate,
     InventoryListResponse,
+    SellRequest,
+    SellResponse,
+    SellWarning,
+    StatsResponse,
 )
 
 # Image upload constraints
@@ -292,7 +297,13 @@ async def list_images(
     ).scalars().all()
 
     return [
-        {"id": str(img.id), "url": img.url, "position": img.position} for img in rows
+        {
+            "id": str(img.id),
+            "url": img.url,
+            "position": img.position,
+            "hidden": img.hidden,
+        }
+        for img in rows
     ]
 
 
@@ -385,6 +396,33 @@ async def upload_image(
         "url": image.url,
         "position": image.position,
     }
+
+
+@router.patch("/{inventory_id}/images/{image_id}")
+async def patch_image(
+    inventory_id: uuid.UUID,
+    image_id: uuid.UUID,
+    payload: ImagePatchRequest,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Toggle a specific image's `hidden` flag. Owner-only.
+
+    Hidden images stay in the dealer's view but are skipped by the
+    marketplace primary-image lookup."""
+    _, dealer = ud
+    img = await db.get(InventoryImage, image_id)
+    if img is None or img.inventory_id != inventory_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="התמונה לא נמצאה"
+        )
+    if img.dealer_id != dealer.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="אין הרשאה"
+        )
+    img.hidden = bool(payload.hidden)
+    await db.commit()
+    return {"id": str(img.id), "hidden": img.hidden}
 
 
 @router.delete("/{inventory_id}/images/{image_id}")
@@ -580,6 +618,164 @@ async def unpause_item(
     await db.commit()
     await db.refresh(item)
     return InventoryItemResponse.model_validate(item)
+
+
+# ==========================================================================
+# Phase 6.5 — sale closure
+# ==========================================================================
+
+
+@router.post("/{inventory_id}/sell", response_model=SellResponse)
+async def sell_item(
+    inventory_id: uuid.UUID,
+    payload: SellRequest,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> SellResponse:
+    """Mark an active inventory row as sold.
+
+    Captures sale_price, optional purchase_cost, sold_to (b2b/b2c/external),
+    and timestamp. If a B2B Deal exists for this inventory and the supplied
+    price differs, the response includes a non-blocking warning."""
+    from datetime import datetime, timezone as _tz
+
+    from app.models import Deal
+
+    user, dealer = ud
+    item = await db.get(Inventory, inventory_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="רכב לא נמצא")
+    if item.dealer_id != dealer.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="אין הרשאה")
+    if item.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="הרכב כבר סומן כנמכר או מוסתר",
+        )
+
+    item.status = "sold"
+    item.sale_price = payload.sale_price
+    item.sold_at = payload.sold_at or datetime.now(tz=_tz.utc)
+    item.sold_to = payload.sold_to
+    if payload.purchase_cost is not None:
+        item.purchase_cost = payload.purchase_cost
+
+    warnings: SellWarning | None = None
+    if payload.sold_to == "b2b":
+        deal = (
+            await db.execute(
+                select(Deal).where(Deal.inventory_id == inventory_id).limit(1)
+            )
+        ).scalar_one_or_none()
+        if deal is not None and deal.final_price != payload.sale_price:
+            warnings = SellWarning(
+                deal_price_mismatch={
+                    "deal_final_price": int(deal.final_price),
+                    "supplied_sale_price": int(payload.sale_price),
+                }
+            )
+
+    await emit_event(
+        db,
+        event_type="inventory.sold",
+        aggregate_type="inventory",
+        aggregate_id=item.id,
+        payload={
+            "sale_price": payload.sale_price,
+            "purchase_cost": item.purchase_cost,
+            "sold_to": payload.sold_to,
+        },
+        actor_user_id=user.id,
+    )
+    await db.commit()
+    await db.refresh(item)
+
+    return SellResponse(
+        inventory=InventoryItemResponse.model_validate(item), warnings=warnings
+    )
+
+
+# ==========================================================================
+# Phase 6.5 — dealer KPI rollup
+# ==========================================================================
+
+
+@router.get("/stats", response_model=StatsResponse)
+async def inventory_stats(
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    period: str = Query(default="lifetime", pattern="^(lifetime|year|month)$"),
+) -> StatsResponse:
+    """Per-dealer rollup: active count, sold count, revenue, profit, margin,
+    avg days to sell, and how many sold rows lack purchase_cost."""
+    from datetime import datetime, timedelta, timezone as _tz
+
+    _, dealer = ud
+    now = datetime.now(tz=_tz.utc)
+    if period == "month":
+        since = now - timedelta(days=30)
+    elif period == "year":
+        since = now - timedelta(days=365)
+    else:
+        since = None  # lifetime
+
+    active_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(Inventory)
+            .where(Inventory.dealer_id == dealer.id, Inventory.status == "active")
+        )
+    ).scalar_one()
+
+    sold_conds = [Inventory.dealer_id == dealer.id, Inventory.status == "sold"]
+    if since is not None:
+        sold_conds.append(Inventory.sold_at >= since)
+
+    sold_rows = (
+        await db.execute(
+            select(
+                Inventory.sale_price,
+                Inventory.purchase_cost,
+                Inventory.sold_at,
+                Inventory.created_at,
+            ).where(*sold_conds)
+        )
+    ).all()
+
+    sold_count = len(sold_rows)
+    total_revenue = sum(int(r.sale_price or 0) for r in sold_rows)
+    profit_rows = [
+        int(r.sale_price) - int(r.purchase_cost)
+        for r in sold_rows
+        if r.sale_price is not None and r.purchase_cost is not None
+    ]
+    total_profit = sum(profit_rows)
+    rows_missing_purchase_cost = sum(
+        1 for r in sold_rows if r.sale_price is not None and r.purchase_cost is None
+    )
+    profit_margin_pct = (
+        round((total_profit / total_revenue) * 100, 1) if total_revenue > 0 else 0.0
+    )
+
+    days_list = [
+        (r.sold_at - r.created_at).days
+        for r in sold_rows
+        if r.sold_at is not None and r.created_at is not None
+    ]
+    avg_days_to_sell = (
+        int(round(sum(days_list) / len(days_list))) if days_list else None
+    )
+
+    return StatsResponse(
+        period=period,
+        active_count=active_count,
+        sold_count=sold_count,
+        total_revenue=total_revenue,
+        total_profit=total_profit,
+        profit_margin_pct=profit_margin_pct,
+        avg_days_to_sell=avg_days_to_sell,
+        rows_missing_purchase_cost=rows_missing_purchase_cost,
+    )
 
 
 @router.get("/lookup/price-hint")

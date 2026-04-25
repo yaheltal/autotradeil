@@ -99,7 +99,10 @@ async def _primary_image_url_for(
     row = (
         await db.execute(
             select(InventoryImage.url)
-            .where(InventoryImage.inventory_id == inventory_id)
+            .where(
+                InventoryImage.inventory_id == inventory_id,
+                InventoryImage.hidden.is_(False),
+            )
             .order_by(InventoryImage.position)
             .limit(1)
         )
@@ -128,7 +131,10 @@ async def _primary_images_bulk(
             )
             .label("rn"),
         )
-        .where(InventoryImage.inventory_id.in_(inventory_ids))
+        .where(
+            InventoryImage.inventory_id.in_(inventory_ids),
+            InventoryImage.hidden.is_(False),
+        )
         .subquery()
     )
 
