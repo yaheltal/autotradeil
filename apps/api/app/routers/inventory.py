@@ -184,6 +184,92 @@ async def create_inventory_item(
     return InventoryItemResponse.model_validate(item)
 
 
+# ==========================================================================
+# Phase 6.5 — dealer KPI rollup. MUST be declared before /{item_id}, otherwise
+# FastAPI matches the literal "stats" against the {item_id: UUID} parameter
+# and rejects with 422 ("Request payload is invalid"). Routes are matched in
+# declaration order — see the /lookup/* routes for the same pattern.
+# ==========================================================================
+
+
+@router.get("/stats", response_model=StatsResponse)
+async def inventory_stats(
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    period: str = Query(default="lifetime", pattern="^(lifetime|year|month)$"),
+) -> StatsResponse:
+    """Per-dealer rollup: active count, sold count, revenue, profit, margin,
+    avg days to sell, and how many sold rows lack purchase_cost."""
+    from datetime import datetime, timedelta, timezone as _tz
+
+    _, dealer = ud
+    now = datetime.now(tz=_tz.utc)
+    if period == "month":
+        since = now - timedelta(days=30)
+    elif period == "year":
+        since = now - timedelta(days=365)
+    else:
+        since = None  # lifetime
+
+    active_count = (
+        await db.execute(
+            select(func.count())
+            .select_from(Inventory)
+            .where(Inventory.dealer_id == dealer.id, Inventory.status == "active")
+        )
+    ).scalar_one()
+
+    sold_conds = [Inventory.dealer_id == dealer.id, Inventory.status == "sold"]
+    if since is not None:
+        sold_conds.append(Inventory.sold_at >= since)
+
+    sold_rows = (
+        await db.execute(
+            select(
+                Inventory.sale_price,
+                Inventory.purchase_cost,
+                Inventory.sold_at,
+                Inventory.created_at,
+            ).where(*sold_conds)
+        )
+    ).all()
+
+    sold_count = len(sold_rows)
+    total_revenue = sum(int(r.sale_price or 0) for r in sold_rows)
+    profit_rows = [
+        int(r.sale_price) - int(r.purchase_cost)
+        for r in sold_rows
+        if r.sale_price is not None and r.purchase_cost is not None
+    ]
+    total_profit = sum(profit_rows)
+    rows_missing_purchase_cost = sum(
+        1 for r in sold_rows if r.sale_price is not None and r.purchase_cost is None
+    )
+    profit_margin_pct = (
+        round((total_profit / total_revenue) * 100, 1) if total_revenue > 0 else 0.0
+    )
+
+    days_list = [
+        (r.sold_at - r.created_at).days
+        for r in sold_rows
+        if r.sold_at is not None and r.created_at is not None
+    ]
+    avg_days_to_sell = (
+        int(round(sum(days_list) / len(days_list))) if days_list else None
+    )
+
+    return StatsResponse(
+        period=period,
+        active_count=active_count,
+        sold_count=sold_count,
+        total_revenue=total_revenue,
+        total_profit=total_profit,
+        profit_margin_pct=profit_margin_pct,
+        avg_days_to_sell=avg_days_to_sell,
+        rows_missing_purchase_cost=rows_missing_purchase_cost,
+    )
+
+
 @router.get("/{item_id}", response_model=InventoryItemResponse)
 async def get_inventory_item(
     item_id: uuid.UUID,
@@ -698,84 +784,6 @@ async def sell_item(
 # ==========================================================================
 # Phase 6.5 — dealer KPI rollup
 # ==========================================================================
-
-
-@router.get("/stats", response_model=StatsResponse)
-async def inventory_stats(
-    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
-    db: Annotated[AsyncSession, Depends(get_db)],
-    period: str = Query(default="lifetime", pattern="^(lifetime|year|month)$"),
-) -> StatsResponse:
-    """Per-dealer rollup: active count, sold count, revenue, profit, margin,
-    avg days to sell, and how many sold rows lack purchase_cost."""
-    from datetime import datetime, timedelta, timezone as _tz
-
-    _, dealer = ud
-    now = datetime.now(tz=_tz.utc)
-    if period == "month":
-        since = now - timedelta(days=30)
-    elif period == "year":
-        since = now - timedelta(days=365)
-    else:
-        since = None  # lifetime
-
-    active_count = (
-        await db.execute(
-            select(func.count())
-            .select_from(Inventory)
-            .where(Inventory.dealer_id == dealer.id, Inventory.status == "active")
-        )
-    ).scalar_one()
-
-    sold_conds = [Inventory.dealer_id == dealer.id, Inventory.status == "sold"]
-    if since is not None:
-        sold_conds.append(Inventory.sold_at >= since)
-
-    sold_rows = (
-        await db.execute(
-            select(
-                Inventory.sale_price,
-                Inventory.purchase_cost,
-                Inventory.sold_at,
-                Inventory.created_at,
-            ).where(*sold_conds)
-        )
-    ).all()
-
-    sold_count = len(sold_rows)
-    total_revenue = sum(int(r.sale_price or 0) for r in sold_rows)
-    profit_rows = [
-        int(r.sale_price) - int(r.purchase_cost)
-        for r in sold_rows
-        if r.sale_price is not None and r.purchase_cost is not None
-    ]
-    total_profit = sum(profit_rows)
-    rows_missing_purchase_cost = sum(
-        1 for r in sold_rows if r.sale_price is not None and r.purchase_cost is None
-    )
-    profit_margin_pct = (
-        round((total_profit / total_revenue) * 100, 1) if total_revenue > 0 else 0.0
-    )
-
-    days_list = [
-        (r.sold_at - r.created_at).days
-        for r in sold_rows
-        if r.sold_at is not None and r.created_at is not None
-    ]
-    avg_days_to_sell = (
-        int(round(sum(days_list) / len(days_list))) if days_list else None
-    )
-
-    return StatsResponse(
-        period=period,
-        active_count=active_count,
-        sold_count=sold_count,
-        total_revenue=total_revenue,
-        total_profit=total_profit,
-        profit_margin_pct=profit_margin_pct,
-        avg_days_to_sell=avg_days_to_sell,
-        rows_missing_purchase_cost=rows_missing_purchase_cost,
-    )
 
 
 @router.get("/lookup/price-hint")
