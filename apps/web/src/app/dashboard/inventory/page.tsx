@@ -60,6 +60,13 @@ type Item = {
   b2c_price: number | null;
   paused_until: string | null;
   pause_reason: string | null;
+  // Phase 6.5 — sale lifecycle + warranty
+  purchase_cost: number | null;
+  sale_price: number | null;
+  sold_at: string | null;
+  sold_to: "b2b" | "b2c" | "external" | null;
+  warranty_type: "manufacturer" | "dealer" | "extended" | "none" | null;
+  warranty_until: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -399,6 +406,61 @@ export default function InventoryPage() {
                               <dt className="text-brand-ink/60">צבע</dt>
                               <dd>{item.color}</dd>
                             </div>
+                          ) : null}
+                          {/* Phase 6.5 — sale info on sold cards */}
+                          {item.status === "sold" && item.sold_at ? (
+                            <>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <dt className="text-brand-ink/60">תאריך מכירה</dt>
+                                <dd>
+                                  <time dateTime={item.sold_at}>
+                                    {new Date(item.sold_at).toLocaleDateString("he-IL")}
+                                  </time>
+                                </dd>
+                              </div>
+                              {item.sale_price != null ? (
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <dt className="text-brand-ink/60">מחיר מכירה</dt>
+                                  <dd className="font-semibold">
+                                    {formatPrice(item.sale_price).visual}
+                                  </dd>
+                                </div>
+                              ) : null}
+                              {item.sale_price != null && item.purchase_cost != null ? (
+                                <div className="flex items-baseline justify-between gap-2">
+                                  <dt className="text-brand-ink/60">רווח</dt>
+                                  <dd
+                                    className={
+                                      item.sale_price - item.purchase_cost >= 0
+                                        ? "text-ok-text font-semibold"
+                                        : "text-danger-text font-semibold"
+                                    }
+                                  >
+                                    {formatPrice(item.sale_price - item.purchase_cost).visual}{" "}
+                                    <span className="text-brand-ink/60 text-xs font-normal">
+                                      (
+                                      {(
+                                        ((item.sale_price - item.purchase_cost) / item.sale_price) *
+                                        100
+                                      ).toFixed(1)}
+                                      %)
+                                    </span>
+                                  </dd>
+                                </div>
+                              ) : item.sale_price != null && item.purchase_cost == null ? (
+                                <div className="text-brand-ink/60 text-xs">
+                                  💡 חסרה עלות קנייה לחישוב רווח —{" "}
+                                  <button
+                                    type="button"
+                                    onClick={() => openEdit(item)}
+                                    aria-label={`הוסף עלות קנייה ל-${fullLabel}`}
+                                    className="text-brand-navy decoration-brand-gold focus-visible:outline-brand-navy underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+                                  >
+                                    ערוך
+                                  </button>
+                                </div>
+                              ) : null}
+                            </>
                           ) : null}
                         </dl>
 

@@ -30,7 +30,7 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"]);
 const ALLOWED_EXT = /\.(jpe?g|png|webp|heic)$/i;
 
-type Image = { id: string; url: string; position: number };
+type Image = { id: string; url: string; position: number; hidden?: boolean };
 
 type Vehicle = {
   id: string;
@@ -53,6 +53,7 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
   const [uploading, setUploading] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Image | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadBtnRef = useRef<HTMLButtonElement>(null);
@@ -70,6 +71,32 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
       setImages([]);
     }
   }, [vehicle.id, token]);
+
+  const toggleHidden = useCallback(
+    async (img: Image) => {
+      setTogglingId(img.id);
+      try {
+        const next = !img.hidden;
+        await apiFetch(`/api/v1/inventory/${vehicle.id}/images/${img.id}`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({ hidden: next }),
+        });
+        setImages((prev) =>
+          prev ? prev.map((it) => (it.id === img.id ? { ...it, hidden: next } : it)) : prev,
+        );
+        setStatusMsg(next ? "התמונה הוסתרה" : "התמונה הוצגה");
+      } catch (e) {
+        setErrors((prev) => [
+          ...prev,
+          e instanceof Error ? e.message : "שגיאה בעדכון נראות התמונה",
+        ]);
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    [vehicle.id, token],
+  );
 
   useEffect(() => {
     if (open) {
@@ -328,8 +355,35 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
                       <img
                         src={img.url}
                         alt=""
-                        className="absolute inset-0 h-full w-full object-cover"
+                        className={[
+                          "absolute inset-0 h-full w-full object-cover transition-opacity",
+                          img.hidden ? "opacity-40" : "",
+                        ].join(" ")}
                       />
+                      {/* "hidden" badge — visible signal in addition to the
+                       *  reduced opacity, since color/opacity alone cannot be
+                       *  the only signal (WCAG 1.4.1). */}
+                      {img.hidden ? (
+                        <span className="bg-brand-navy text-brand-cream absolute start-2 top-2 rounded px-2 py-0.5 text-xs font-semibold">
+                          מוסתר
+                        </span>
+                      ) : null}
+                      {/* Hide/show toggle (Phase 6.5 task 16) */}
+                      <button
+                        type="button"
+                        onClick={() => void toggleHidden(img)}
+                        aria-pressed={!!img.hidden}
+                        aria-label={
+                          img.hidden
+                            ? `הצג תמונה ${i + 1} מתוך ${count} – ${vehicleLabel}`
+                            : `הסתר תמונה ${i + 1} מתוך ${count} – ${vehicleLabel}`
+                        }
+                        disabled={togglingId === img.id}
+                        className="border-brand-navy/40 hover:bg-brand-navy/10 text-brand-navy focus-visible:outline-brand-navy absolute bottom-2 start-2 inline-flex min-h-9 items-center gap-1 rounded-md border bg-white/90 px-2 py-1 text-xs font-semibold backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                      >
+                        <span aria-hidden="true">{img.hidden ? "👁" : "🚫"}</span>
+                        {img.hidden ? "הצג" : "הסתר"}
+                      </button>
                       <button
                         ref={(el) => {
                           if (el) deleteBtnRefs.current.set(img.id, el);
