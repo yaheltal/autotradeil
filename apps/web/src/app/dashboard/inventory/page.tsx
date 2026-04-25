@@ -179,13 +179,18 @@ export default function InventoryPage() {
   const submitItem = async (payload: InventoryPayload) => {
     if (!token) return;
     if (formMode === "create") {
-      await apiFetch("/api/v1/inventory", {
+      const created = await apiFetch<{ id: string }>("/api/v1/inventory", {
         method: "POST",
         token,
         body: JSON.stringify(payload),
       });
       setToast("הרכב נוסף למלאי");
-    } else if (editingId) {
+      await refresh();
+      // Returned so the dialog can attach the just-captured ID photo as
+      // the new vehicle's primary image (Phase 6.5 task 10).
+      return created;
+    }
+    if (editingId) {
       await apiFetch(`/api/v1/inventory/${editingId}`, {
         method: "PUT",
         token,

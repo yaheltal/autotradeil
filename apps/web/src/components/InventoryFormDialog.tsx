@@ -13,6 +13,8 @@ import { CAR_MAKES, getModelsForMake, matchMake, matchModel } from "@/lib/car-da
 
 export type Visibility = "private" | "b2b" | "b2c" | "both";
 
+export type WarrantyType = "manufacturer" | "dealer" | "extended" | "none";
+
 export type InventoryPayload = {
   make: string;
   model: string;
@@ -27,6 +29,10 @@ export type InventoryPayload = {
   visibility: Visibility;
   b2b_price: number | null;
   b2c_price: number | null;
+  // Phase 6.5 — sale lifecycle + warranty (all optional)
+  purchase_cost: number | null;
+  warranty_type: WarrantyType | null;
+  warranty_until: string | null; // YYYY-MM-DD
 };
 
 export type InventoryInitial = Partial<InventoryPayload> & { id?: string };
@@ -34,7 +40,10 @@ export type InventoryInitial = Partial<InventoryPayload> & { id?: string };
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (payload: InventoryPayload) => Promise<void>;
+  /** Returns the created/updated row (callers in create mode use the
+   *  returned `id` to attach the just-captured ID photo as the primary
+   *  image). May return void in edit mode. */
+  onSubmit: (payload: InventoryPayload) => Promise<{ id: string } | void>;
   initial?: InventoryInitial | null;
   mode: "create" | "edit";
   token?: string | null;
@@ -122,6 +131,23 @@ const schema = z.object({
     .string()
     .optional()
     .refine((v) => !v || /^\d+$/.test(v), "יש להזין מספר"),
+  purchase_cost: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^\d+$/.test(v), "יש להזין מספר"),
+  warranty_type: z
+    .union([
+      z.literal(""),
+      z.literal("manufacturer"),
+      z.literal("dealer"),
+      z.literal("extended"),
+      z.literal("none"),
+    ])
+    .optional(),
+  warranty_until: z
+    .string()
+    .optional()
+    .refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), "תאריך לא תקין"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -151,6 +177,13 @@ function toFormValues(v: InventoryInitial | null | undefined): FormValues {
     visibility: (v?.visibility ?? "private") as Visibility,
     b2b_price: v?.b2b_price != null ? String(v.b2b_price) : "",
     b2c_price: v?.b2c_price != null ? String(v.b2c_price) : "",
+    purchase_cost:
+      (v as InventoryInitial & { purchase_cost?: number | null })?.purchase_cost != null
+        ? String((v as { purchase_cost: number }).purchase_cost)
+        : "",
+    warranty_type: ((v as { warranty_type?: WarrantyType | null })?.warranty_type ??
+      "") as FormValues["warranty_type"],
+    warranty_until: (v as { warranty_until?: string | null })?.warranty_until ?? "",
   };
 }
 
@@ -514,11 +547,30 @@ export function InventoryFormDialog({
         (values.visibility === "b2c" || values.visibility === "both") && values.b2c_price
           ? parseInt(values.b2c_price, 10)
           : null,
+      purchase_cost: values.purchase_cost ? parseInt(values.purchase_cost, 10) : null,
+      warranty_type: values.warranty_type ? (values.warranty_type as WarrantyType) : null,
+      warranty_until: values.warranty_until || null,
     };
     try {
-      await onSubmit(payload);
+      const created = await onSubmit(payload);
+      // Close immediately (a11y-lead req: don't keep the dialog open during
+      // background uploads). Then fire-and-forget the ID-photo attach so the
+      // image used for AI identification becomes the new vehicle's primary.
+      const fileToAttach = mode === "create" ? imgFile : null;
+      const newId = mode === "create" && created ? created.id : null;
       onOpenChange(false);
       reset(toFormValues(null));
+      if (newId && fileToAttach && token) {
+        const form = new FormData();
+        form.append("file", fileToAttach);
+        void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/inventory/${newId}/images`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        }).catch(() => {
+          // Non-fatal — vehicle exists, dealer can upload images later.
+        });
+      }
     } catch (e) {
       setFieldError("root", {
         message: e instanceof Error ? e.message : "שגיאה בשליחה",
@@ -823,6 +875,19 @@ export function InventoryFormDialog({
                     ) : undefined
                   }
                 />
+                {/* Phase 6.5 — purchase_cost. Optional. Used by /sell and
+                 *  the dealer's KPI dashboard to compute profit. */}
+                <HighlightedField
+                  id="inv-purchase-cost"
+                  label="עלות קנייה ₪ (אופציונלי)"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  registration={register("purchase_cost")}
+                  error={errors.purchase_cost?.message}
+                  hint={
+                    <span className="text-brand-ink/70">לצורך חישוב רווח אוטומטי בעת המכירה</span>
+                  }
+                />
                 <HighlightedField
                   id="inv-color"
                   label="צבע"
@@ -984,6 +1049,60 @@ export function InventoryFormDialog({
                   </div>
                 ) : null}
               </fieldset>
+
+              {/* Phase 6.5 — Warranty (separate optional section, NOT a
+               *  panel under "מלא פרטים אוטומטית") */}
+              <section
+                aria-labelledby="warranty-heading"
+                className="border-brand-navy/15 mt-2 rounded-lg border bg-white p-4"
+              >
+                <h3 id="warranty-heading" className="text-brand-navy text-sm font-semibold">
+                  פרטי אחריות (אופציונלי)
+                </h3>
+                <p className="text-brand-ink/70 mt-1 text-xs">
+                  מלא רק אם יש לרכב אחריות בתוקף — יוצג לקונים בשוק
+                </p>
+                <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <SelectField
+                    id="inv-warranty-type"
+                    label="סוג אחריות"
+                    registration={register("warranty_type")}
+                    options={[
+                      { value: "", label: "בחר סוג אחריות..." },
+                      { value: "manufacturer", label: "אחריות יצרן" },
+                      { value: "dealer", label: "אחריות סוחר" },
+                      { value: "extended", label: "אחריות מורחבת" },
+                      { value: "none", label: "ללא אחריות" },
+                    ]}
+                    error={errors.warranty_type?.message}
+                  />
+                  <div>
+                    <label
+                      htmlFor="inv-warranty-until"
+                      className="text-brand-navy block text-sm font-medium"
+                    >
+                      תוקף האחריות
+                    </label>
+                    <input
+                      id="inv-warranty-until"
+                      type="date"
+                      dir="ltr"
+                      {...register("warranty_until")}
+                      aria-invalid={errors.warranty_until?.message ? true : undefined}
+                      aria-describedby="inv-warranty-until-hint"
+                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                    />
+                    <p id="inv-warranty-until-hint" className="text-brand-ink/70 mt-1 text-xs">
+                      התאריך עד אליו האחריות בתוקף
+                    </p>
+                    {errors.warranty_until?.message ? (
+                      <p className="text-danger-text mt-1 text-sm">
+                        {errors.warranty_until.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </section>
 
               {/* Images link-button */}
               <div className="border-brand-navy/10 rounded-lg border bg-white p-4">
