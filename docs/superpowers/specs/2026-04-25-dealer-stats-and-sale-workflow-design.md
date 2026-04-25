@@ -211,3 +211,17 @@ Implementation:
 - Surface a non-blocking toast ("התמונה נשמרה כתמונת פרופיל") and tolerate failure (image upload is best-effort, the inventory row is already created).
 
 Edit mode is unchanged — there's no implicit photo-to-profile behavior because there's no identification flow on edit.
+
+## Addendum 2 (Telegram msg 176, post-approval)
+
+**Per-image hide/show toggle.**
+
+The dealer wants to hide a specific image without deleting it, and to bring it back later. Use case: seasonal photos, alternate angles they don't want public during a particular listing.
+
+Implementation:
+
+- Add `inventory_images.hidden BOOLEAN NOT NULL DEFAULT false` (folded into the same migration as the sale/warranty columns).
+- Hidden images do NOT count for `_primary_image_url_for` (the marketplace card image lookup) and are filtered out of the public images list returned by `GET /api/v1/inventory/{id}/images` for non-owners.
+- The owner (dealer) sees all images in `VehicleImagesDialog` with a per-row "הסתר/הצג" toggle button.
+- New endpoint: `PATCH /api/v1/inventory/{inventory_id}/images/{image_id}` accepting `{"hidden": true|false}`. Only the owner can flip it.
+- If the user hides the current primary image (lowest visible position), the next visible image becomes effectively primary — no automatic position re-assignment, the marketplace lookup just skips hidden rows.
