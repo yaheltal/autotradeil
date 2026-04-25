@@ -248,7 +248,8 @@ export function SellVehicleDialog({ open, onOpenChange, vehicle, token, onSold }
                   <p className="text-brand-ink text-sm">
                     רווח מחושב:{" "}
                     <strong className={profit.abs >= 0 ? "text-ok-text" : "text-danger-text"}>
-                      {formatPrice(profit.abs)}
+                      <span aria-hidden="true">{formatPrice(profit.abs).visual}</span>
+                      <span className="sr-only">{formatPrice(profit.abs).sr}</span>
                     </strong>{" "}
                     <span className="text-brand-ink/70">({profit.pct.toFixed(1)}%)</span>
                   </p>
