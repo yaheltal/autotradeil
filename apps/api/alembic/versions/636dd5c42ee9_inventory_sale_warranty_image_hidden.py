@@ -1,27 +1,47 @@
-"""inventory sale warranty image hidden
+"""phase 6.5 — inventory sale lifecycle + warranty + per-image hidden
 
 Revision ID: 636dd5c42ee9
 Revises: b5efe7fd8b8a
 Create Date: 2026-04-25 14:14:02.913535
 
+Phase 6.5 — Dealer-facing sale workflow + per-image visibility.
+
+1. `inventory` (six new nullable columns):
+   - `purchase_cost` INTEGER  CHECK >= 0  — what the dealer paid
+   - `sale_price`    INTEGER  CHECK >= 0  — what the deal closed at
+   - `sold_at`       TIMESTAMPTZ          — sale timestamp
+   - `sold_to`       VARCHAR(20) CHECK ∈ {'b2b','b2c','external'}
+   - `warranty_type` VARCHAR(20) CHECK ∈ {'manufacturer','dealer','extended','none'}
+   - `warranty_until` DATE
+   All NULL-able; no data backfill required. `b2b_price` / `b2c_price`
+   are kept as listed prices; `sale_price` is what actually changed hands.
+   Index `idx_inventory_sold_at` accelerates period-bounded stat queries.
+
+2. `inventory_images`:
+   - `hidden` BOOLEAN NOT NULL DEFAULT false
+   Per-image visibility toggle. Existing rows backfill to `false` via the
+   server_default before NOT NULL is enforced. The marketplace primary-image
+   lookup is updated separately to skip rows where `hidden = true`.
 """
+
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 
 # revision identifiers, used by Alembic.
-revision: str = '636dd5c42ee9'
-down_revision: Union[str, None] = 'b5efe7fd8b8a'
+revision: str = "636dd5c42ee9"
+down_revision: Union[str, None] = "b5efe7fd8b8a"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # ----------------------------------------------------------
-    # inventory — sale lifecycle + warranty
-    # ----------------------------------------------------------
+    # --------------------------------------------------------------
+    # 1. inventory — sale lifecycle + warranty
+    # --------------------------------------------------------------
     op.add_column("inventory", sa.Column("purchase_cost", sa.Integer(), nullable=True))
     op.add_column("inventory", sa.Column("sale_price", sa.Integer(), nullable=True))
     op.add_column(
@@ -54,9 +74,9 @@ def upgrade() -> None:
     )
     op.create_index("idx_inventory_sold_at", "inventory", ["sold_at"])
 
-    # ----------------------------------------------------------
-    # inventory_images — hidden flag (per-image visibility toggle)
-    # ----------------------------------------------------------
+    # --------------------------------------------------------------
+    # 2. inventory_images — per-image hidden flag
+    # --------------------------------------------------------------
     op.add_column(
         "inventory_images",
         sa.Column("hidden", sa.Boolean(), nullable=False, server_default="false"),
