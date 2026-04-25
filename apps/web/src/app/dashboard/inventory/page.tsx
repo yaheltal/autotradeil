@@ -14,6 +14,7 @@ import {
 } from "@/components/InventoryFormDialog";
 import { NotificationBell } from "@/components/NotificationBell";
 import { PauseDialog } from "@/components/PauseDialog";
+import { SellVehicleDialog } from "@/components/SellVehicleDialog";
 import { StatusBadge, type InventoryStatus } from "@/components/StatusBadge";
 import { VehicleImagesDialog } from "@/components/VehicleImagesDialog";
 import { apiFetch } from "@/lib/api";
@@ -107,6 +108,10 @@ export default function InventoryPage() {
   // Phase 4.3: pause dialog state
   const [pauseOpen, setPauseOpen] = useState(false);
   const [pauseVehicle, setPauseVehicle] = useState<Item | null>(null);
+
+  // Phase 6.5: sell dialog state
+  const [sellOpen, setSellOpen] = useState(false);
+  const [sellVehicle, setSellVehicle] = useState<Item | null>(null);
 
   // Auth bootstrap
   useEffect(() => {
@@ -426,6 +431,20 @@ export default function InventoryPage() {
                               <button
                                 type="button"
                                 onClick={() => {
+                                  setSellVehicle(item);
+                                  setSellOpen(true);
+                                }}
+                                aria-label={`סמן כנמכר: ${fullLabel}`}
+                                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center gap-1.5 rounded-md px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                              >
+                                <span aria-hidden="true">💰</span>
+                                סמן כנמכר
+                              </button>
+                            ) : null}
+                            {item.status === "active" ? (
+                              <button
+                                type="button"
+                                onClick={() => {
                                   setPauseVehicle(item);
                                   setPauseOpen(true);
                                 }}
@@ -532,6 +551,36 @@ export default function InventoryPage() {
           onDone={() => {
             setToast("הרכב הושהה");
             void refresh();
+          }}
+        />
+      ) : null}
+
+      {/* Phase 6.5 — sell dialog */}
+      {sellVehicle && token ? (
+        <SellVehicleDialog
+          open={sellOpen}
+          onOpenChange={(v) => {
+            setSellOpen(v);
+            if (!v) setSellVehicle(null);
+          }}
+          token={token}
+          vehicle={{
+            id: sellVehicle.id,
+            make: sellVehicle.make,
+            model: sellVehicle.model,
+            year: sellVehicle.year,
+            price: sellVehicle.price,
+            b2b_price: sellVehicle.b2b_price,
+            b2c_price: sellVehicle.b2c_price,
+            purchase_cost:
+              (sellVehicle as Item & { purchase_cost?: number | null }).purchase_cost ?? null,
+          }}
+          onSold={() => {
+            setToast("הרכב סומן כנמכר ✓");
+            void refresh();
+            // Move focus to the heading to avoid stranding it on the
+            // unmounted "סמן כנמכר" trigger button (a11y-lead req).
+            queueMicrotask(() => headingRef.current?.focus());
           }}
         />
       ) : null}
