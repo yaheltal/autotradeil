@@ -650,23 +650,22 @@ function KycTabPanel({
   const load = useCallback(async () => {
     setLoadErr(null);
     try {
-      // Use the existing pending list — sufficient for "submitted" status.
-      // For other statuses we just render the status text.
-      const list = await apiFetch<
-        Array<{
-          id: string;
-          id_card_front_url: string | null;
-          id_card_back_url: string | null;
-          dealer_license_url: string | null;
-        }>
-      >("/api/v1/security/kyc/pending", { token });
-      const row = list.find((r) => r.id === dealerId);
+      // /api/v1/admin/dealers/{id} returns 10-min signed KYC URLs for
+      // dealers in ANY status (not just submitted). The endpoint was
+      // extended in 35bee61 to include personal + KYC fields for admins.
+      const detail = await apiFetch<{
+        kyc_status: "pending" | "submitted" | "approved" | "rejected";
+        kyc_rejected_reason: string | null;
+        id_card_front_url: string | null;
+        id_card_back_url: string | null;
+        dealer_license_url: string | null;
+      }>(`/api/v1/admin/dealers/${dealerId}`, { token });
       setKyc({
-        kyc_status: row ? "submitted" : "pending",
-        id_card_front_url: row?.id_card_front_url ?? null,
-        id_card_back_url: row?.id_card_back_url ?? null,
-        dealer_license_url: row?.dealer_license_url ?? null,
-        kyc_rejected_reason: null,
+        kyc_status: detail.kyc_status,
+        id_card_front_url: detail.id_card_front_url,
+        id_card_back_url: detail.id_card_back_url,
+        dealer_license_url: detail.dealer_license_url,
+        kyc_rejected_reason: detail.kyc_rejected_reason,
       });
     } catch (e) {
       setLoadErr(e instanceof Error ? e.message : "שגיאה בטעינת מסמכים");
@@ -730,15 +729,35 @@ function KycTabPanel({
         </p>
       ) : null}
 
+      {/* Status pill — visible regardless of whether photos are present */}
+      {kyc ? (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <KycStatusPill status={kyc.kyc_status} />
+          {kyc.kyc_status === "rejected" && kyc.kyc_rejected_reason ? (
+            <span className="text-brand-ink/70 text-xs">סיבת דחייה: {kyc.kyc_rejected_reason}</span>
+          ) : null}
+        </div>
+      ) : null}
+
       {!kyc ? (
-        <p role="status" className="text-brand-ink/60 mt-3">
-          טוען מסמכים…
-        </p>
-      ) : kyc.kyc_status !== "submitted" ? (
-        <p className="text-brand-ink/60 mt-3 text-sm">
-          {kyc.id_card_front_url
-            ? "המסמכים אושרו או נדחו בעבר."
-            : "הסוחר עדיין לא העלה מסמכי זהות."}
+        // Loading skeleton — same shape as the eventual photo grid so the
+        // layout doesn't jump when data lands. role=status so SR users
+        // hear that something's loading.
+        <div role="status" aria-live="polite" className="mt-4">
+          <span className="sr-only">טוען מסמכים…</span>
+          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <li key={i} aria-hidden="true">
+                <div className="bg-brand-navy/10 mb-1 h-3 w-32 rounded motion-safe:animate-pulse" />
+                <div className="bg-brand-navy/10 aspect-[4/3] w-full rounded-md motion-safe:animate-pulse" />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : !kyc.id_card_front_url && !kyc.id_card_back_url && !kyc.dealer_license_url ? (
+        // No photos uploaded yet — show clear empty-state message.
+        <p className="border-brand-navy/15 bg-brand-cream/40 text-brand-ink/65 mt-4 rounded-md border p-4 text-sm">
+          הסוחר עדיין לא העלה מסמכי זהות.
         </p>
       ) : (
         <>
@@ -747,52 +766,41 @@ function KycTabPanel({
               ["id_card_front_url", "תעודת זהות — צד קדמי"] as const,
               ["id_card_back_url", "תעודת זהות — צד אחורי"] as const,
               ["dealer_license_url", "רישיון סוחר רכבים"] as const,
-            ].map(([key, label]) => {
-              const url = kyc[key];
-              return (
-                <li key={key}>
-                  <p className="text-brand-ink/60 mb-1 text-xs">{label}</p>
-                  {url ? (
-                    <button
-                      type="button"
-                      onClick={() => setViewer({ label, url })}
-                      aria-label={`הצג ${label}`}
-                      className="border-brand-navy/10 focus-visible:outline-brand-navy block aspect-[4/3] w-full overflow-hidden rounded-md border bg-white focus-visible:outline-2 focus-visible:outline-offset-2"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
-                    </button>
-                  ) : (
-                    <p className="border-brand-navy/10 text-brand-ink/50 bg-brand-cream/40 flex aspect-[4/3] items-center justify-center rounded-md border text-xs">
-                      חסר
-                    </p>
-                  )}
-                </li>
-              );
-            })}
+            ].map(([key, label]) => (
+              <li key={key}>
+                <p className="text-brand-ink/65 mb-1.5 text-xs font-semibold">{label}</p>
+                <KycPhotoCard
+                  url={kyc[key]}
+                  label={label}
+                  onOpen={(u) => setViewer({ label, url: u })}
+                />
+              </li>
+            ))}
           </ul>
 
-          <div className="mt-5 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={approve}
-              disabled={busy}
-              aria-busy={busy || undefined}
-              className="bg-ok hover:bg-ok/90 focus-visible:outline-ok inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-            >
-              <span aria-hidden="true">✓</span>
-              אשר אימות זהות
-            </button>
-            <button
-              type="button"
-              onClick={() => setRejectOpen(true)}
-              disabled={busy}
-              className="bg-danger hover:bg-danger/90 focus-visible:outline-danger-text inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-            >
-              <span aria-hidden="true">✕</span>
-              דחה אימות זהות
-            </button>
-          </div>
+          {kyc.kyc_status === "submitted" ? (
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={approve}
+                disabled={busy}
+                aria-busy={busy || undefined}
+                className="bg-ok hover:bg-ok/90 focus-visible:outline-ok inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+              >
+                <span aria-hidden="true">✓</span>
+                אשר אימות זהות
+              </button>
+              <button
+                type="button"
+                onClick={() => setRejectOpen(true)}
+                disabled={busy}
+                className="bg-danger hover:bg-danger/90 focus-visible:outline-danger-text inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+              >
+                <span aria-hidden="true">✕</span>
+                דחה אימות זהות
+              </button>
+            </div>
+          ) : null}
         </>
       )}
 
@@ -903,5 +911,91 @@ function KycTabPanel({
         </Dialog.Portal>
       </Dialog.Root>
     </div>
+  );
+}
+
+// =============================================================================
+// KYC photo card — handles loading, error fallback, and click-to-open.
+// Signed Cloudinary URLs expire 10min after the parent fetch, so an expired
+// signature surfaces as a real onError event; we render a graceful retry hint.
+// =============================================================================
+
+function KycPhotoCard({
+  url,
+  label,
+  onOpen,
+}: {
+  url: string | null;
+  label: string;
+  onOpen: (url: string) => void;
+}) {
+  const [state, setState] = useState<"idle" | "loaded" | "error">("idle");
+
+  if (!url) {
+    return (
+      <div className="border-brand-navy/15 text-brand-ink/55 bg-brand-cream/40 flex aspect-[4/3] items-center justify-center rounded-md border text-xs">
+        חסר
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(url)}
+      aria-label={`הצג ${label} בגודל מלא`}
+      className="border-brand-navy/15 hover:border-brand-navy/35 focus-visible:outline-brand-navy bg-brand-cream/40 group relative block aspect-[4/3] w-full overflow-hidden rounded-md border focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      {/* Loading shimmer underneath the image — hidden once loaded. */}
+      {state === "idle" ? (
+        <div
+          aria-hidden="true"
+          className="bg-brand-navy/10 absolute inset-0 motion-safe:animate-pulse"
+        />
+      ) : null}
+
+      {state !== "error" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onLoad={() => setState("loaded")}
+          onError={() => setState("error")}
+          className="relative h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+        />
+      ) : (
+        <div className="text-brand-ink/65 flex h-full w-full flex-col items-center justify-center gap-1 px-3 text-center text-xs">
+          <span aria-hidden="true" className="text-2xl">
+            ⚠
+          </span>
+          <span>טעינת התמונה נכשלה</span>
+          <span className="text-brand-ink/55">החתימה אולי פגה — רענן</span>
+        </div>
+      )}
+    </button>
+  );
+}
+
+// =============================================================================
+// Localized KYC status pill. Self-explanatory chip; color carries meaning but
+// is duplicated by the text label so screen readers + colorblind users get it.
+// =============================================================================
+
+function KycStatusPill({ status }: { status: "pending" | "submitted" | "approved" | "rejected" }) {
+  const map = {
+    pending: { label: "ממתין להעלאה", classes: "bg-brand-navy/10 text-brand-navy/80" },
+    submitted: { label: "ממתין לאישור", classes: "bg-amber-100 text-amber-900" },
+    approved: { label: "מאומת ✓", classes: "bg-ok-bg text-ok-text" },
+    rejected: { label: "נדחה", classes: "bg-danger-bg text-danger-text" },
+  } as const;
+  const m = map[status];
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ${m.classes}`}
+    >
+      {m.label}
+    </span>
   );
 }
