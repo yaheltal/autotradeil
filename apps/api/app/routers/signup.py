@@ -209,6 +209,7 @@ async def signup_dealer(
             lot_size=payload.lot_size,
             contact_name=payload.contact_name,
             verified=False,
+            license_until=payload.license_until,
         )
         db.add(dealer)
         # Mirror phone to users.phone so the OTP-by-phone login flow can
@@ -216,6 +217,16 @@ async def signup_dealer(
         # that admins also have OTP login).
         if payload.phone and not user.phone:
             user.phone = payload.phone
+        # Phase 6.6 — persist KYC personal info if provided (extracted by
+        # the AI from the dealer's ID images at the start of signup).
+        if payload.first_name:
+            user.first_name = payload.first_name
+        if payload.last_name:
+            user.last_name = payload.last_name
+        if payload.id_number:
+            user.id_number = payload.id_number
+        if payload.birth_date:
+            user.birth_date = payload.birth_date
         await db.flush()
 
         await emit_event(
