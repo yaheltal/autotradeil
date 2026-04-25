@@ -5,6 +5,7 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from app.core.config import settings
 from app.core.errors import register_exception_handlers
@@ -51,6 +52,12 @@ app.add_middleware(
     max_age=600,
 )
 
+# gzip everything ≥1KB. Marketplace search responses hit ~30-80KB; this
+# typically saves 70-85% on the wire. Negligible CPU on Render's Starter
+# instance; FastAPI applies the middleware lazily so small responses
+# (auth probes, healthz) skip compression entirely.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
 register_exception_handlers(app)
 
 _request_logger = get_logger("app.request")
@@ -65,6 +72,30 @@ async def request_context(request: Request, call_next):  # type: ignore[no-untyp
 
     duration_ms = (time.perf_counter() - start) * 1000
     response.headers["X-Request-ID"] = request_id
+
+    # Default cache headers for safe, idempotent reads. Endpoints that
+    # need different policies (e.g. /security/kyc/* with signed URLs)
+    # can override by setting Cache-Control before this middleware sees
+    # the response — we only fill in when the handler didn't.
+    if (
+        request.method == "GET"
+        and 200 <= response.status_code < 300
+        and "cache-control" not in (k.lower() for k in response.headers.keys())
+    ):
+        path = request.url.path
+        if path in ("/", "/healthz") or path.startswith("/api/v1/health"):
+            # Public health probes — short cache so Render's load
+            # balancer + uptime pings don't all hit Postgres.
+            response.headers["Cache-Control"] = "public, max-age=30"
+        elif path.startswith("/api/v1/"):
+            # Authenticated API responses are user-specific — keep them
+            # private; allow short fresh-cache + 5min stale-while-revalidate
+            # so the browser can re-render instantly while the next fetch
+            # refreshes in the background.
+            response.headers["Cache-Control"] = (
+                "private, max-age=0, stale-while-revalidate=300"
+            )
+
     log_request(
         _request_logger,
         request.method,

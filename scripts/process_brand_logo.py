@@ -126,19 +126,26 @@ def recolor_to(img: Image.Image, rgb: tuple[int, int, int]) -> Image.Image:
     return img
 
 
+def save_png_and_webp(img: Image.Image, base_name: str) -> None:
+    """Emit both PNG (broad compat / fallback) and WebP (smaller bytes,
+    serves modern browsers via the same asset URL when next/image is
+    used). Both are referenced explicitly from next.config's headers
+    block so they get the immutable long-cache."""
+    img.save(PUBLIC / f"{base_name}.png", format="PNG", optimize=True)
+    img.save(PUBLIC / f"{base_name}.webp", format="WEBP", quality=88, method=6)
+
+
 def write_logo_full() -> Image.Image:
     src = Image.open(SRC).convert("RGBA")
     transparent = whiten_to_alpha(src, threshold=215)
     trimmed = trim_transparent(transparent)
-    out = PUBLIC / "logo-full.png"
-    trimmed.save(out, format="PNG", optimize=True)
-    print(f"  wrote {out.name}  ({trimmed.size[0]}x{trimmed.size[1]})")
+    save_png_and_webp(trimmed, "logo-full")
+    print(f"  wrote logo-full.png + .webp  ({trimmed.size[0]}x{trimmed.size[1]})")
 
     # White-recolored variant for dark backgrounds (footer).
     white = recolor_to(trimmed.copy(), (248, 248, 246))
-    white_out = PUBLIC / "logo-full-white.png"
-    white.save(white_out, format="PNG", optimize=True)
-    print(f"  wrote {white_out.name}  ({white.size[0]}x{white.size[1]})")
+    save_png_and_webp(white, "logo-full-white")
+    print(f"  wrote logo-full-white.png + .webp  ({white.size[0]}x{white.size[1]})")
 
     return src  # return the original (RGB) for downstream cropping
 
@@ -149,9 +156,8 @@ def write_logo_icon(full_rgb: Image.Image) -> Image.Image:
     shield_rgba = whiten_to_alpha(shield_rect, threshold=232)
     shield_trim = trim_transparent(shield_rgba)
     shield_sq = square_pad(shield_trim, bg=(0, 0, 0, 0))
-    out = PUBLIC / "logo-icon.png"
-    shield_sq.save(out, format="PNG", optimize=True)
-    print(f"  wrote {out.name}  ({shield_sq.size[0]}x{shield_sq.size[1]})")
+    save_png_and_webp(shield_sq, "logo-icon")
+    print(f"  wrote logo-icon.png + .webp  ({shield_sq.size[0]}x{shield_sq.size[1]})")
     return shield_sq
 
 
@@ -252,9 +258,9 @@ def write_og_image() -> None:
     cream_70 = tuple(int(0.7 * c1 + 0.3 * c2) for c1, c2 in zip((248, 248, 246), (27, 43, 75)))
     draw.text(((W - domain_w) // 2, H - 56), domain, fill=cream_70, font=domain_font)
 
-    out = PUBLIC / "og-image.png"
-    img.save(out, format="PNG", optimize=True)
-    print(f"  wrote {out.name}  (1200x630)")
+    img.save(PUBLIC / "og-image.png", format="PNG", optimize=True)
+    img.save(PUBLIC / "og-image.webp", format="WEBP", quality=88, method=6)
+    print("  wrote og-image.png + .webp  (1200x630)")
 
 
 def remove_obsolete() -> None:

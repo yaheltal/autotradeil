@@ -797,12 +797,3 @@ function OtpLoginSection({ router, next }: { router: ReturnType<typeof useRouter
     </section>
   );
 }
-
-function translateAuthError(msg?: string): string | null {
-  if (!msg) return null;
-  const lower = msg.toLowerCase();
-  if (lower.includes("invalid login")) return "שם משתמש או סיסמה שגויים";
-  if (lower.includes("email not confirmed")) return "המייל עדיין לא אומת";
-  if (lower.includes("rate limit")) return "יותר מדי ניסיונות — נסה שוב מאוחר יותר";
-  return msg;
-}
