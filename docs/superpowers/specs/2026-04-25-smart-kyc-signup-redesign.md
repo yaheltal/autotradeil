@@ -26,7 +26,9 @@ Move dealer signup from a personal-details-then-KYC flow to a KYC-first flow whe
 | Dealer model             | `apps/api/app/models/dealer.py`                                           | Has `business_name`, `business_id`, `license_number`, `phone`, `city`, `lot_size`, `contact_name`, `verified` |
 | User model               | `apps/api/app/models/user.py`                                             | Linked to Supabase auth via `id` UUID                                                                         |
 
-## New user-facing flow (4 wizard steps)
+## New user-facing flow (2 wizard steps + redirect)
+
+The original draft included a dedicated "extracting…" screen between capture and confirm. That screen does nothing the dealer cares about — it's just a loading spinner. Folded the spinner into the "Continue" button on step 1 so the wizard is two real screens.
 
 ### Step 1 — Capture three documents (smart camera)
 
@@ -42,17 +44,13 @@ For each of the three required documents (ID front, ID back, dealer license):
 
 The captured/selected image is held in component state as a `Blob`. The dealer can re-take/replace before continuing.
 
-### Step 2 — AI extraction
+### Step 2 — Confirm details
 
-Once all three documents are captured, the wizard auto-advances to a "Analyzing your documents…" screen. The frontend POSTs the three blobs to `POST /api/v1/security/kyc/extract` (new). Backend forwards them to Claude (one multi-image prompt) and returns a JSON of extracted fields.
+When the dealer taps "המשך" on step 1, the button itself enters a spinner state ("מנתח...") while the wizard POSTs the three blobs to `POST /api/v1/security/kyc/extract`. There is NO dedicated extraction screen. On API response, step 2 renders.
 
-### Step 3 — Confirm details
+Step 2 is the personal-details + business form pre-filled from extraction. The dealer edits any field. Fields the AI didn't fill (password, business_id if not on the license, lot_size, etc.) are blank and required.
 
-The wizard renders the personal-details + business form, pre-filled from extraction. The dealer can edit any field. Fields that the AI didn't fill (password, business_id if not on the license, lot_size, etc.) are blank and required.
-
-### Step 4 — Submit
-
-Single click → `POST /api/v1/auth/signup/dealer` (existing endpoint, with new fields) → on success the three captured images are uploaded to Cloudinary via existing `POST /api/v1/security/kyc/upload` → redirect to `/signup/dealer/pending`.
+Submit button: when tapped, calls `POST /api/v1/auth/signup/dealer` (existing endpoint, with new fields). On 201, immediately uploads the three captured blobs to `POST /api/v1/security/kyc/upload` (best-effort) and redirects to `/signup/dealer/pending`.
 
 ## Data model changes
 
@@ -139,12 +137,10 @@ A11y: the overlay state is mirrored to a `role="status" aria-live="polite"` regi
 
 Path: `apps/web/src/app/signup/dealer/page.tsx` (replaces current implementation).
 
-A 4-step wizard managed by local state (`step: 1 | 2 | 3 | 4`):
+A 2-step wizard managed by local state (`step: 1 | 2`) plus an `extracting` boolean:
 
-1. **Capture** — three slots ("ת"ז קדמי", "ת"ז אחורי", "רישיון סוחר"). Each slot starts with a "צלם" button → opens `SmartCameraCapture`. After capture: thumbnail + "צלם שוב" link. "המשך" enabled when all three are captured.
-2. **Extract** — auto-runs `POST /security/kyc/extract` with the three blobs. Shows progress copy + spinner. On success → step 3. On failure → an error message + "המשך ידנית" link that goes to step 3 with empty fields.
-3. **Confirm** — the existing form (personal + business fields) but with pre-filled values from the extraction. The dealer can edit anything. Submit → step 4.
-4. **Submit** — calls `POST /api/v1/auth/signup/dealer` with the new fields. On success → upload three blobs to `/api/v1/security/kyc/upload` (best-effort) → redirect to `/signup/dealer/pending`.
+1. **Capture** — three slots ("ת"ז קדמי", "ת"ז אחורי", "רישיון סוחר"). Each slot starts with a "צלם" button → opens `SmartCameraCapture`. After capture: thumbnail + "צלם שוב" link. "המשך" enabled when all three are captured. On press: button shows a spinner ("מנתח..."), the wizard POSTs the three blobs to `/security/kyc/extract`. On response → store extracted fields, advance to step 2. On failure → toast "לא הצלחנו לקרוא את התעודות — מלא ידנית" and advance anyway with empty fields.
+2. **Confirm** — pre-filled form (personal + business). Dealer edits/completes. Submit calls `POST /api/v1/auth/signup/dealer` with new fields → on 201, uploads three blobs to `/api/v1/security/kyc/upload` (best-effort) → redirect to `/signup/dealer/pending`.
 
 A11y: `aria-current="step"` on the active step in a step indicator; focus moves to the new step's heading on transition; per-step heading is `<h2>` so the page `<h1>` ("הרשמה כסוחר") stays anchored.
 
