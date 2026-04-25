@@ -144,11 +144,17 @@ export function DealerStatsCards({ token }: { token: string }) {
           }
           value={stats ? stats.sold_count.toLocaleString("he-IL") : "—"}
         />
-        <Card icon="💰" label="הכנסות" value={stats ? formatPrice(stats.total_revenue) : "—"} />
+        <Card
+          icon="💰"
+          label="הכנסות"
+          value={stats ? formatPrice(stats.total_revenue).visual : "—"}
+          srValue={stats ? formatPrice(stats.total_revenue).sr : undefined}
+        />
         <Card
           icon="📈"
           label={stats ? `רווח (${stats.profit_margin_pct}%)` : "רווח"}
-          value={stats ? formatPrice(stats.total_profit) : "—"}
+          value={stats ? formatPrice(stats.total_profit).visual : "—"}
+          srValue={stats ? formatPrice(stats.total_profit).sr : undefined}
           tone={stats && stats.total_profit < 0 ? "negative" : "neutral"}
         />
       </dl>
@@ -174,11 +180,14 @@ function Card({
   icon,
   label,
   value,
+  srValue,
   tone,
 }: {
   icon: string;
   label: string;
   value: string;
+  /** Optional screen-reader override (e.g. spelled-out price for AT). */
+  srValue?: string;
   tone?: "neutral" | "negative";
 }) {
   return (
@@ -193,7 +202,14 @@ function Card({
           tone === "negative" ? "text-danger-text" : "text-brand-navy",
         ].join(" ")}
       >
-        {value}
+        {srValue ? (
+          <>
+            <span aria-hidden="true">{value}</span>
+            <span className="sr-only">{srValue}</span>
+          </>
+        ) : (
+          value
+        )}
       </dd>
     </div>
   );
