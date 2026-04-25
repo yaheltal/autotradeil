@@ -473,9 +473,50 @@ export default function MarketplacePage() {
                     ))}
                   </ul>
                 ) : data && data.items.length === 0 ? (
-                  <p className="border-brand-navy/10 text-brand-ink/60 rounded-lg border bg-white p-10 text-center">
-                    לא נמצאו רכבים תואמים לחיפוש
-                  </p>
+                  // Two distinct empty cases — be explicit about which:
+                  //  • no filters set → there genuinely is no B2B inventory
+                  //    from other dealers right now (or you're the only
+                  //    dealer with B2B listings — the API self-excludes)
+                  //  • any filter set → your filter combination matched
+                  //    nothing; suggest broadening
+                  (() => {
+                    const hasAnyFilter = Boolean(
+                      filters.q ||
+                      filters.make ||
+                      filters.model ||
+                      filters.year_min ||
+                      filters.year_max ||
+                      filters.price_min ||
+                      filters.price_max ||
+                      filters.mileage_max ||
+                      filters.transmission ||
+                      filters.fuel_type ||
+                      filters.city,
+                    );
+                    return (
+                      <div className="border-brand-navy/10 mx-auto max-w-md rounded-lg border bg-white p-10 text-center">
+                        <p className="text-brand-navy text-base font-bold">
+                          {hasAnyFilter
+                            ? "לא נמצאו רכבים תואמים לסינון שלך"
+                            : "אין כרגע רכבים פעילים בשוק B2B"}
+                        </p>
+                        <p className="text-brand-ink/65 mt-2 text-sm leading-relaxed">
+                          {hasAnyFilter
+                            ? "נסה להרחיב את טווח השנים, המחיר או הק״מ — או לאפס את הסינון לקבלת רשימה מלאה."
+                            : "כשסוחרים נוספים יפרסמו רכבים לסחר בין-סוחרים, הם יופיעו כאן. הרכבים שלך עצמך אינם נכללים בשוק."}
+                        </p>
+                        {hasAnyFilter ? (
+                          <button
+                            type="button"
+                            onClick={resetFilters}
+                            className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy mt-5 inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                          >
+                            איפוס סינון
+                          </button>
+                        ) : null}
+                      </div>
+                    );
+                  })()
                 ) : data ? (
                   <>
                     <ul className="grid gap-4 sm:grid-cols-2">
