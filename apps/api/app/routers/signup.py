@@ -90,6 +90,75 @@ async def _delete_supabase_auth_user(user_id: str) -> None:
         logger.error("Failed to rollback auth user %s: %s", user_id, exc)
 
 
+async def _check_unique_dealer_fields(
+    db: AsyncSession, payload: DealerSignupRequest
+) -> None:
+    """Pre-flight: reject early with a specific Hebrew message if business_id
+    or license_number is already taken. Catches the most common signup failures
+    BEFORE we create a Supabase auth user, so we never leak orphans."""
+    existing_biz = (
+        await db.execute(
+            select(Dealer.id).where(Dealer.business_id == payload.business_id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing_biz is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ח.פ. / ע.מ זה כבר רשום במערכת",
+        )
+
+    existing_license = (
+        await db.execute(
+            select(Dealer.id)
+            .where(Dealer.license_number == payload.license_number)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing_license is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="מספר רישיון סוחר זה כבר רשום במערכת",
+        )
+
+
+def _map_integrity_error(exc: Exception) -> HTTPException:
+    """Translate an IntegrityError on the dealers insert into a Hebrew 409.
+
+    The unique-violation messages from asyncpg/postgres include the constraint
+    name. We surface a specific field message so the dealer knows what to fix
+    instead of seeing a generic 500."""
+    text = str(exc).lower()
+    if "uq_dealers_business_id" in text or "business_id" in text:
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ח.פ. / ע.מ זה כבר רשום במערכת",
+        )
+    if "license_number" in text:
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="מספר רישיון סוחר זה כבר רשום במערכת",
+        )
+    if "users_email_key" in text or "email" in text:
+        return HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="כתובת האימייל כבר רשומה במערכת",
+        )
+    return HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="ההרשמה נכשלה — נסה שוב או פנה לתמיכה",
+    )
+
+
+async def _purge_user_row(db: AsyncSession, user_uuid: uuid_pkg.UUID) -> None:
+    """Delete the public.users row written by the on_auth_user_created trigger
+    so a failed signup doesn't leave the email blocked for future retries."""
+    try:
+        await db.execute(User.__table__.delete().where(User.id == user_uuid))
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("public.users orphan cleanup failed for %s: %s", user_uuid, exc)
+
+
 @router.post(
     "/signup/dealer",
     response_model=SignupResponse,
@@ -100,12 +169,22 @@ async def signup_dealer(
     payload: DealerSignupRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> SignupResponse:
-    """Create a pending dealer account. Returns 201 on success."""
+    """Create a pending dealer account. Returns 201 on success.
+
+    Failure mapping (so the UI can show a useful message):
+      * 409 with Hebrew detail — duplicate business_id, license_number, or email
+      * 502 — Supabase Admin API error (network, rate limit, etc.)
+      * 500 — unexpected; the auth user AND public.users orphan are both purged
+    """
+    # Pre-flight uniqueness check against our own dealers table. Catches the
+    # common case (re-using an existing business_id / license_number) BEFORE we
+    # touch Supabase, so a failed signup never creates an orphan auth user.
+    await _check_unique_dealer_fields(db, payload)
+
     auth_user_id = await _create_supabase_auth_user(payload.email, payload.password)
+    user_uuid = uuid_pkg.UUID(auth_user_id)
 
     try:
-        user_uuid = uuid_pkg.UUID(auth_user_id)
-
         # Wait for the trigger to populate public.users.
         user: User | None = None
         for _ in range(5):
@@ -159,12 +238,16 @@ async def signup_dealer(
     except HTTPException:
         await db.rollback()
         await _delete_supabase_auth_user(auth_user_id)
+        await _purge_user_row(db, user_uuid)
         raise
     except Exception as exc:
         await db.rollback()
         await _delete_supabase_auth_user(auth_user_id)
+        await _purge_user_row(db, user_uuid)
         logger.error("Dealer signup failed: %s", exc, exc_info=True)
-        raise HTTPException(status_code=500, detail="Registration failed, please retry")
+        # Try to surface a specific 4xx if it was a known integrity problem;
+        # otherwise fall back to a Hebrew generic message.
+        raise _map_integrity_error(exc)
 
 
 # ==========================================================================
