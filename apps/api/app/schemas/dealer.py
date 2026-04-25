@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -20,6 +20,13 @@ class DealerSignupRequest(BaseModel):
     city: str = Field(min_length=2, max_length=80)
     lot_size: int = Field(ge=1, le=1000)
     contact_name: str = Field(min_length=2, max_length=120)
+    # Phase 6.6 — KYC personal info, all optional (extracted by AI from
+    # the ID + license images at the start of signup).
+    first_name: str | None = Field(default=None, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    id_number: str | None = Field(default=None, pattern="^[0-9]{9}$")
+    birth_date: date | None = Field(default=None)
+    license_until: date | None = Field(default=None)
 
     @field_validator("business_id")
     @classmethod

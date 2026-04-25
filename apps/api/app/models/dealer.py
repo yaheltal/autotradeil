@@ -1,11 +1,12 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -170,6 +171,8 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         nullable=True,
     )
     archived_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 6.6 — license expiration date (extracted from KYC document)
+    license_until: Mapped[date | None] = mapped_column(Date, nullable=True)
     notification_offers: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )

@@ -591,3 +591,140 @@ async def set_otp_method(
     dealer.otp_method = body.method
     await db.commit()
     return {"method": body.method}
+
+
+# =============================================================================
+# Phase 6.6 — KYC photo extraction (public, called during signup)
+# =============================================================================
+
+from app.core.rate_limit import rate_limit
+from app.schemas.kyc import KYCExtractResponse
+
+kyc_extract_rate_limit = rate_limit("5/hour", scope="kyc_extract")
+
+
+@router.post("/kyc/extract", response_model=KYCExtractResponse)
+async def kyc_extract(
+    id_front: UploadFile = File(...),
+    id_back: UploadFile = File(...),
+    license_doc: UploadFile = File(..., alias="license"),
+    _: None = Depends(kyc_extract_rate_limit),
+) -> KYCExtractResponse:
+    """Extract personal info from three KYC documents using Claude vision.
+
+    Public — called during signup BEFORE the user exists. Rate-limited to
+    5/hour/IP. Always returns 200 with the best-effort fields; missing
+    fields are null so the wizard can fall back to manual entry.
+    """
+    import base64
+    import json as _json
+
+    if not settings.anthropic_api_key:
+        return KYCExtractResponse(warnings=["AI service not configured"])
+
+    async def encode(f: UploadFile) -> tuple[str, str]:
+        content = await f.read()
+        if len(content) > KYC_MAX_BYTES:
+            raise HTTPException(status_code=400, detail="קובץ גדול מדי")
+        media = (
+            "image/jpeg" if f.content_type in (None, "image/heic") else f.content_type
+        )
+        return media, base64.standard_b64encode(content).decode("ascii")
+
+    try:
+        fmt_front, b64_front = await encode(id_front)
+        fmt_back, b64_back = await encode(id_back)
+        fmt_lic, b64_lic = await encode(license_doc)
+    except HTTPException:
+        raise
+
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+
+    prompt = """אתה מקבל 3 תמונות של מסמכי זיהוי ישראליים:
+1. ת"ז קדמי
+2. ת"ז אחורי
+3. רישיון סוחר רכב
+
+החזר אך ורק JSON (ללא טקסט נוסף, ללא code fences) במבנה:
+{
+  "first_name": "שם פרטי בעברית או null",
+  "last_name": "שם משפחה בעברית או null",
+  "id_number": "מספר ת״ז 9 ספרות או null",
+  "birth_date": "YYYY-MM-DD או null",
+  "license_number": "מספר רישיון סוחר או null",
+  "license_until": "YYYY-MM-DD תאריך תפוגת רישיון או null",
+  "city": "עיר מגורים בעברית או null",
+  "confidence": "high" | "medium" | "low",
+  "warnings": ["תיאור בעיה אחת או יותר", ...]
+}
+אם שדה אינו קריא — null. אל תנחש."""
+
+    try:
+        msg = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=600,
+            timeout=30,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": fmt_front,
+                                "data": b64_front,
+                            },
+                        },
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": fmt_back,
+                                "data": b64_back,
+                            },
+                        },
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": fmt_lic,
+                                "data": b64_lic,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("kyc extract Claude call failed: %s", exc)
+        return KYCExtractResponse(warnings=["AI extraction failed"])
+
+    text = ""
+    for blk in msg.content:
+        if getattr(blk, "type", None) == "text":
+            text = blk.text
+            break
+
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.strip("`")
+        if cleaned.lower().startswith("json"):
+            cleaned = cleaned[4:].strip()
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return KYCExtractResponse(warnings=["AI returned unparseable JSON"])
+    try:
+        parsed = _json.loads(cleaned[start : end + 1])
+    except _json.JSONDecodeError:
+        return KYCExtractResponse(warnings=["AI returned unparseable JSON"])
+
+    try:
+        return KYCExtractResponse(**parsed)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("kyc extract validation failed: %s payload=%s", exc, parsed)
+        return KYCExtractResponse(warnings=["Some extracted fields were invalid"])
