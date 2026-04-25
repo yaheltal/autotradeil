@@ -10,6 +10,7 @@ const config: Config = {
     extend: {
       fontFamily: {
         sans: ["var(--font-heebo)", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["var(--font-frank-ruhl)", '"Frank Ruhl Libre"', "ui-serif", "Georgia", "serif"],
       },
       colors: {
         // ====================================================================

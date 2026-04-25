@@ -9,11 +9,15 @@
  * (the modal anchors to the document, not the visual viewport).
  *
  * `overflow-x: clip` (not `hidden`) lets descendants keep `position: sticky`.
- * Applied to `html` only — applying to `body` can clip 1–2px of RTL content
- * with iOS Safari's scrollbar gutter. Children that need horizontal scroll
- * (data tables) opt back in with `overflow-x-auto`. */
-html {
+ * Applied to BOTH html and body as belt-and-suspenders — older Safari
+ * versions ignore `overflow-x: clip` on `html` alone, and a runaway
+ * inline element under body can still escape an html-only clip.
+ * Children that need horizontal scroll (data tables, filter pills,
+ * marketplace gallery) opt back in with `overflow-x-auto`. */
+html,
+body {
   overflow-x: clip;
+  max-width: 100vw;
 }
 
 @media (prefers-reduced-motion: reduce) {
