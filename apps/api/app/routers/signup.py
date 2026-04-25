@@ -798,56 +798,78 @@ async def public_otp_verify(
     refresh = props.get("refresh_token") or data.get("refresh_token")
 
     if not access:
-        # Newer GoTrue path: use the hashed_token to call /auth/v1/verify
-        # which returns the real session in JSON.
-        hashed_token = props.get("hashed_token") or data.get("hashed_token")
-        if hashed_token:
-            verify_url = f"{settings.supabase_url}/auth/v1/verify"
+        # Newer GoTrue: the action_link is `GET /auth/v1/verify?token=...`
+        # which redirects to redirect_to with `#access_token=...` in the
+        # fragment. Hit the action_link directly with redirects disabled
+        # and pull tokens from the Location header. This is the canonical
+        # magiclink exchange for the latest Supabase.
+        action_link = props.get("action_link") or data.get("action_link", "")
+        if action_link:
+            try:
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+                    vresp = await client.get(
+                        action_link,
+                        headers={"apikey": settings.supabase_secret_key},
+                    )
+                if vresp.status_code in (302, 303, 307, 308):
+                    loc = vresp.headers.get("Location", "")
+                    fragment = urlparse(loc).fragment
+                    qparams = parse_qs(fragment)
+                    access = qparams.get("access_token", [None])[0]
+                    refresh = qparams.get("refresh_token", [None])[0]
+                    if not access:
+                        # Some shapes also expose tokens as query string params.
+                        qs = parse_qs(urlparse(loc).query)
+                        access = qs.get("access_token", [None])[0]
+                        refresh = qs.get("refresh_token", [None])[0]
+                elif vresp.status_code == 200:
+                    # Some configurations return JSON directly.
+                    try:
+                        vd = vresp.json()
+                        access = vd.get("access_token")
+                        refresh = vd.get("refresh_token")
+                    except ValueError:
+                        pass
+                else:
+                    logger.warning(
+                        "supabase action_link GET failed status=%s body=%r",
+                        vresp.status_code,
+                        vresp.text[:300],
+                    )
+            except httpx.HTTPError as exc:
+                logger.warning("supabase action_link GET network error: %s", exc)
+
+    if not access:
+        # Final fallback: use the email_otp shortcut with /verify type=email,
+        # which Supabase always supports.
+        email_otp = props.get("email_otp") or data.get("email_otp")
+        if email_otp:
             try:
                 async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
                     vresp = await client.post(
-                        verify_url,
+                        f"{settings.supabase_url}/auth/v1/verify",
                         headers={
                             "apikey": settings.supabase_secret_key,
                             "Content-Type": "application/json",
                         },
-                        # Supabase requires email along with the token for
-                        # magiclink verification.
                         json={
-                            "type": "magiclink",
-                            "token": hashed_token,
+                            "type": "email",
                             "email": user.email,
+                            "token": email_otp,
                         },
                     )
                 if vresp.status_code == 200:
                     vd = vresp.json()
                     access = vd.get("access_token")
                     refresh = vd.get("refresh_token")
-                elif vresp.status_code in (302, 303):
-                    # Some Supabase deployments respond with a 302 to the
-                    # redirect_to URL with the tokens in the hash. Parse it.
-                    loc = vresp.headers.get("Location", "")
-                    fragment = urlparse(loc).fragment
-                    qparams = parse_qs(fragment)
-                    access = qparams.get("access_token", [None])[0]
-                    refresh = qparams.get("refresh_token", [None])[0]
                 else:
                     logger.warning(
-                        "supabase verify hashed_token failed status=%s body=%r",
+                        "supabase verify email_otp failed status=%s body=%r",
                         vresp.status_code,
-                        vresp.text,
+                        vresp.text[:300],
                     )
             except httpx.HTTPError as exc:
-                logger.warning("supabase verify hashed_token network error: %s", exc)
-
-    if not access:
-        # Last resort: parse the action_link hash directly. Some deployments
-        # return tokens in the URL fragment.
-        action_link = props.get("action_link") or data.get("action_link", "")
-        fragment = urlparse(action_link).fragment
-        params = parse_qs(fragment)
-        access = params.get("access_token", [None])[0]
-        refresh = params.get("refresh_token", [None])[0]
+                logger.warning("supabase verify email_otp network error: %s", exc)
 
     if not access:
         logger.error("magiclink: could not extract access_token from %r", data)
