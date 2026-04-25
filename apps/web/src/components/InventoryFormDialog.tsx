@@ -261,6 +261,7 @@ export function InventoryFormDialog({
 
   // Image lookup
   const imgInputRef = useRef<HTMLInputElement>(null);
+  const imgGalleryRef = useRef<HTMLInputElement>(null);
   const [imgFile, setImgFile] = useState<File | null>(null);
   const [imgBusy, setImgBusy] = useState(false);
   const [imgStatus, setImgStatus] = useState<string>("");
@@ -748,33 +749,64 @@ export function InventoryFormDialog({
                   aria-labelledby="autofill-heading"
                   className="border-brand-navy/10 mt-4 border-t pt-4"
                 >
-                  <label htmlFor="img-lookup-input" className="sr-only">
-                    תמונת רכב לזיהוי
-                  </label>
+                  {/* Two hidden inputs — one forces camera (capture=environment),
+                   *  the other lets the OS picker show gallery + files. iOS
+                   *  Safari requires this split because `capture` overrides
+                   *  the picker UX completely. */}
                   <input
                     ref={imgInputRef}
-                    id="img-lookup-input"
+                    id="img-camera-input"
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/heic"
                     capture="environment"
                     className="sr-only"
+                    aria-label="צילום תמונת רכב במצלמה"
+                    onChange={(e) => setImgFile(e.target.files?.[0] ?? null)}
+                  />
+                  <input
+                    ref={imgGalleryRef}
+                    id="img-gallery-input"
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/heic"
+                    className="sr-only"
+                    aria-label="בחירת תמונת רכב מהגלריה"
                     onChange={(e) => setImgFile(e.target.files?.[0] ?? null)}
                   />
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <button
                       type="button"
                       onClick={() => imgInputRef.current?.click()}
-                      aria-controls="img-lookup-input"
-                      className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                      className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
                     >
-                      {imgFile ? imgFile.name : "בחירת תמונה…"}
+                      <span aria-hidden="true">📷</span>
+                      צלם תמונה
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => imgGalleryRef.current?.click()}
+                      className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                    >
+                      <span aria-hidden="true">🖼️</span>
+                      בחר מהגלריה
+                    </button>
+                  </div>
+                  {imgFile ? (
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      className="text-brand-ink/70 mt-2 text-xs"
+                      key={imgFile.name}
+                    >
+                      נבחר: {imgFile.name}
+                    </p>
+                  ) : null}
+                  <div className="mt-2">
                     <button
                       type="button"
                       onClick={() => void runImageLookup()}
                       disabled={!imgFile || imgBusy}
                       aria-busy={imgBusy || undefined}
-                      className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
+                      className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
                     >
                       {imgBusy ? "מזהה…" : "זהה רכב מתמונה"}
                     </button>
