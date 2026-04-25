@@ -375,15 +375,18 @@ async def kyc_upload(
     field = KYC_DOC_FIELD_MAP[document_type]
     setattr(dealer, field, result["url"])
 
-    # If all 3 present → flip to submitted.
-    if (
+    # Phase 6.8.6 — auto-submission removed. The dealer must explicitly
+    # press "סיום תהליך" which calls /kyc/finalize. That gives the dealer
+    # a chance to review the uploads and gives us a hook to email support.
+    # Re-uploading after rejection: clear the rejection reason so the
+    # dealer can finalize again.
+    if dealer.kyc_status == "rejected" and (
         dealer.id_card_front_url
         and dealer.id_card_back_url
         and dealer.dealer_license_url
-        and dealer.kyc_status in ("pending", "rejected")
     ):
-        dealer.kyc_status = "submitted"
         dealer.kyc_rejected_reason = None
+        dealer.kyc_status = "pending"
 
     await emit_event(
         db,
