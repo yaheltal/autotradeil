@@ -340,6 +340,27 @@ async def require_verified_dealer(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Dealer profile not found",
         )
+    # Phase 6.7 — admin moderation gates BEFORE the verification check so
+    # archive/suspend take precedence over "not yet verified".
+    if dealer.archived_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="החשבון נמחק"
+        )
+    if dealer.suspended_at is not None:
+        # Silent suspend returns a generic 503 — the dealer doesn't get a
+        # clear explanation (the "shibush" the product asked for).
+        if dealer.suspension_silent:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="שירות לא זמין",
+            )
+        # Reason-bearing suspend surfaces the exact admin reason so the
+        # dealer (and the dealer-side banner) can show it.
+        reason = dealer.suspended_reason or "ללא סיבה"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"החשבון שלך הושעה — {reason}",
+        )
     # Phase 2.1 added `dealers.verified` as the authoritative per-dealer
     # gate. This is distinct from `users.verified` (which is Supabase's
     # email-confirmation signal). A dealer is operable only once an admin

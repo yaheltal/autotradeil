@@ -639,7 +639,56 @@ async def promote_admin(
 
 
 class _SuspendBody(_BM):
+    reason: str | None = None
+    silent: bool = False
+    admin_password: str
+
+
+class _UnsuspendBody(_BM):
+    admin_password: str
+
+
+class _ArchiveBody(_BM):
     reason: str
+    admin_password: str
+
+
+class _UnarchiveBody(_BM):
+    admin_password: str
+
+
+class _SuspensionReasonOut(_BM):
+    id: uuid.UUID
+    text_he: str
+    kind: str
+    active: bool
+
+
+class _CreateSuspensionReasonBody(_BM):
+    text_he: str
+    kind: str  # 'suspend' | 'archive'
+
+
+async def _verify_admin_password(admin: User, password: str) -> None:
+    """Re-authenticate the admin via Supabase password grant. Raises 401
+    on bad password. The admin's email is the lookup key."""
+    import httpx
+
+    from app.core.config import settings as _s
+
+    if not password:
+        raise HTTPException(status_code=401, detail="סיסמת מנהל חסרה")
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            f"{_s.supabase_url}/auth/v1/token?grant_type=password",
+            headers={
+                "apikey": _s.supabase_publishable_key or _s.supabase_secret_key,
+                "Content-Type": "application/json",
+            },
+            json={"email": admin.email, "password": password},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=401, detail="סיסמת מנהל שגויה")
 
 
 @router.post("/dealers/{dealer_id}/suspend")
@@ -648,36 +697,89 @@ async def suspend_dealer(
     body: _SuspendBody,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
-) -> dict[str, str]:
-    if not body.reason.strip():
-        raise HTTPException(status_code=400, detail="חובה להזין סיבה")
+) -> dict[str, object]:
+    """Suspend a dealer. Requires admin password re-auth.
+
+    Two modes:
+    * `silent=false` (default): records the reason, sends a notification
+      email to the dealer ("החשבון שלך הושעה — סיבה: ___"), and
+      `require_verified_dealer` returns 403 with that reason on every
+      authenticated request.
+    * `silent=true`: no reason, no email, `require_verified_dealer`
+      returns 503 "שירות לא זמין" (the dealer doesn't get a clear
+      explanation — used during investigation).
+    """
+    await _verify_admin_password(admin, body.admin_password)
+
+    if not body.silent and not (body.reason and body.reason.strip()):
+        raise HTTPException(
+            status_code=400, detail="חובה להזין סיבה כשההשעיה אינה שקטה"
+        )
+
     dealer = (
         await db.execute(select(Dealer).where(Dealer.id == dealer_id))
     ).scalar_one_or_none()
     if dealer is None:
         raise HTTPException(status_code=404, detail="סוחר לא נמצא")
+    if dealer.suspended_at is not None:
+        raise HTTPException(status_code=409, detail="הסוחר כבר מושעה")
+    if dealer.archived_at is not None:
+        raise HTTPException(status_code=409, detail="הסוחר נמצא בארכיון")
 
     dealer.suspended_at = datetime.now(tz=timezone.utc)
-    dealer.suspended_reason = body.reason.strip()[:500]
+    dealer.suspended_by = admin.id
+    dealer.suspended_reason = (
+        body.reason.strip()[:200] if body.reason and not body.silent else None
+    )
+    dealer.suspension_silent = body.silent
+
+    email_sent = False
+    if not body.silent:
+        # Best-effort notification — the suspension is real even if the
+        # email layer is down.
+        from app.core.email import send_suspension_notice
+
+        user = (
+            await db.execute(select(User).where(User.id == dealer.user_id))
+        ).scalar_one_or_none()
+        if user is not None:
+            try:
+                email_sent = await send_suspension_notice(
+                    to_email=user.email,
+                    business_name=dealer.business_name,
+                    reason=dealer.suspended_reason or "",
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("suspension email failed dealer=%s: %s", dealer.id, exc)
 
     await emit_event(
         db,
-        event_type="dealer.suspended",
+        event_type=(
+            "dealer.suspended.silent" if body.silent else "dealer.suspended.with_reason"
+        ),
         aggregate_type="dealer",
         aggregate_id=dealer.id,
-        payload={"reason": dealer.suspended_reason},
+        payload={"reason": dealer.suspended_reason, "silent": body.silent},
         actor_user_id=admin.id,
     )
     await db.commit()
-    return {"id": str(dealer.id), "suspended_at": dealer.suspended_at.isoformat()}
+    return {
+        "id": str(dealer.id),
+        "suspended_at": dealer.suspended_at.isoformat(),
+        "silent": body.silent,
+        "email_sent": email_sent,
+    }
 
 
 @router.post("/dealers/{dealer_id}/unsuspend")
 async def unsuspend_dealer(
     dealer_id: uuid.UUID,
+    body: _UnsuspendBody,
     admin: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, str]:
+    await _verify_admin_password(admin, body.admin_password)
+
     dealer = (
         await db.execute(select(Dealer).where(Dealer.id == dealer_id))
     ).scalar_one_or_none()
@@ -685,6 +787,8 @@ async def unsuspend_dealer(
         raise HTTPException(status_code=404, detail="סוחר לא נמצא")
     dealer.suspended_at = None
     dealer.suspended_reason = None
+    dealer.suspended_by = None
+    dealer.suspension_silent = False
     await emit_event(
         db,
         event_type="dealer.unsuspended",
@@ -695,6 +799,158 @@ async def unsuspend_dealer(
     )
     await db.commit()
     return {"id": str(dealer.id)}
+
+
+@router.post("/dealers/{dealer_id}/archive")
+async def archive_dealer(
+    dealer_id: uuid.UUID,
+    body: _ArchiveBody,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Soft-delete a dealer: keeps history, frees the email so they can
+    re-register. Requires admin password re-auth + a reason. Calls the
+    Supabase admin API to delete the auth user."""
+    import httpx
+
+    from app.core.config import settings as _s
+
+    await _verify_admin_password(admin, body.admin_password)
+    if not body.reason or not body.reason.strip():
+        raise HTTPException(status_code=400, detail="חובה להזין סיבה")
+
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.id == dealer_id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        raise HTTPException(status_code=404, detail="סוחר לא נמצא")
+    if dealer.archived_at is not None:
+        raise HTTPException(status_code=409, detail="הסוחר כבר בארכיון")
+    if dealer.user_id == admin.id:
+        raise HTTPException(
+            status_code=400, detail="אדמין לא יכול לארכב את עצמו"
+        )
+
+    dealer.archived_at = datetime.now(tz=timezone.utc)
+    dealer.archived_by = admin.id
+    dealer.archived_reason = body.reason.strip()[:100]
+
+    # Delete Supabase auth user so the email is free for re-signup.
+    auth_deleted = False
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.delete(
+                f"{_s.supabase_url}/auth/v1/admin/users/{dealer.user_id}",
+                headers={
+                    "apikey": _s.supabase_secret_key,
+                    "Authorization": f"Bearer {_s.supabase_secret_key}",
+                },
+            )
+        auth_deleted = r.status_code in (200, 204, 404)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("supabase auth delete failed dealer=%s: %s", dealer.id, exc)
+
+    await emit_event(
+        db,
+        event_type="dealer.archived",
+        aggregate_type="dealer",
+        aggregate_id=dealer.id,
+        payload={"reason": dealer.archived_reason, "auth_deleted": auth_deleted},
+        actor_user_id=admin.id,
+    )
+    await db.commit()
+    return {
+        "id": str(dealer.id),
+        "archived_at": dealer.archived_at.isoformat(),
+        "auth_deleted": auth_deleted,
+    }
+
+
+@router.post("/dealers/{dealer_id}/unarchive")
+async def unarchive_dealer(
+    dealer_id: uuid.UUID,
+    body: _UnarchiveBody,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Restore an archived dealer row. Note: the auth user was deleted on
+    archive, so the dealer would need a re-invite to log in again. Out of
+    scope for this endpoint — for now, restore the row only."""
+    await _verify_admin_password(admin, body.admin_password)
+
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.id == dealer_id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        raise HTTPException(status_code=404, detail="סוחר לא נמצא")
+    if dealer.archived_at is None:
+        raise HTTPException(status_code=409, detail="הסוחר אינו בארכיון")
+
+    dealer.archived_at = None
+    dealer.archived_by = None
+    dealer.archived_reason = None
+    await emit_event(
+        db,
+        event_type="dealer.unarchived",
+        aggregate_type="dealer",
+        aggregate_id=dealer.id,
+        payload={},
+        actor_user_id=admin.id,
+    )
+    await db.commit()
+    return {"id": str(dealer.id)}
+
+
+@router.get("/suspension-reasons", response_model=list[_SuspensionReasonOut])
+async def list_suspension_reasons(
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    kind: str | None = Query(default=None, pattern="^(suspend|archive)$"),
+) -> list[_SuspensionReasonOut]:
+    """Predefined Hebrew reason chips. Filter by kind."""
+    from app.models import SuspensionReasonTemplate
+
+    stmt = select(SuspensionReasonTemplate).where(SuspensionReasonTemplate.active.is_(True))
+    if kind:
+        stmt = stmt.where(SuspensionReasonTemplate.kind == kind)
+    stmt = stmt.order_by(SuspensionReasonTemplate.created_at)
+    rows = (await db.execute(stmt)).scalars().all()
+    return [
+        _SuspensionReasonOut(
+            id=r.id, text_he=r.text_he, kind=r.kind, active=r.active
+        )
+        for r in rows
+    ]
+
+
+@router.post(
+    "/suspension-reasons",
+    response_model=_SuspensionReasonOut,
+    status_code=201,
+)
+async def create_suspension_reason(
+    body: _CreateSuspensionReasonBody,
+    _: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> _SuspensionReasonOut:
+    from app.models import SuspensionReasonTemplate
+
+    if body.kind not in ("suspend", "archive"):
+        raise HTTPException(
+            status_code=400, detail="kind חייב להיות 'suspend' או 'archive'"
+        )
+    if not body.text_he.strip():
+        raise HTTPException(status_code=400, detail="טקסט ריק")
+
+    row = SuspensionReasonTemplate(
+        text_he=body.text_he.strip()[:200], kind=body.kind, active=True
+    )
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return _SuspensionReasonOut(
+        id=row.id, text_he=row.text_he, kind=row.kind, active=row.active
+    )
 
 
 # ----- Reset dealer password (admin) -----

@@ -359,6 +359,63 @@ async def send_counter_offer(
 # --------------------------------------------------------------------------
 
 
+async def send_suspension_notice(
+    to_email: str, business_name: str, reason: str
+) -> bool:
+    """Phase 6.7 — notify a dealer that an admin suspended their account.
+
+    Only sent for `suspension_silent=false` suspensions. Silent suspensions
+    intentionally don't send anything."""
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>החשבון שלך הושעה</title>
+  <style>{_BASE_STYLE}
+    .badge-warn {{ background: #b45309; color: white; }}
+    .reason-box {{ background: #fff7ed; border-right: 4px solid #b45309;
+                   padding: 16px 20px; margin: 20px 0; border-radius: 4px; }}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <p class="badge badge-warn">⚠️ הודעה מהמערכת</p>
+      <h1>החשבון שלך הושעה</h1>
+    </div>
+    <div class="content">
+      <p>שלום {business_name},</p>
+      <p>אנו מודיעים לך כי חשבון הסוחר שלך ב-AutoTradeIL הושעה ע"י צוות הניהול.</p>
+      <div class="reason-box">
+        <strong>סיבת ההשעיה:</strong>
+        <p style="margin: 8px 0 0;">{reason}</p>
+      </div>
+      <p>בזמן שהחשבון מושעה לא תוכל לבצע פעולות במערכת — צפייה במלאי, שליחת הצעות, או סגירת עסקאות.</p>
+      <p>לבירור או לערעור, אנא פנה אלינו במייל החוזר או דרך אמצעי התמיכה הרגילים.</p>
+    </div>
+    <div class="footer">
+      <p>הודעה זו נשלחה אוטומטית ממערכת AutoTradeIL.</p>
+    </div>
+  </div>
+</body>
+</html>"""
+    text = (
+        f"שלום {business_name},\n\n"
+        f"חשבון הסוחר שלך ב-AutoTradeIL הושעה.\n"
+        f"סיבת ההשעיה: {reason}\n\n"
+        f"לא תוכל לבצע פעולות במערכת בזמן שהחשבון מושעה. "
+        f"לבירור או לערעור, פנה אלינו במייל החוזר.\n\n"
+        f"AutoTradeIL"
+    )
+    return await _send(
+        to=to_email,
+        subject=f"⚠️ החשבון שלך ב-AutoTradeIL הושעה",
+        html=html,
+        text=text,
+    )
+
+
 async def send_otp_email(to_email: str, business_name: str, code: str) -> bool:
     """Email OTP code. Valid for 10 minutes."""
     html = f"""<!DOCTYPE html>
