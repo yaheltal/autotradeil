@@ -579,86 +579,97 @@ async def public_otp_request(
         # tell the difference between bad input and unknown dealer.
         return {"message": generic, "delivery": body.delivery}
 
-    # Resolve dealer + user. Phone takes precedence (the SMS UI tab posts it).
-    dealer: Dealer | None = None
+    # Resolve user (admin or dealer). Phone takes precedence (the SMS UI tab
+    # posts it). Normalize so a stored "+972..." matches a typed "052-...".
+    from app.core.sms import _normalize_il_phone
+
     user: User | None = None
+    dealer: Dealer | None = None
 
     if body.phone:
-        # Normalize the same way Twilio's helper does so a stored "+972..."
-        # also matches a typed "052-...".
-        from app.core.sms import _normalize_il_phone
-
         normalized = _normalize_il_phone(body.phone)
-        # Try both the raw input and the normalized form — the DB column
-        # stores whatever the dealer typed at signup.
-        candidates = {body.phone.strip(), normalized}
-        dealer = (
-            await db.execute(
-                select(Dealer).where(Dealer.phone.in_(list(candidates)))
-            )
+        candidates = list({body.phone.strip(), normalized})
+        # Try users.phone first (covers admins + new dealers).
+        user = (
+            await db.execute(select(User).where(User.phone.in_(candidates)))
         ).scalar_one_or_none()
-        if dealer is not None:
-            user = (
-                await db.execute(select(User).where(User.id == dealer.user_id))
+        # Fallback for legacy dealers that only have phone on dealers row.
+        if user is None:
+            dealer = (
+                await db.execute(
+                    select(Dealer).where(Dealer.phone.in_(candidates))
+                )
             ).scalar_one_or_none()
+            if dealer is not None:
+                user = (
+                    await db.execute(select(User).where(User.id == dealer.user_id))
+                ).scalar_one_or_none()
     elif body.email:
         user = (
             await db.execute(select(User).where(User.email == body.email))
         ).scalar_one_or_none()
-        if user is not None and user.user_type == "dealer":
-            dealer = (
-                await db.execute(select(Dealer).where(Dealer.user_id == user.id))
-            ).scalar_one_or_none()
 
-    if dealer is None or user is None:
+    # OTP login is open to admins and dealers (not consumers).
+    if user is None or user.user_type not in ("admin", "dealer"):
         return {"message": generic, "delivery": body.delivery}
 
+    # Look up dealer row if applicable (admins won't have one).
+    if dealer is None and user.user_type == "dealer":
+        dealer = (
+            await db.execute(select(Dealer).where(Dealer.user_id == user.id))
+        ).scalar_one_or_none()
+        if dealer is None:
+            return {"message": generic, "delivery": body.delivery}
+
+    # Phone candidates for SMS delivery: prefer users.phone, fall back to
+    # dealers.phone (legacy). Admins only have users.phone.
+    phone_to_use = user.phone or (dealer.phone if dealer is not None else None)
+    # Display name for the SMS/email body.
+    display_name = (
+        dealer.business_name if dealer is not None else "ניהול"
+    )
+
     code = f"{secrets.randbelow(1_000_000):06d}"
-    dealer.otp_code_hash = _hash_otp(code, str(dealer.id))
-    dealer.otp_expires_at = _now() + timedelta(minutes=OTP_TTL_MINUTES)
-    dealer.otp_method = body.delivery
+    user.otp_code_hash = _hash_otp(code, str(user.id))
+    user.otp_expires_at = _now() + timedelta(minutes=OTP_TTL_MINUTES)
+    user.otp_method = body.delivery
     await db.commit()
 
     delivered_via = body.delivery
 
-    if body.delivery == "sms" and dealer.phone:
+    if body.delivery == "sms" and phone_to_use:
         # Domain-bound OTP format so iOS Safari auto-suggests the code into
-        # the input. The trailing `@domain #code` line is the magic incantation
-        # that ties the code to the originating origin per Apple's spec.
+        # the input. The trailing `@domain #code` line ties the code to the
+        # origin per Apple's spec.
         sms_msg = (
             f"AutoTradeIL: קוד הכניסה שלך הוא {code}. "
             f"תקף ל-{OTP_TTL_MINUTES} דקות.\n\n"
             f"@brink-entire-easter.ngrok-free.dev #{code}"
         )
-        sent = await send_sms(to_phone=dealer.phone, message=sms_msg)
+        sent = await send_sms(to_phone=phone_to_use, message=sms_msg)
         if not sent:
-            # SMS failed (Twilio unavailable, bad number, etc.) — fall back
-            # to email so the dealer isn't locked out.
+            # SMS failed — fall back to email so the user isn't locked out.
             logger.warning(
-                "otp sms delivery failed for dealer=%s; falling back to email",
-                dealer.id,
+                "otp sms delivery failed for user=%s; falling back to email",
+                user.id,
             )
             delivered_via = "email"
             try:
                 await send_otp_email(
-                    to_email=user.email,
-                    business_name=dealer.business_name,
-                    code=code,
+                    to_email=user.email, business_name=display_name, code=code
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("public otp email fallback failed: %s", exc)
     else:
-        # Default email path. Also covers `delivery=sms` when the dealer
-        # has no phone on file (degrade gracefully).
         if body.delivery == "sms":
             logger.info(
-                "otp delivery=sms requested but dealer %s has no phone — using email",
-                dealer.id,
+                "otp delivery=sms requested but user %s has no phone — using email",
+                user.id,
             )
             delivered_via = "email"
         try:
             await send_otp_email(
-                to_email=user.email, business_name=dealer.business_name, code=code
+                to_email=user.email, business_name=display_name, code=code
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("public otp email send failed: %s", exc)
@@ -702,49 +713,48 @@ async def public_otp_verify(
     if not body.email and not body.phone:
         raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")
 
-    dealer: Dealer | None = None
     user: User | None = None
 
     if body.phone:
         from app.core.sms import _normalize_il_phone
 
         normalized = _normalize_il_phone(body.phone)
-        candidates = {body.phone.strip(), normalized}
-        dealer = (
-            await db.execute(
-                select(Dealer).where(Dealer.phone.in_(list(candidates)))
-            )
+        candidates = list({body.phone.strip(), normalized})
+        # Try users.phone first (covers admins + new dealers).
+        user = (
+            await db.execute(select(User).where(User.phone.in_(candidates)))
         ).scalar_one_or_none()
-        if dealer is not None:
-            user = (
-                await db.execute(select(User).where(User.id == dealer.user_id))
+        # Fallback for legacy dealers that only have phone on dealers row.
+        if user is None:
+            dealer = (
+                await db.execute(select(Dealer).where(Dealer.phone.in_(candidates)))
             ).scalar_one_or_none()
+            if dealer is not None:
+                user = (
+                    await db.execute(select(User).where(User.id == dealer.user_id))
+                ).scalar_one_or_none()
     else:
         user = (
             await db.execute(select(User).where(User.email == body.email))
         ).scalar_one_or_none()
-        if user is not None and user.user_type == "dealer":
-            dealer = (
-                await db.execute(select(Dealer).where(Dealer.user_id == user.id))
-            ).scalar_one_or_none()
 
-    if dealer is None or user is None:
+    if user is None or user.user_type not in ("admin", "dealer"):
         raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")
-    if dealer.otp_code_hash is None or dealer.otp_expires_at is None:
+    if user.otp_code_hash is None or user.otp_expires_at is None:
         raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")
-    if _now() > dealer.otp_expires_at:
-        dealer.otp_code_hash = None
-        dealer.otp_expires_at = None
+    if _now() > user.otp_expires_at:
+        user.otp_code_hash = None
+        user.otp_expires_at = None
         await db.commit()
         raise HTTPException(status_code=401, detail="הקוד פג תוקף")
 
-    expected = _hash_otp(body.code, str(dealer.id))
-    if not hmac.compare_digest(expected, dealer.otp_code_hash):
+    expected = _hash_otp(body.code, str(user.id))
+    if not hmac.compare_digest(expected, user.otp_code_hash):
         raise HTTPException(status_code=401, detail="קוד שגוי")
 
-    # Consume the code.
-    dealer.otp_code_hash = None
-    dealer.otp_expires_at = None
+    # Consume the code (single-use).
+    user.otp_code_hash = None
+    user.otp_expires_at = None
     await db.commit()
 
     # Mint a session via Supabase admin generate_link (type=magiclink).
