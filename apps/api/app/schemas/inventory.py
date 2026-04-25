@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -20,6 +20,11 @@ class InventoryItemCreate(BaseModel):
     )
     engine_volume: Decimal | None = Field(default=None, ge=Decimal("0.5"), le=Decimal("9.9"))
     notes: str | None = Field(default=None, max_length=2000)
+    purchase_cost: int | None = Field(default=None, ge=0)
+    warranty_type: str | None = Field(
+        default=None, pattern="^(manufacturer|dealer|extended|none)$"
+    )
+    warranty_until: date | None = Field(default=None)
 
 
 class InventoryItemUpdate(BaseModel):
@@ -40,6 +45,11 @@ class InventoryItemUpdate(BaseModel):
     b2b_price: int | None = Field(default=None, ge=0)
     visibility: str | None = Field(default=None, pattern="^(private|b2b|b2c|both)$")
     b2c_price: int | None = Field(default=None, ge=0)
+    purchase_cost: int | None = Field(default=None, ge=0)
+    warranty_type: str | None = Field(
+        default=None, pattern="^(manufacturer|dealer|extended|none)$"
+    )
+    warranty_until: date | None = Field(default=None)
 
 
 class InventoryItemResponse(BaseModel):
@@ -64,6 +74,12 @@ class InventoryItemResponse(BaseModel):
     b2c_price: int | None
     paused_until: datetime | None
     pause_reason: str | None
+    purchase_cost: int | None
+    sale_price: int | None
+    sold_at: datetime | None
+    sold_to: str | None
+    warranty_type: str | None
+    warranty_until: date | None
     created_at: datetime
     updated_at: datetime
 
@@ -74,3 +90,39 @@ class InventoryListResponse(BaseModel):
     page: int
     pages: int
     per_page: int
+
+
+# =============================================================================
+# Phase 6.5 — sale lifecycle, stats, image visibility
+# =============================================================================
+
+
+class SellRequest(BaseModel):
+    sale_price: int = Field(gt=0)
+    purchase_cost: int | None = Field(default=None, ge=0)
+    sold_to: str = Field(pattern="^(b2b|b2c|external)$")
+    sold_at: datetime | None = Field(default=None)
+
+
+class SellWarning(BaseModel):
+    deal_price_mismatch: dict[str, int] | None = None
+
+
+class SellResponse(BaseModel):
+    inventory: InventoryItemResponse
+    warnings: SellWarning | None = None
+
+
+class StatsResponse(BaseModel):
+    period: str
+    active_count: int
+    sold_count: int
+    total_revenue: int
+    total_profit: int
+    profit_margin_pct: float
+    avg_days_to_sell: int | None
+    rows_missing_purchase_cost: int
+
+
+class ImagePatchRequest(BaseModel):
+    hidden: bool

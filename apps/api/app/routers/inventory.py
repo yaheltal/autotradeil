@@ -152,6 +152,9 @@ async def create_inventory_item(
         fuel_type=payload.fuel_type,
         engine_volume=payload.engine_volume,
         notes=payload.notes,
+        purchase_cost=payload.purchase_cost,
+        warranty_type=payload.warranty_type,
+        warranty_until=payload.warranty_until,
     )
     db.add(item)
     await db.flush()

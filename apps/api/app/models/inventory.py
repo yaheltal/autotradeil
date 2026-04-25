@@ -1,11 +1,12 @@
 import uuid
 from decimal import Decimal
 
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     ForeignKey,
     Index,
@@ -84,6 +85,18 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     )
     pause_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
+    # ---- Phase 6.5: sale lifecycle ----
+    purchase_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sale_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sold_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    sold_to: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # ---- Phase 6.5: warranty (optional) ----
+    warranty_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    warranty_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "year >= 1900 AND year <= 2030",
@@ -119,6 +132,23 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
             "b2c_price IS NULL OR b2c_price >= 0",
             name="inventory_b2c_price_nonneg",
         ),
+        CheckConstraint(
+            "purchase_cost IS NULL OR purchase_cost >= 0",
+            name="inventory_purchase_cost_nonneg",
+        ),
+        CheckConstraint(
+            "sale_price IS NULL OR sale_price >= 0",
+            name="inventory_sale_price_nonneg",
+        ),
+        CheckConstraint(
+            "sold_to IS NULL OR sold_to IN ('b2b', 'b2c', 'external')",
+            name="inventory_sold_to_check",
+        ),
+        CheckConstraint(
+            "warranty_type IS NULL OR warranty_type IN ('manufacturer', 'dealer', 'extended', 'none')",
+            name="inventory_warranty_type_check",
+        ),
         Index("idx_inventory_dealer_id", "dealer_id"),
         Index("idx_inventory_status", "status"),
+        Index("idx_inventory_sold_at", "sold_at"),
     )
