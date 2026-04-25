@@ -39,7 +39,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_verified_dealer
+from app.core.auth import require_marketplace_viewer, require_verified_dealer
 from app.core.email import (
     send_counter_offer,
     send_deal_completed_buyer,
@@ -243,7 +243,7 @@ def _offer_response(
 
 @marketplace_router.get("/search", response_model=VehicleSearchResponse)
 async def search_vehicles(
-    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    ud: Annotated[tuple[User, Dealer | None], Depends(require_marketplace_viewer)],
     db: Annotated[AsyncSession, Depends(get_db)],
     q: str | None = Query(default=None, max_length=200),
     make: str | None = Query(default=None, max_length=100),
@@ -263,7 +263,11 @@ async def search_vehicles(
     per_page: int = Query(default=20, ge=1, le=50),
 ) -> VehicleSearchResponse:
     """Browse the B2B marketplace. Returns only vehicles published as B2B
-    (is_b2b=true, status='active') and excludes the caller's own inventory."""
+    (is_b2b=true, status='active') and excludes the caller's own inventory.
+
+    Admin callers (caller_dealer=None) see every B2B-visible listing —
+    they have no own inventory to exclude.
+    """
     _, caller_dealer = ud
 
     from datetime import datetime, timezone as _tz
@@ -272,13 +276,14 @@ async def search_vehicles(
     conds = [
         Inventory.visibility.in_(["b2b", "both"]),
         Inventory.status == "active",
-        Inventory.dealer_id != caller_dealer.id,
         # Filter out paused items — either paused_until is NULL-and-not-paused
         # (caller is looking at active rows only, so status=active is already
         # the authoritative gate) OR paused_until has passed. We include the
         # check as belt-and-suspenders so a race on auto-unpause doesn't leak.
         (Inventory.paused_until.is_(None)) | (Inventory.paused_until <= now),
     ]
+    if caller_dealer is not None:
+        conds.append(Inventory.dealer_id != caller_dealer.id)
     if seller_dealer_id:
         conds.append(Inventory.dealer_id == seller_dealer_id)
 
@@ -377,7 +382,7 @@ async def search_vehicles(
 )
 async def get_vehicle_detail(
     inventory_id: uuid.UUID,
-    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    ud: Annotated[tuple[User, Dealer | None], Depends(require_marketplace_viewer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> MarketplaceVehicleDetail:
     _, caller_dealer = ud
@@ -399,24 +404,27 @@ async def get_vehicle_detail(
     inv, seller = row
 
     # Must be B2B-published AND not caller's own — unless caller IS the seller.
-    if seller.id != caller_dealer.id:
+    # Admins (caller_dealer=None) always see the listing as if they were a
+    # third-party viewer, but we don't write a view-tracking row for them.
+    is_seller_viewing = caller_dealer is not None and seller.id == caller_dealer.id
+    if not is_seller_viewing:
         if inv.visibility not in ("b2b", "both") or inv.status != "active":
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="רכב לא נמצא",
             )
-        # Track the view (skip if the seller is viewing their own listing).
-        from app.models import InventoryView
+        if caller_dealer is not None:
+            from app.models import InventoryView
 
-        db.add(
-            InventoryView(
-                inventory_id=inv.id,
-                viewer_dealer_id=caller_dealer.id,
-                source="marketplace",
+            db.add(
+                InventoryView(
+                    inventory_id=inv.id,
+                    viewer_dealer_id=caller_dealer.id,
+                    source="marketplace",
+                )
             )
-        )
-        seller.total_views = (seller.total_views or 0) + 1
-        await db.commit()
+            seller.total_views = (seller.total_views or 0) + 1
+            await db.commit()
 
     seller_user = (
         await db.execute(select(User).where(User.id == seller.user_id))
@@ -1321,7 +1329,7 @@ async def list_deals(
 )
 async def dealer_public_profile(
     dealer_id: uuid.UUID,
-    _ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    _ud: Annotated[tuple[User, Dealer | None], Depends(require_marketplace_viewer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DealerPublicProfile:
     dealer = (

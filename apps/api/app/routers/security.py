@@ -51,12 +51,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import require_admin, require_any_dealer, require_verified_dealer
 from app.core.cloudinary_client import sign_kyc_url, upload_kyc_document
 from app.core.config import settings
-from app.core.email import send_kyc_approved, send_kyc_rejected, send_otp_email
+from app.core.email import (
+    send_kyc_approved,
+    send_kyc_rejected,
+    send_kyc_submitted_to_support,
+    send_otp_email,
+)
 from app.core.events import emit_event
 from app.core.logging import get_logger
 from app.core.sms import _normalize_il_phone, send_sms
 from app.database import get_db
 from app.models import Dealer, User
+from app.models.system_settings import SystemSettings
 
 logger = get_logger(__name__)
 
@@ -402,6 +408,68 @@ async def kyc_upload(
         "url": result["url"],
         "kyc_status": dealer.kyc_status,
     }
+
+
+@router.post("/kyc/finalize")
+async def kyc_finalize(
+    ud: Annotated[tuple[User, Dealer], Depends(require_any_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Phase 6.8.6 — dealer presses "סיום תהליך" to flip pending → submitted.
+
+    Requires all 3 KYC documents present. Idempotent: a second call when
+    already submitted returns the same status without re-emitting events.
+    Emails the support inbox so the team gets a heads-up.
+    """
+    user, dealer = ud
+
+    if dealer.kyc_status == "submitted":
+        return {"kyc_status": "submitted"}
+    if dealer.kyc_status == "approved":
+        return {"kyc_status": "approved"}
+
+    if not (
+        dealer.id_card_front_url
+        and dealer.id_card_back_url
+        and dealer.dealer_license_url
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="יש להעלות את שלושת המסמכים לפני סיום התהליך",
+        )
+
+    dealer.kyc_status = "submitted"
+    dealer.kyc_rejected_reason = None
+
+    await emit_event(
+        db,
+        event_type="kyc.submitted",
+        aggregate_type="dealer",
+        aggregate_id=dealer.id,
+        payload={"dealer_id": str(dealer.id)},
+        actor_user_id=user.id,
+    )
+    await db.commit()
+
+    settings_row = (
+        await db.execute(select(SystemSettings).where(SystemSettings.id == 1))
+    ).scalar_one_or_none()
+    support_email = (
+        settings_row.support_email if settings_row else "support@autotradeil.co.il"
+    )
+    try:
+        await send_kyc_submitted_to_support(
+            to_email=support_email,
+            business_name=dealer.business_name,
+            dealer_email=user.email,
+            dealer_phone=dealer.phone,
+            dealer_id=str(dealer.id),
+            city=dealer.city,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("kyc finalize support email failed: %s", exc)
+
+    return {"kyc_status": "submitted"}
 
 
 @router.get("/kyc/status")

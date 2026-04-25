@@ -54,7 +54,24 @@ async def _get_dealer_or_404(
     return row.Dealer, row.User
 
 
-def _to_list_item(dealer: Dealer, user: User) -> DealerListItem:
+def _to_list_item(
+    dealer: Dealer,
+    user: User,
+    *,
+    include_personal: bool = False,
+    kyc_signed_urls: dict[str, str | None] | None = None,
+) -> DealerListItem:
+    """Map a (Dealer, User) row to the admin list/detail DTO.
+
+    `include_personal=True` adds first/last name, id_number, birth_date,
+    license_number, license_until. Admin-only by definition (this fn is
+    only called from /api/v1/admin/* routes), but keeping the flag makes
+    intent explicit and lets the list endpoint omit personal data to keep
+    table responses small.
+
+    `kyc_signed_urls` should be the dict returned by `_kyc_urls_for(...)`
+    when the caller wants signed photo URLs in the response.
+    """
     return DealerListItem(
         id=dealer.id,
         user_id=dealer.user_id,
@@ -74,9 +91,38 @@ def _to_list_item(dealer: Dealer, user: User) -> DealerListItem:
         rejected_at=dealer.rejected_at,
         deals_completed=dealer.deals_completed or 0,
         kyc_status=dealer.kyc_status,
+        kyc_rejected_reason=dealer.kyc_rejected_reason,
         member_since=dealer.member_since,
         suspended_at=dealer.suspended_at,
+        first_name=user.first_name if include_personal else None,
+        last_name=user.last_name if include_personal else None,
+        id_number=user.id_number if include_personal else None,
+        birth_date=user.birth_date if include_personal else None,
+        license_number=dealer.license_number if include_personal else None,
+        license_until=dealer.license_until if include_personal else None,
+        id_card_front_url=(
+            kyc_signed_urls.get("id_front") if kyc_signed_urls else None
+        ),
+        id_card_back_url=(
+            kyc_signed_urls.get("id_back") if kyc_signed_urls else None
+        ),
+        dealer_license_url=(
+            kyc_signed_urls.get("dealer_license") if kyc_signed_urls else None
+        ),
     )
+
+
+async def _kyc_urls_for(dealer: Dealer) -> dict[str, str | None]:
+    """Mint fresh signed URLs for a dealer's three KYC documents."""
+    from app.routers.security import _signed_kyc_url
+
+    return {
+        "id_front": await _signed_kyc_url(dealer.id_card_front_url, dealer.id, "id_front"),
+        "id_back": await _signed_kyc_url(dealer.id_card_back_url, dealer.id, "id_back"),
+        "dealer_license": await _signed_kyc_url(
+            dealer.dealer_license_url, dealer.id, "dealer_license"
+        ),
+    }
 
 
 @router.get("/dealers", response_model=DealerListResponse)
@@ -192,7 +238,10 @@ async def get_dealer(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> DealerListItem:
     dealer, user = await _get_dealer_or_404(dealer_id, db)
-    return _to_list_item(dealer, user)
+    kyc_urls = await _kyc_urls_for(dealer)
+    return _to_list_item(
+        dealer, user, include_personal=True, kyc_signed_urls=kyc_urls
+    )
 
 
 @router.post("/dealers/{dealer_id}/verify")

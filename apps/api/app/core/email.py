@@ -675,6 +675,57 @@ async def send_kyc_rejected(to_email: str, business_name: str, reason: str) -> b
     )
 
 
+async def send_kyc_submitted_to_support(
+    *,
+    to_email: str,
+    business_name: str,
+    dealer_email: str,
+    dealer_phone: str | None,
+    dealer_id: str,
+    city: str | None,
+) -> bool:
+    """Notify the support inbox that a dealer just finalized KYC."""
+    admin_link = f"https://autotradeil.co.il/admin/dealers/{dealer_id}"
+    phone_html = dealer_phone or "—"
+    city_html = city or "—"
+    html = f"""<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>בקשת אימות KYC חדשה</title>
+  <style>{_BASE_STYLE}</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header"><h1>AutoTradeIL</h1></div>
+    <div class="body">
+      <span class="badge badge-info">בקשת KYC חדשה</span>
+      <h2>{business_name}</h2>
+      <p>סוחר השלים העלאת 3 מסמכי זיהוי וממתין לסקירה.</p>
+      <div class="reason-box">
+        <p><strong>אימייל:</strong> {dealer_email}</p>
+        <p><strong>טלפון:</strong> {phone_html}</p>
+        <p><strong>עיר:</strong> {city_html}</p>
+        <p><strong>מזהה סוחר:</strong> <code>{dealer_id}</code></p>
+      </div>
+      <p style="text-align:center;">
+        <a class="cta" href="{admin_link}">פתיחת הסוחר בלוח האדמין</a>
+      </p>
+    </div>
+    <div class="footer">
+      AutoTradeIL &copy; 2026 &middot; המערכת המקצועית לסחר רכבים
+    </div>
+  </div>
+</body>
+</html>"""
+    return await _send(
+        to=to_email,
+        subject=f"[KYC] בקשת אימות חדשה — {business_name}",
+        html=html,
+    )
+
+
 async def _send(
     to: str, subject: str, html: str, text: str | None = None
 ) -> bool:

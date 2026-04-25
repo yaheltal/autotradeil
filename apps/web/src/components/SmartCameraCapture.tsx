@@ -391,7 +391,8 @@ function scoreCardPresence(img: ImageData, w: number, h: number): boolean {
   let outsideCount = 0;
 
   // Sobel x kernel only — fast and good enough for "is there structure".
-  const luma = (i: number) => 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+  const luma = (i: number) =>
+    0.299 * (data[i] ?? 0) + 0.587 * (data[i + 1] ?? 0) + 0.114 * (data[i + 2] ?? 0);
 
   for (let y = 1; y < h - 1; y += 2) {
     for (let x = 1; x < w - 1; x += 2) {

@@ -323,6 +323,56 @@ async def require_any_dealer(
     return user, dealer
 
 
+async def require_marketplace_viewer(
+    user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> tuple[User, Dealer | None]:
+    """Read-only marketplace access — verified dealers OR admins.
+
+    Returns (user, dealer) for dealers and (user, None) for admins. Use
+    only on GET endpoints; admins do not place offers under their own
+    identity (they impersonate via X-Impersonate-Dealer-Id for that).
+    Callers that filter by "not the caller's own listings" must guard
+    against `dealer is None`.
+    """
+    if user.user_type == "admin":
+        return user, None
+    if user.user_type != "dealer":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer or admin access required",
+        )
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.user_id == user.id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer profile not found",
+        )
+    if dealer.archived_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="החשבון נמחק"
+        )
+    if dealer.suspended_at is not None:
+        if dealer.suspension_silent:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="שירות לא זמין",
+            )
+        reason = dealer.suspended_reason or "ללא סיבה"
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"החשבון שלך הושעה — {reason}",
+        )
+    if not dealer.verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dealer not yet verified",
+        )
+    return user, dealer
+
+
 async def require_verified_dealer(
     user: CurrentUser,
     db: Annotated[AsyncSession, Depends(get_db)],

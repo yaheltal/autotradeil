@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -29,8 +29,21 @@ class DealerListItem(BaseModel):
     # Phase 4.4 additions for the expanded admin dealers table
     deals_completed: int = 0
     kyc_status: str = "pending"
+    kyc_rejected_reason: str | None = None
     member_since: datetime | None = None
     suspended_at: datetime | None = None
+    # Phase 6.8.7 — personal identity (extracted at signup; admin-only).
+    first_name: str | None = None
+    last_name: str | None = None
+    id_number: str | None = None
+    birth_date: date | None = None
+    license_number: str | None = None
+    license_until: date | None = None
+    # Phase 6.8.7 — signed KYC URLs (10-min TTL). Detail endpoint populates,
+    # list endpoint leaves null to keep responses small.
+    id_card_front_url: str | None = None
+    id_card_back_url: str | None = None
+    dealer_license_url: str | None = None
 
 
 class DealerListResponse(BaseModel):

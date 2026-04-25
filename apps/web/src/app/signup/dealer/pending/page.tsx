@@ -1,5 +1,6 @@
 "use client";
 
+import * as Dialog from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -56,6 +57,9 @@ export default function SignupPendingPage() {
     id_back: "",
     dealer_license: "",
   });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalizeError, setFinalizeError] = useState<string | null>(null);
 
   // Live-region progress — only update on value change, not poll storm.
   const [progressMsg, setProgressMsg] = useState("");
@@ -144,6 +148,27 @@ export default function SignupPendingPage() {
 
   const isSubmitted = kyc?.kyc_status === "submitted";
   const isRejected = kyc?.kyc_status === "rejected";
+  const allUploaded =
+    !!kyc && !!kyc.id_card_front_url && !!kyc.id_card_back_url && !!kyc.dealer_license_url;
+  const canFinalize = !!token && allUploaded && (kyc?.kyc_status === "pending" || isRejected);
+
+  const finalize = async () => {
+    if (!token) return;
+    setFinalizing(true);
+    setFinalizeError(null);
+    try {
+      await apiFetch("/api/v1/security/kyc/finalize", {
+        method: "POST",
+        token,
+      });
+      setConfirmOpen(false);
+      await loadStatus();
+    } catch (err) {
+      setFinalizeError(err instanceof Error ? err.message : "שליחת הבקשה נכשלה, נסה שוב");
+    } finally {
+      setFinalizing(false);
+    }
+  };
 
   return (
     <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
@@ -285,8 +310,80 @@ export default function SignupPendingPage() {
                 );
               })}
             </ul>
+
+            <div className="mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setFinalizeError(null);
+                  setConfirmOpen(true);
+                }}
+                disabled={!canFinalize}
+                aria-disabled={!canFinalize}
+                aria-describedby={!canFinalize ? "finalize-help" : undefined}
+                className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy disabled:bg-brand-navy/20 disabled:text-brand-navy/60 inline-flex min-h-12 w-full items-center justify-center rounded-md px-5 py-3 text-base font-bold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed"
+              >
+                סיום תהליך
+              </button>
+              {!canFinalize ? (
+                <p id="finalize-help" className="text-brand-ink/70 mt-2 text-center text-xs">
+                  ניתן לסיים את התהליך לאחר העלאת שלושת המסמכים.
+                </p>
+              ) : null}
+            </div>
           </section>
         )}
+
+        <Dialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <Dialog.Portal>
+            <Dialog.Overlay className="data-[state=open]:animate-in data-[state=open]:fade-in fixed inset-0 z-40 bg-black/50" />
+            <Dialog.Content
+              dir="rtl"
+              aria-describedby="kyc-confirm-desc"
+              className="data-[state=open]:animate-in data-[state=open]:fade-in data-[state=open]:zoom-in-95 fixed left-1/2 top-1/2 z-50 w-[min(92vw,28rem)] -translate-x-1/2 -translate-y-1/2 rounded-lg bg-white p-6 text-start shadow-2xl focus:outline-none"
+            >
+              <Dialog.Title className="text-brand-navy text-xl font-bold">
+                סיום תהליך אימות
+              </Dialog.Title>
+              <Dialog.Description
+                id="kyc-confirm-desc"
+                className="text-brand-ink mt-3 text-sm leading-relaxed"
+              >
+                המסמכים שלך יישלחו לסקירה ע״י הצוות שלנו. תוך 24 שעות תקבל מייל ו-SMS עם תוצאת
+                האימות. לאחר השליחה לא ניתן יהיה להחליף מסמכים עד לתשובת הצוות.
+              </Dialog.Description>
+
+              {finalizeError ? (
+                <p
+                  role="alert"
+                  className="bg-danger-bg text-danger-text mt-4 rounded-md px-3 py-2 text-sm"
+                >
+                  {finalizeError}
+                </p>
+              ) : null}
+
+              <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                <Dialog.Close asChild>
+                  <button
+                    type="button"
+                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    ביטול
+                  </button>
+                </Dialog.Close>
+                <button
+                  type="button"
+                  onClick={() => void finalize()}
+                  disabled={finalizing}
+                  aria-disabled={finalizing}
+                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+                >
+                  {finalizing ? "שולח…" : "אישור ושליחה"}
+                </button>
+              </div>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
 
         <div className="mt-10 flex flex-col gap-3 sm:flex-row">
           <Link
