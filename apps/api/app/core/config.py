@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     twilio_auth_token: str = Field(default="")
     twilio_phone_number: str = Field(default="")
 
+    # Gmail SMTP — fallback email sender for dev environments where
+    # the Resend domain isn't verified yet (Phase 4.4 addendum).
+    gmail_app_password: str = Field(default="")
+    gmail_from: str = Field(default="")
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:

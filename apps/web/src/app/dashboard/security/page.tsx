@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { NotificationBell } from "@/components/NotificationBell";
+import { NotificationPrefs } from "@/components/NotificationPrefs";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 
@@ -548,6 +549,9 @@ export default function SecurityPage() {
                 ))}
               </ul>
             </section>
+
+            {/* 4) Notification preferences (Phase 4.4 Step 7) */}
+            <NotificationPrefsLoader token={token} />
           </div>
         </div>
       </main>
@@ -781,4 +785,42 @@ function KycRow({
       </div>
     </li>
   );
+}
+
+// Phase 4.4 — fetch the dealer's current prefs once, then hand off to
+// the NotificationPrefs component for editing/saving.
+function NotificationPrefsLoader({ token }: { token: string }) {
+  const [initial, setInitial] = useState<{
+    notification_offers: boolean;
+    notification_deals: boolean;
+    notification_updates: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const me = await apiFetch<{
+          notification_offers: boolean;
+          notification_deals: boolean;
+          notification_updates: boolean;
+        }>("/api/v1/dealers/me", { token });
+        if (!cancelled) {
+          setInitial({
+            notification_offers: me.notification_offers,
+            notification_deals: me.notification_deals,
+            notification_updates: me.notification_updates,
+          });
+        }
+      } catch {
+        /* silent — section just stays in loading state */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  if (!initial) return null;
+  return <NotificationPrefs token={token} initial={initial} />;
 }

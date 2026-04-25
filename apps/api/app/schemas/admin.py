@@ -26,6 +26,11 @@ class DealerListItem(BaseModel):
     created_at: datetime
     verified_at: datetime | None
     rejected_at: datetime | None
+    # Phase 4.4 additions for the expanded admin dealers table
+    deals_completed: int = 0
+    kyc_status: str = "pending"
+    member_since: datetime | None = None
+    suspended_at: datetime | None = None
 
 
 class DealerListResponse(BaseModel):

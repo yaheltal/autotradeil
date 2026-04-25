@@ -15,7 +15,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -173,6 +173,202 @@ async def signup_dealer(
 
 
 forgot_password_rate_limit = rate_limit("5/hour", scope="forgot_password")
+login_rate_limit = rate_limit("20/hour", scope="auth_login")
+
+
+# ==========================================================================
+# Phase 5.1 — native client login proxy
+#
+# Native iOS / Android clients can't use the Supabase JS SDK; they POST
+# email + password to /api/v1/auth/login and we forward to Supabase's
+# password grant, returning the access token + refresh token.
+# Web stays on the Supabase JS SDK directly.
+# ==========================================================================
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class LoginResponse(BaseModel):
+    """Response shape for `/auth/login`.
+
+    If the dealer has TOTP 2FA enabled, the FIRST step's response is
+    `{requires_totp: True, partial_token: "..."}` — NOT a real session.
+    Caller then POSTs to `/auth/login/totp` with the partial token + code.
+    """
+
+    access_token: str | None = None
+    refresh_token: str | None = None
+    expires_in: int | None = None
+    token_type: str = "bearer"
+    requires_totp: bool = False
+    partial_token: str | None = None
+
+
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    dependencies=[Depends(login_rate_limit)],
+)
+async def login(
+    body: LoginRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LoginResponse:
+    """Forward to Supabase's password grant endpoint.
+
+    On success returns the standard Supabase access/refresh tokens. On
+    invalid credentials returns 401 with a Hebrew-localized message.
+    """
+    url = f"{settings.supabase_url}/auth/v1/token?grant_type=password"
+    headers = {
+        "apikey": settings.supabase_publishable_key or settings.supabase_secret_key,
+        "Content-Type": "application/json",
+    }
+    payload = {"email": body.email, "password": body.password}
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+    except httpx.HTTPError as exc:
+        logger.warning("login proxy network error: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="שגיאת רשת",
+        )
+
+    if resp.status_code in (400, 401, 403, 422):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="שם משתמש או סיסמה שגויים",
+        )
+    if resp.status_code != 200:
+        logger.error("login proxy unexpected status=%s body=%r", resp.status_code, resp.text)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="שירות האימות לא זמין",
+        )
+
+    data = resp.json()
+    access_token = data["access_token"]
+    refresh_token = data.get("refresh_token")
+
+    # Phase 4.4 — TOTP step. If the dealer has 2FA enabled, do NOT return
+    # the real access token. Instead return a short-lived partial token
+    # that only `/auth/login/totp` will accept. The frontend then prompts
+    # for the 6-digit code.
+    user_id = data.get("user", {}).get("id")
+    if user_id:
+        try:
+            import uuid as _uuid
+
+            uid = _uuid.UUID(user_id)
+            dealer = (
+                await db.execute(
+                    select(Dealer).where(Dealer.user_id == uid)
+                )
+            ).scalar_one_or_none()
+            if dealer and dealer.totp_enabled:
+                # Mint a partial token bound to this user; expires in 5 min.
+                partial = _make_partial_token(
+                    user_id=str(uid),
+                    access_token=access_token,
+                    refresh_token=refresh_token or "",
+                )
+                return LoginResponse(
+                    requires_totp=True,
+                    partial_token=partial,
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("totp gating check failed: %s", exc)
+
+    return LoginResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=data.get("expires_in"),
+        token_type=data.get("token_type", "bearer"),
+    )
+
+
+# --- Partial-token helpers (HS256 JWT, signed with impersonation_secret) ---
+
+
+def _make_partial_token(user_id: str, access_token: str, refresh_token: str) -> str:
+    """5-minute JWT carrying the deferred access/refresh tokens. The
+    impersonation_secret is reused as the HS256 key — it's already a
+    server-only secret that's not used for ES256 user tokens."""
+    import time
+    import jwt as _pyjwt
+
+    payload = {
+        "sub": user_id,
+        "iss": "autotradeil-totp",
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 300,
+        "at": access_token,
+        "rt": refresh_token,
+        "purpose": "totp_step",
+    }
+    return _pyjwt.encode(payload, settings.impersonation_secret, algorithm="HS256")
+
+
+def _decode_partial_token(token: str) -> dict[str, object]:
+    import jwt as _pyjwt
+
+    try:
+        payload = _pyjwt.decode(
+            token,
+            settings.impersonation_secret,
+            algorithms=["HS256"],
+            options={"require": ["exp", "iat", "sub", "purpose"]},
+        )
+    except _pyjwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="פג תוקף — נסה להתחבר שוב")
+    except _pyjwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="טוקן לא תקין")
+    if payload.get("purpose") != "totp_step":
+        raise HTTPException(status_code=401, detail="טוקן לא תקין")
+    return payload
+
+
+# --- /auth/login/totp ---
+
+
+class TotpStepRequest(BaseModel):
+    partial_token: str
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+@router.post(
+    "/login/totp",
+    response_model=LoginResponse,
+    dependencies=[Depends(login_rate_limit)],
+)
+async def login_totp(
+    body: TotpStepRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> LoginResponse:
+    """Second login step — verify TOTP code and release the access token."""
+    import uuid as _uuid
+    import pyotp as _pyotp
+
+    payload = _decode_partial_token(body.partial_token)
+    user_id = _uuid.UUID(str(payload["sub"]))
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.user_id == user_id))
+    ).scalar_one_or_none()
+    if dealer is None or not dealer.totp_enabled or not dealer.totp_secret:
+        raise HTTPException(status_code=400, detail="2FA לא מופעל")
+
+    if not _pyotp.TOTP(dealer.totp_secret).verify(body.code, valid_window=1):
+        raise HTTPException(status_code=401, detail="קוד שגוי")
+
+    return LoginResponse(
+        access_token=str(payload["at"]),
+        refresh_token=str(payload.get("rt") or "") or None,
+        token_type="bearer",
+    )
 
 
 class ForgotPasswordRequest(BaseModel):

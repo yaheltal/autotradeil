@@ -145,6 +145,23 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         BigInteger, nullable=False, default=0, server_default="0"
     )
 
+    # ---- Phase 4.4: profile expansion ----
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    suspended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    suspended_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notification_offers: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    notification_deals: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+    notification_updates: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default=text("true")
+    )
+
     __table_args__ = (
         UniqueConstraint("business_id", name="uq_dealers_business_id"),
         CheckConstraint(

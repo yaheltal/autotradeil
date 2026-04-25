@@ -1,0 +1,48 @@
+# XcodeGen project spec for AutoTradeIL iOS.
+#
+# Why XcodeGen: keeps the .xcodeproj out of git (UUID churn / merge hell),
+# and the project is fully reproducible from this YAML. To regenerate:
+#
+#     brew install xcodegen
+#     cd apps/ios
+#     xcodegen generate
+#
+# That produces `AutoTradeIL.xcodeproj`. Open in Xcode 15+, set your
+# signing Team in Signing & Capabilities, run.
+
+name: AutoTradeIL
+options:
+  bundleIdPrefix: il.autotradeil
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: he
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    GENERATE_INFOPLIST_FILE: NO
+    DEVELOPMENT_LANGUAGE: he
+    CFBundleAllowMixedLocalizations: YES
+
+targets:
+  AutoTradeIL:
+    type: application
+    platform: iOS
+    sources:
+      - path: AutoTradeIL
+        excludes:
+          - "**/.DS_Store"
+    info:
+      path: AutoTradeIL/Resources/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: il.autotradeil.app
+        INFOPLIST_FILE: AutoTradeIL/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        TARGETED_DEVICE_FAMILY: "1" # iPhone only for now
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_BITCODE: NO
+    dependencies: []

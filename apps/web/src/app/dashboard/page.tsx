@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
+import { ProfileEditor } from "@/components/ProfileEditor";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 
@@ -31,6 +32,8 @@ type Dealer = {
   trust_score: string | number;
   contact_name: string;
   lot_size: number;
+  description: string | null;
+  logo_url: string | null;
 };
 
 export default function DashboardPage() {
@@ -41,6 +44,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [signingOut, setSigningOut] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +63,7 @@ export default function DashboardPage() {
         });
         if (!cancelled) {
           setDealer(me);
+          setToken(session.access_token);
           setLoading(false);
         }
       } catch (err) {
@@ -184,38 +189,21 @@ export default function DashboardPage() {
           </dl>
         </section>
 
-        <section aria-labelledby="soon-heading" className="mt-10">
-          <h2 id="soon-heading" className="text-brand-navy text-lg font-semibold">
-            בקרוב
-          </h2>
-          <div className="border-brand-navy/10 bg-brand-cream mt-4 flex items-start gap-4 rounded-lg border p-6">
-            <div
-              aria-hidden="true"
-              className="bg-brand-navy text-brand-gold flex h-12 w-12 shrink-0 items-center justify-center rounded-md"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                className="h-7 w-7"
-              >
-                <path d="M3 13l2-5h14l2 5v5a1 1 0 01-1 1h-2a1 1 0 01-1-1v-1H7v1a1 1 0 01-1 1H4a1 1 0 01-1-1v-5z" />
-                <circle cx="7" cy="16" r="1.3" />
-                <circle cx="17" cy="16" r="1.3" />
-              </svg>
-            </div>
-            <div>
-              <p className="text-brand-navy font-semibold">ניהול מלאי הרכבים שלך</p>
-              <p className="text-brand-ink/70 mt-1 text-sm">
-                בשלב הבא: הוספת רכבים, ניהול מלאי, וקבלת הצעות מסוחרים אחרים.
-              </p>
-            </div>
+        {token ? (
+          <div className="mt-10">
+            <ProfileEditor
+              token={token}
+              initial={{
+                business_name: dealer.business_name,
+                city: dealer.city,
+                phone: dealer.phone,
+                description: dealer.description,
+                logo_url: dealer.logo_url,
+              }}
+              onSaved={(next) => setDealer((d) => (d ? { ...d, ...next } : d))}
+            />
           </div>
-        </section>
+        ) : null}
       </div>
     </main>
   );

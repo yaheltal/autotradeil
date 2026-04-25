@@ -623,13 +623,28 @@ async def _send(
 ) -> bool:
     """Internal send. Never raises — logs failures instead.
 
+    Send order (Phase 4.4 addendum):
+      1. Try Resend if RESEND_API_KEY is set.
+      2. On Resend failure (or no API key), fall back to Gmail SMTP if
+         GMAIL_FROM + GMAIL_APP_PASSWORD are configured.
+      3. If both fail, log and return False — callers must never let
+         email failure break the originating request.
+
     `text` is an optional plain-text MIME alternative (multipart/alternative).
     Improves deliverability and is preferred by screen-reader-friendly mail
     clients that disable HTML.
     """
+    from app.core.smtp import send_via_gmail
+
     if not settings.resend_api_key:
-        logger.warning("RESEND_API_KEY not configured — skipping email to %s", to)
-        return False
+        # Resend not configured — try Gmail SMTP fallback directly.
+        ok = await send_via_gmail(to=to, subject=subject, html=html, text=text)
+        if not ok:
+            logger.warning(
+                "no email transport configured (Resend + Gmail both off) — skipping to=%s",
+                to,
+            )
+        return ok
 
     try:
         resend.api_key = settings.resend_api_key
@@ -650,5 +665,17 @@ async def _send(
         )
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.error("email send failed to=%s subject=%r err=%s", to, subject, exc)
-        return False
+        logger.warning(
+            "resend send failed (will try gmail smtp fallback) to=%s err=%s",
+            to,
+            exc,
+        )
+        # Phase 4.4 — fall through to Gmail SMTP.
+        ok = await send_via_gmail(to=to, subject=subject, html=html, text=text)
+        if not ok:
+            logger.error(
+                "email send failed via both resend + gmail to=%s subject=%r",
+                to,
+                subject,
+            )
+        return ok

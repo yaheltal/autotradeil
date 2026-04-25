@@ -134,6 +134,31 @@ async def sign_kyc_url(public_id: str, resource_type: str = "image") -> str:
     return url
 
 
+async def upload_dealer_logo(
+    file_bytes: bytes,
+    dealer_id: str,
+    content_type: str,
+) -> dict[str, Any]:
+    """Upload a dealer business-logo image. Public URL (not authenticated),
+    capped at 600×600, WebP. Folder: `autotradeil/logos/{dealer_id}/`.
+    """
+    init_cloudinary()
+    if not content_type.startswith("image/"):
+        raise ValueError("logo must be an image")
+
+    result = cloudinary.uploader.upload(
+        file_bytes,
+        folder=f"autotradeil/logos/{dealer_id}",
+        public_id="logo",
+        overwrite=True,
+        transformation=[
+            {"width": 600, "height": 600, "crop": "limit", "quality": "auto:good"},
+        ],
+        format="webp",
+    )
+    return {"url": result["secure_url"], "public_id": result["public_id"]}
+
+
 async def delete_vehicle_image(public_id: str) -> bool:
     """Best-effort delete. Returns True if Cloudinary confirmed."""
     init_cloudinary()

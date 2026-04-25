@@ -22,7 +22,7 @@ from app.core.impersonation import (
 )
 from app.core.logging import get_logger
 from app.database import get_db
-from app.models import AuditLog, Dealer, Inventory, User
+from app.models import AuditLog, Dealer, Inventory, SystemSettings, User
 from app.schemas.admin import (
     AdminStatsResponse,
     AuditLogItem,
@@ -72,6 +72,10 @@ def _to_list_item(dealer: Dealer, user: User) -> DealerListItem:
         created_at=dealer.created_at,
         verified_at=dealer.verified_at,
         rejected_at=dealer.rejected_at,
+        deals_completed=dealer.deals_completed or 0,
+        kyc_status=dealer.kyc_status,
+        member_since=dealer.member_since,
+        suspended_at=dealer.suspended_at,
     )
 
 
@@ -81,10 +85,14 @@ async def list_dealers(
     db: Annotated[AsyncSession, Depends(get_db)],
     status_filter: str | None = Query(None, alias="status"),
     search: str | None = Query(None),
+    tier: str | None = Query(None, pattern="^(bronze|silver|gold|platinum)$"),
+    kyc_status: str | None = Query(
+        None, pattern="^(pending|submitted|approved|rejected)$"
+    ),
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
 ) -> DealerListResponse:
-    """List dealers with optional status filter + business/email/contact search."""
+    """List dealers with optional status / tier / KYC filters + search."""
     base_q = select(Dealer, User).join(User, User.id == Dealer.user_id)
     count_q = (
         select(func.count())
@@ -102,12 +110,21 @@ async def list_dealers(
         base_q = base_q.where(Dealer.rejected_at.is_not(None))
         count_q = count_q.where(Dealer.rejected_at.is_not(None))
 
+    if tier:
+        base_q = base_q.where(Dealer.tier == tier)
+        count_q = count_q.where(Dealer.tier == tier)
+
+    if kyc_status:
+        base_q = base_q.where(Dealer.kyc_status == kyc_status)
+        count_q = count_q.where(Dealer.kyc_status == kyc_status)
+
     if search:
         like = f"%{search}%"
         cond = or_(
             Dealer.business_name.ilike(like),
             User.email.ilike(like),
             Dealer.contact_name.ilike(like),
+            Dealer.city.ilike(like),
         )
         base_q = base_q.where(cond)
         count_q = count_q.where(cond)
@@ -492,3 +509,250 @@ async def admin_list_inventory(
         "pages": pages,
         "per_page": per_page,
     }
+
+
+# ==========================================================================
+# Phase 4.4 — system settings, dealer suspension, admin promotion, reset
+# ==========================================================================
+
+from pydantic import BaseModel as _BM, EmailStr as _EmailStr  # noqa: E402
+
+
+async def _get_settings(db: AsyncSession) -> SystemSettings:
+    s = (await db.execute(select(SystemSettings).where(SystemSettings.id == 1))).scalar_one_or_none()
+    if s is None:
+        # Defensive — migration seeds the row, but a fresh dev DB might not.
+        s = SystemSettings(
+            id=1,
+            site_name="AutoTradeIL",
+            support_email="support@autotradeil.co.il",
+            welcome_message="ברוכים הבאים ל-AutoTradeIL",
+        )
+        db.add(s)
+        await db.flush()
+    return s
+
+
+@router.get("/settings")
+async def get_settings(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    s = await _get_settings(db)
+    return {
+        "site_name": s.site_name,
+        "support_email": s.support_email,
+        "welcome_message": s.welcome_message,
+        "subscription_tiers": s.subscription_tiers,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+    }
+
+
+class _SettingsUpdate(_BM):
+    site_name: str | None = None
+    support_email: _EmailStr | None = None
+    welcome_message: str | None = None
+    subscription_tiers: dict[str, object] | None = None
+
+
+@router.patch("/settings")
+async def update_settings(
+    body: _SettingsUpdate,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    s = await _get_settings(db)
+    data = body.model_dump(exclude_unset=True)
+    for k, v in data.items():
+        setattr(s, k, v)
+    await emit_event(
+        db,
+        event_type="admin.settings.updated",
+        aggregate_type="system",
+        aggregate_id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
+        payload={"changes": list(data.keys())},
+        actor_user_id=admin.id,
+    )
+    await db.commit()
+    await db.refresh(s)
+    return {
+        "site_name": s.site_name,
+        "support_email": s.support_email,
+        "welcome_message": s.welcome_message,
+        "subscription_tiers": s.subscription_tiers,
+    }
+
+
+# ----- Admin list / promote -----
+
+
+@router.get("/admins")
+async def list_admins(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[dict[str, object]]:
+    rows = (
+        await db.execute(
+            select(User)
+            .where(User.user_type == "admin")
+            .order_by(User.email)
+        )
+    ).scalars().all()
+    return [
+        {"id": str(u.id), "email": u.email, "created_at": u.created_at.isoformat()}
+        for u in rows
+    ]
+
+
+class _PromoteAdminBody(_BM):
+    email: _EmailStr
+
+
+@router.post("/admins")
+async def promote_admin(
+    body: _PromoteAdminBody,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Flip an EXISTING user's user_type to 'admin'. Does not create a user."""
+    user = (
+        await db.execute(select(User).where(User.email == body.email))
+    ).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="משתמש לא נמצא")
+    if user.user_type == "admin":
+        raise HTTPException(status_code=400, detail="המשתמש כבר מנהל")
+    user.user_type = "admin"
+    await emit_event(
+        db,
+        event_type="admin.promoted",
+        aggregate_type="user",
+        aggregate_id=user.id,
+        payload={"email": user.email},
+        actor_user_id=admin.id,
+    )
+    await db.commit()
+    return {"id": str(user.id), "email": user.email}
+
+
+# ----- Suspend dealer -----
+
+
+class _SuspendBody(_BM):
+    reason: str
+
+
+@router.post("/dealers/{dealer_id}/suspend")
+async def suspend_dealer(
+    dealer_id: uuid.UUID,
+    body: _SuspendBody,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    if not body.reason.strip():
+        raise HTTPException(status_code=400, detail="חובה להזין סיבה")
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.id == dealer_id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        raise HTTPException(status_code=404, detail="סוחר לא נמצא")
+
+    dealer.suspended_at = datetime.now(tz=timezone.utc)
+    dealer.suspended_reason = body.reason.strip()[:500]
+
+    await emit_event(
+        db,
+        event_type="dealer.suspended",
+        aggregate_type="dealer",
+        aggregate_id=dealer.id,
+        payload={"reason": dealer.suspended_reason},
+        actor_user_id=admin.id,
+    )
+    await db.commit()
+    return {"id": str(dealer.id), "suspended_at": dealer.suspended_at.isoformat()}
+
+
+@router.post("/dealers/{dealer_id}/unsuspend")
+async def unsuspend_dealer(
+    dealer_id: uuid.UUID,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.id == dealer_id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        raise HTTPException(status_code=404, detail="סוחר לא נמצא")
+    dealer.suspended_at = None
+    dealer.suspended_reason = None
+    await emit_event(
+        db,
+        event_type="dealer.unsuspended",
+        aggregate_type="dealer",
+        aggregate_id=dealer.id,
+        payload={},
+        actor_user_id=admin.id,
+    )
+    await db.commit()
+    return {"id": str(dealer.id)}
+
+
+# ----- Reset dealer password (admin) -----
+
+
+@router.post("/dealers/{dealer_id}/reset-password")
+async def admin_reset_password(
+    dealer_id: uuid.UUID,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, str]:
+    """Trigger a Supabase recovery link + send our Hebrew RTL email."""
+    import httpx as _httpx
+
+    from app.core.config import settings as _settings
+    from app.core.email import send_password_reset
+
+    dealer = (
+        await db.execute(select(Dealer).where(Dealer.id == dealer_id))
+    ).scalar_one_or_none()
+    if dealer is None:
+        raise HTTPException(status_code=404, detail="סוחר לא נמצא")
+
+    user = (
+        await db.execute(select(User).where(User.id == dealer.user_id))
+    ).scalar_one()
+
+    url = f"{_settings.supabase_url}/auth/v1/admin/generate_link"
+    headers = {
+        "apikey": _settings.supabase_secret_key,
+        "Authorization": f"Bearer {_settings.supabase_secret_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "type": "recovery",
+        "email": user.email,
+        "options": {"redirect_to": "https://autotradeil.co.il/reset-password"},
+    }
+    try:
+        async with _httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(url, headers=headers, json=payload)
+        link = (resp.json().get("properties") or {}).get("action_link") if resp.status_code == 200 else None
+    except _httpx.HTTPError:
+        link = None
+
+    if link:
+        try:
+            await send_password_reset(to_email=user.email, reset_link=link)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("admin reset password email failed: %s", exc)
+
+    await emit_event(
+        db,
+        event_type="admin.dealer.reset_password",
+        aggregate_type="dealer",
+        aggregate_id=dealer.id,
+        payload={"email": user.email},
+        actor_user_id=admin.id,
+    )
+    await db.commit()
+    return {"id": str(dealer.id), "email": user.email}

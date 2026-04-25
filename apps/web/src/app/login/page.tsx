@@ -38,6 +38,13 @@ export default function LoginPage() {
   const signedOut = params.get("signedOut") === "1";
   const [resetToast, setResetToast] = useState(false);
 
+  // Phase 4.4 — TOTP step state
+  const [partialToken, setPartialToken] = useState<string | null>(null);
+  const [totpCode, setTotpCode] = useState("");
+  const [totpBusy, setTotpBusy] = useState(false);
+  const totpInputRef = useRef<HTMLInputElement>(null);
+  const totpHeadingRef = useRef<HTMLHeadingElement>(null);
+
   useEffect(() => {
     if (params.get("reset") !== "1" || typeof window === "undefined") return;
     setResetToast(true);
@@ -65,24 +72,105 @@ export default function LoginPage() {
     }
   }, [error]);
 
+  // Move focus + announce when the TOTP step appears.
+  useEffect(() => {
+    if (partialToken) {
+      queueMicrotask(() => totpHeadingRef.current?.focus());
+    }
+  }, [partialToken]);
+
+  const submitTotp = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!partialToken || totpCode.length !== 6) return;
+    setTotpBusy(true);
+    setError(null);
+    try {
+      const resp = await apiFetch<{
+        access_token: string;
+        refresh_token: string | null;
+      }>("/api/v1/auth/login/totp", {
+        method: "POST",
+        body: JSON.stringify({ partial_token: partialToken, code: totpCode }),
+      });
+      const supabase = createClient();
+      if (resp.refresh_token) {
+        await supabase.auth.setSession({
+          access_token: resp.access_token,
+          refresh_token: resp.refresh_token,
+        });
+      }
+      // Use the new access token to resolve where to land.
+      const who = await apiFetch<Whoami>("/api/v1/auth/whoami", {
+        token: resp.access_token,
+      });
+      if (who.user_type === "admin") {
+        router.push(next || "/admin");
+      } else {
+        router.push(next || "/dashboard");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "קוד שגוי");
+      totpInputRef.current?.focus();
+    } finally {
+      setTotpBusy(false);
+    }
+  };
+
+  const cancelTotp = () => {
+    setPartialToken(null);
+    setTotpCode("");
+    setError(null);
+  };
+
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
 
-    const supabase = createClient();
-    const { data, error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (authError || !data.session) {
-      setError(translateAuthError(authError?.message) ?? "שם משתמש או סיסמה שגויים");
+    // Phase 4.4 — go through our backend proxy so the TOTP gate triggers.
+    let loginResp: {
+      access_token?: string;
+      refresh_token?: string;
+      requires_totp?: boolean;
+      partial_token?: string;
+    };
+    try {
+      loginResp = await apiFetch("/api/v1/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "שם משתמש או סיסמה שגויים");
       setLoading(false);
       return;
     }
 
-    const token = data.session.access_token;
+    // If the dealer has TOTP enabled, show the second step.
+    if (loginResp.requires_totp && loginResp.partial_token) {
+      setPartialToken(loginResp.partial_token);
+      setLoading(false);
+      // Announce the step transition + move focus to the code input.
+      queueMicrotask(() => totpInputRef.current?.focus());
+      return;
+    }
+
+    if (!loginResp.access_token) {
+      setError("תגובת שרת לא צפויה");
+      setLoading(false);
+      return;
+    }
+
+    // Hand the access token back to Supabase JS so the rest of the app
+    // (middleware, /dashboard etc.) sees a normal session.
+    const supabase = createClient();
+    if (loginResp.refresh_token) {
+      await supabase.auth.setSession({
+        access_token: loginResp.access_token,
+        refresh_token: loginResp.refresh_token,
+      });
+    }
+
+    const token = loginResp.access_token;
 
     try {
       const who = await apiFetch<Whoami>("/api/v1/auth/whoami", { token });
@@ -147,57 +235,126 @@ export default function LoginPage() {
           </div>
         ) : null}
 
-        <form onSubmit={onSubmit} noValidate className="mt-8 space-y-5">
-          {error ? (
-            <div
-              ref={errorRef}
+        {partialToken ? (
+          // ============================================================
+          // TOTP step (Phase 4.4 Step 9). Replaces the password form.
+          // role="region" + aria-live politely announces the step change.
+          // ============================================================
+          <section role="region" aria-live="polite" aria-label="שלב אימות דו-שלבי" className="mt-8">
+            <h2
+              ref={totpHeadingRef}
               tabIndex={-1}
-              role="alert"
-              className="bg-danger-bg text-danger-text rounded-md px-4 py-3 text-sm focus:outline-none"
+              className="text-brand-navy text-xl font-bold focus:outline-none"
             >
-              {error}
+              הזנת קוד 2FA
+            </h2>
+            <p className="text-brand-ink/70 mt-2 text-sm">
+              פתח את אפליקציית Google Authenticator והזן את הקוד בן 6 הספרות.
+            </p>
+
+            <form onSubmit={submitTotp} noValidate className="mt-6 space-y-5">
+              {error ? (
+                <div
+                  ref={errorRef}
+                  tabIndex={-1}
+                  role="alert"
+                  className="bg-danger-bg text-danger-text rounded-md px-4 py-3 text-sm focus:outline-none"
+                >
+                  {error}
+                </div>
+              ) : null}
+
+              <div>
+                <label htmlFor="totp-code" className="text-brand-navy block text-sm font-medium">
+                  קוד אימות בן 6 ספרות
+                </label>
+                <input
+                  id="totp-code"
+                  ref={totpInputRef}
+                  type="text"
+                  dir="ltr"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  maxLength={6}
+                  required
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ""))}
+                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-40 rounded-md border bg-white px-3 py-2 font-mono text-base tracking-widest focus-visible:outline-2 focus-visible:outline-offset-2"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={totpBusy || totpCode.length !== 6}
+                aria-busy={totpBusy || undefined}
+                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-3 text-base font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {totpBusy ? "מאמת…" : "אמת והתחבר"}
+              </button>
+
+              <button
+                type="button"
+                onClick={cancelTotp}
+                className="text-brand-navy focus-visible:outline-brand-navy block w-full rounded text-center text-sm font-semibold underline focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                חזרה להתחברות
+              </button>
+            </form>
+          </section>
+        ) : (
+          <form onSubmit={onSubmit} noValidate className="mt-8 space-y-5">
+            {error ? (
+              <div
+                ref={errorRef}
+                tabIndex={-1}
+                role="alert"
+                className="bg-danger-bg text-danger-text rounded-md px-4 py-3 text-sm focus:outline-none"
+              >
+                {error}
+              </div>
+            ) : null}
+
+            <div>
+              <label htmlFor="email" className="text-brand-navy block text-sm font-medium">
+                אימייל
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
             </div>
-          ) : null}
 
-          <div>
-            <label htmlFor="email" className="text-brand-navy block text-sm font-medium">
-              אימייל
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-            />
-          </div>
+            <div>
+              <label htmlFor="password" className="text-brand-navy block text-sm font-medium">
+                סיסמה
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
+            </div>
 
-          <div>
-            <label htmlFor="password" className="text-brand-navy block text-sm font-medium">
-              סיסמה
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            aria-busy={loading || undefined}
-            className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-3 text-base font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-          >
-            {loading ? "מתחבר…" : "כניסה"}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading}
+              aria-busy={loading || undefined}
+              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-3 text-base font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
+            >
+              {loading ? "מתחבר…" : "כניסה"}
+            </button>
+          </form>
+        )}
 
         {resetToast ? (
           <p

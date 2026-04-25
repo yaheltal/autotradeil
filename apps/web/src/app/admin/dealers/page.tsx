@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { StatusBadge, deriveStatus } from "@/components/StatusBadge";
+import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
 
@@ -17,9 +18,14 @@ type DealerListItem = {
   verified: boolean;
   rejected_at: string | null;
   rejection_reason: string | null;
-  tier: string;
+  tier: Tier;
   trust_score: number | string;
   created_at: string;
+  // Phase 4.4
+  deals_completed: number;
+  kyc_status: "pending" | "submitted" | "approved" | "rejected";
+  member_since: string | null;
+  suspended_at: string | null;
 };
 
 type ListResponse = {
@@ -44,6 +50,8 @@ export default function DealersListPage() {
 
   const statusParam = params.get("status") ?? "";
   const searchParam = params.get("search") ?? "";
+  const tierParam = params.get("tier") ?? "";
+  const kycParam = params.get("kyc_status") ?? "";
   const pageParam = parseInt(params.get("page") ?? "1", 10) || 1;
 
   const [searchInput, setSearchInput] = useState(searchParam);
@@ -81,6 +89,8 @@ export default function DealersListPage() {
     const qs = new URLSearchParams();
     if (statusParam) qs.set("status", statusParam);
     if (searchParam) qs.set("search", searchParam);
+    if (tierParam) qs.set("tier", tierParam);
+    if (kycParam) qs.set("kyc_status", kycParam);
     qs.set("page", String(pageParam));
     qs.set("per_page", "20");
     (async () => {
@@ -100,7 +110,15 @@ export default function DealersListPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, statusParam, searchParam, pageParam]);
+  }, [token, statusParam, searchParam, tierParam, kycParam, pageParam]);
+
+  const setQuery = (key: string, value: string) => {
+    const next = new URLSearchParams(params.toString());
+    if (value) next.set(key, value);
+    else next.delete(key);
+    next.delete("page");
+    router.replace(`/admin/dealers?${next.toString()}`);
+  };
 
   if (loading) {
     return (
@@ -162,13 +180,57 @@ export default function DealersListPage() {
           />
         </div>
 
+        <div className="mt-4 grid gap-3 sm:max-w-2xl sm:grid-cols-2">
+          <div>
+            <label htmlFor="dealer-tier" className="text-brand-navy block text-xs font-semibold">
+              דרגת אמון
+            </label>
+            <select
+              id="dealer-tier"
+              dir="rtl"
+              value={tierParam}
+              onChange={(e) => setQuery("tier", e.target.value)}
+              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              <option value="">הכל</option>
+              <option value="bronze">ברונזה</option>
+              <option value="silver">כסף</option>
+              <option value="gold">זהב</option>
+              <option value="platinum">פלטינה</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="dealer-kyc" className="text-brand-navy block text-xs font-semibold">
+              סטטוס אימות זהות
+            </label>
+            <select
+              id="dealer-kyc"
+              dir="rtl"
+              value={kycParam}
+              onChange={(e) => setQuery("kyc_status", e.target.value)}
+              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              <option value="">הכל</option>
+              <option value="pending">ממתין</option>
+              <option value="submitted">הוגש</option>
+              <option value="approved">אושר</option>
+              <option value="rejected">נדחה</option>
+            </select>
+          </div>
+        </div>
+
         {error ? (
           <p role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
             {error}
           </p>
         ) : null}
 
-        <div className="border-brand-navy/10 mt-6 overflow-hidden rounded-lg border bg-white">
+        <div
+          role="region"
+          aria-label="רשימת סוחרים"
+          tabIndex={0}
+          className="border-brand-navy/10 focus-visible:outline-brand-navy mt-6 overflow-x-auto rounded-lg border bg-white focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
           <table className="w-full text-start text-sm">
             <caption className="sr-only">רשימת סוחרים</caption>
             <thead className="bg-brand-navy/5 text-brand-navy">
@@ -177,16 +239,25 @@ export default function DealersListPage() {
                   שם עסק
                 </th>
                 <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  איש קשר
-                </th>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
                   עיר
                 </th>
                 <th scope="col" className="px-4 py-3 text-start font-semibold">
                   סטטוס
                 </th>
                 <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  תאריך הרשמה
+                  דרגה
+                </th>
+                <th scope="col" className="px-4 py-3 text-start font-semibold">
+                  ציון אמון
+                </th>
+                <th scope="col" className="px-4 py-3 text-start font-semibold">
+                  עסקאות
+                </th>
+                <th scope="col" className="px-4 py-3 text-start font-semibold">
+                  KYC
+                </th>
+                <th scope="col" className="px-4 py-3 text-start font-semibold">
+                  חבר מאז
                 </th>
                 <th scope="col" className="px-4 py-3 text-start font-semibold">
                   פעולות
@@ -196,29 +267,58 @@ export default function DealersListPage() {
             <tbody>
               {loadingData && !data ? (
                 <tr>
-                  <td colSpan={6} className="text-brand-ink/60 px-4 py-8 text-center">
+                  <td colSpan={9} className="text-brand-ink/60 px-4 py-8 text-center">
                     <span role="status">טוען…</span>
                   </td>
                 </tr>
               ) : data && data.items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-brand-ink/60 px-4 py-10 text-center">
+                  <td colSpan={9} className="text-brand-ink/60 px-4 py-10 text-center">
                     <span role="status">לא נמצאו סוחרים התואמים לסינון.</span>
                   </td>
                 </tr>
               ) : (
                 data?.items.map((d) => {
                   const status = deriveStatus(d);
+                  const kycLabel = {
+                    pending: "ממתין",
+                    submitted: "הוגש",
+                    approved: "אושר",
+                    rejected: "נדחה",
+                  }[d.kyc_status];
+                  const memberSince = d.member_since ?? d.created_at;
                   return (
                     <tr key={d.id} className="border-brand-navy/10 hover:bg-brand-navy/5 border-t">
-                      <td className="text-brand-navy px-4 py-3 font-medium">{d.business_name}</td>
-                      <td className="px-4 py-3">{d.contact_name}</td>
+                      <td className="text-brand-navy px-4 py-3 font-medium">
+                        <Link
+                          href={`/admin/dealers/${d.id}`}
+                          className="text-brand-navy focus-visible:outline-brand-navy rounded font-semibold underline focus-visible:outline-2 focus-visible:outline-offset-2"
+                        >
+                          {d.business_name}
+                        </Link>
+                        {d.suspended_at ? (
+                          <span className="ms-2 inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900 ring-1 ring-amber-700/30">
+                            מושעה
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3">{d.city}</td>
                       <td className="px-4 py-3">
                         <StatusBadge status={status} />
                       </td>
-                      <td className="text-brand-ink/70 px-4 py-3">
-                        {new Date(d.created_at).toLocaleDateString("he-IL")}
+                      <td className="px-4 py-3">
+                        <TrustBadge tier={d.tier} compact />
+                      </td>
+                      <td className="text-brand-ink px-4 py-3 font-mono">{d.trust_score}</td>
+                      <td className="text-brand-ink px-4 py-3">{d.deals_completed}</td>
+                      <td className="text-brand-ink/80 px-4 py-3 text-xs">{kycLabel}</td>
+                      <td className="text-brand-ink/70 px-4 py-3 text-xs">
+                        <time dateTime={memberSince}>
+                          {new Date(memberSince).toLocaleDateString("he-IL", {
+                            year: "numeric",
+                            month: "short",
+                          })}
+                        </time>
                       </td>
                       <td className="px-4 py-3">
                         <Link

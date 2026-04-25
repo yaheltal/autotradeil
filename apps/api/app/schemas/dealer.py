@@ -59,6 +59,36 @@ class DealerResponse(BaseModel):
     # lose the fractional part on responses.
     trust_score: Decimal
     created_at: datetime
+    # Phase 4.4 additions
+    description: str | None = None
+    logo_url: str | None = None
+    suspended_at: datetime | None = None
+    suspended_reason: str | None = None
+    notification_offers: bool = True
+    notification_deals: bool = True
+    notification_updates: bool = True
+
+
+class DealerProfileUpdate(BaseModel):
+    """Free-update fields the dealer can change without admin re-approval."""
+
+    business_name: str | None = Field(default=None, min_length=2, max_length=120)
+    city: str | None = Field(default=None, min_length=2, max_length=80)
+    phone: str | None = Field(default=None, min_length=9, max_length=15)
+    description: str | None = Field(default=None, max_length=1000)
+    notification_offers: bool | None = None
+    notification_deals: bool | None = None
+    notification_updates: bool | None = None
+
+    @field_validator("phone")
+    @classmethod
+    def validate_phone(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        cleaned = re.sub(r"[\s\-\(\)]", "", v)
+        if not re.match(r"^(\+972|0)5\d{8}$", cleaned):
+            raise ValueError("phone must be a valid Israeli mobile")
+        return cleaned
 
 
 class SignupResponse(BaseModel):
