@@ -782,25 +782,61 @@ async def public_otp_verify(
         logger.warning("magiclink network error: %s", exc)
         raise HTTPException(status_code=502, detail="שגיאת רשת")
 
-    # `properties.action_link` contains hash params with the access/refresh
-    # tokens — but the cleaner shape is `properties.hashed_token` + email
-    # which the client would then submit to /auth/v1/verify. For now we
-    # parse the action_link hash to extract tokens directly.
+    # Supabase admin generate_link returns the verify URL — we still need to
+    # exchange it for an actual session. Three possible response shapes,
+    # depending on Supabase version:
+    #
+    # 1. `data.properties.access_token` / `refresh_token`             (older)
+    # 2. `data.access_token` / `data.refresh_token`                    (variant)
+    # 3. `data.action_link` + `data.hashed_token` (newer GoTrue) — we
+    #    follow the action_link to extract tokens from the redirect hash,
+    #    OR call /auth/v1/verify directly with the hashed_token.
     from urllib.parse import urlparse, parse_qs
 
-    action_link = (data.get("properties") or {}).get("action_link", "")
-    fragment = urlparse(action_link).fragment
-    params = parse_qs(fragment)
-    access = params.get("access_token", [None])[0]
-    refresh = params.get("refresh_token", [None])[0]
+    props = data.get("properties") or {}
+    access = props.get("access_token") or data.get("access_token")
+    refresh = props.get("refresh_token") or data.get("refresh_token")
 
     if not access:
-        # Some Supabase responses return tokens at top-level instead.
-        access = data.get("access_token")
-        refresh = data.get("refresh_token")
+        # Newer GoTrue path: use the hashed_token to call /auth/v1/verify
+        # which returns the real session in JSON.
+        hashed_token = props.get("hashed_token") or data.get("hashed_token")
+        if hashed_token:
+            verify_url = f"{settings.supabase_url}/auth/v1/verify"
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    vresp = await client.post(
+                        verify_url,
+                        headers={
+                            "apikey": settings.supabase_secret_key,
+                            "Content-Type": "application/json",
+                        },
+                        json={"type": "magiclink", "token": hashed_token},
+                    )
+                if vresp.status_code == 200:
+                    vd = vresp.json()
+                    access = vd.get("access_token")
+                    refresh = vd.get("refresh_token")
+                else:
+                    logger.warning(
+                        "supabase verify hashed_token failed status=%s body=%r",
+                        vresp.status_code,
+                        vresp.text,
+                    )
+            except httpx.HTTPError as exc:
+                logger.warning("supabase verify hashed_token network error: %s", exc)
 
     if not access:
-        logger.error("magiclink response missing access_token: %r", data)
+        # Last resort: parse the action_link hash directly. Some deployments
+        # return tokens in the URL fragment.
+        action_link = props.get("action_link") or data.get("action_link", "")
+        fragment = urlparse(action_link).fragment
+        params = parse_qs(fragment)
+        access = params.get("access_token", [None])[0]
+        refresh = params.get("refresh_token", [None])[0]
+
+    if not access:
+        logger.error("magiclink: could not extract access_token from %r", data)
         raise HTTPException(status_code=502, detail="שירות האימות לא זמין")
 
     return LoginResponse(
