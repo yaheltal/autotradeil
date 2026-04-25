@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 import { StatusBadge, deriveStatus } from "@/components/StatusBadge";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
@@ -44,6 +44,14 @@ const STATUS_TABS = [
 ] as const;
 
 export default function DealersListPage() {
+  return (
+    <Suspense fallback={null}>
+      <DealersListPageInner />
+    </Suspense>
+  );
+}
+
+function DealersListPageInner() {
   const { token, loading } = useAdminAuth();
   const router = useRouter();
   const params = useSearchParams();

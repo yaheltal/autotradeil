@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 
@@ -51,6 +51,14 @@ function translateReason(raw: string | null): string {
 }
 
 export default function SignupRejectedPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupRejectedPageInner />
+    </Suspense>
+  );
+}
+
+function SignupRejectedPageInner() {
   const params = useSearchParams();
   const reason = translateReason(params.get("reason"));
 
