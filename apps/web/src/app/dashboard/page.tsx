@@ -148,12 +148,6 @@ export default function DashboardPage() {
   const stats = [
     { key: "city", label: "עיר", value: dealer.city },
     { key: "phone", label: "טלפון", value: dealer.phone },
-    { key: "tier", label: "דרגה", value: dealer.tier, lang: "en" as const },
-    {
-      key: "trust_score",
-      label: "ציון אמון",
-      value: String(dealer.trust_score),
-    },
   ];
 
   return (
@@ -191,18 +185,31 @@ export default function DashboardPage() {
           <h2 id="profile-heading" className="text-brand-navy text-lg font-semibold">
             פרטי העסק
           </h2>
-          <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {stats.map((s) => (
               <div key={s.key} className="border-brand-navy/10 rounded-lg border bg-white p-5">
                 <dt className="text-brand-ink/60 text-sm">{s.label}</dt>
-                <dd
-                  {...("lang" in s ? { lang: s.lang } : {})}
-                  className="text-brand-navy mt-1 text-xl font-semibold"
-                >
-                  {s.value}
-                </dd>
+                <dd className="text-brand-navy mt-1 text-xl font-semibold">{s.value}</dd>
               </div>
             ))}
+            {/* Combined tier + trust_score card.
+             *  Two <dt>/<dd> pairs inside one card preserves label-value
+             *  semantics for screen readers (per a11y review). */}
+            <div className="border-brand-navy/10 rounded-lg border bg-white p-5">
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <dt className="text-brand-ink/60 text-sm">דרגה</dt>
+                <dd className="text-brand-navy text-xl font-semibold">
+                  <span lang="en">{dealer.tier}</span>
+                </dd>
+                <span aria-hidden="true" className="text-brand-ink/40 mx-1">
+                  ·
+                </span>
+                <dt className="text-brand-ink/60 text-sm">ציון אמון</dt>
+                <dd className="text-brand-navy text-xl font-semibold tabular-nums">
+                  {dealer.trust_score}
+                </dd>
+              </div>
+            </div>
           </dl>
         </section>
 
