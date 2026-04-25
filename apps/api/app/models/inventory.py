@@ -97,6 +97,21 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     warranty_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     warranty_until: Mapped[date | None] = mapped_column(Date, nullable=True)
 
+    # ---- Phase 6.8.4: buyer details (captured at sale-close) ----
+    buyer_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    buyer_id_number: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    buyer_phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+
+    # ---- Phase 6.8.4: trade-in (optional) ----
+    was_trade_in: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    trade_in_make: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    trade_in_model: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    trade_in_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trade_in_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    trade_in_plate: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "year >= 1900 AND year <= 2030",

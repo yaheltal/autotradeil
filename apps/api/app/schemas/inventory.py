@@ -103,6 +103,21 @@ class SellRequest(BaseModel):
     sold_to: str = Field(pattern="^(b2b|b2c|external)$")
     sold_at: datetime | None = Field(default=None)
 
+    # Phase 6.8.4 — buyer details (optional; captured for B2C/external).
+    # Required at the API level only when sold_to=b2c so we don't break
+    # existing B2B closes that already carry the buyer via Deal/dealer_id.
+    buyer_name: str | None = Field(default=None, max_length=120)
+    buyer_id_number: str | None = Field(default=None, pattern=r"^[0-9]{9}$")
+    buyer_phone: str | None = Field(default=None, max_length=30)
+
+    # Phase 6.8.4 — optional trade-in vehicle.
+    was_trade_in: bool = False
+    trade_in_make: str | None = Field(default=None, max_length=100)
+    trade_in_model: str | None = Field(default=None, max_length=100)
+    trade_in_year: int | None = Field(default=None, ge=1900, le=2030)
+    trade_in_value: int | None = Field(default=None, ge=0)
+    trade_in_plate: str | None = Field(default=None, max_length=20)
+
 
 class SellWarning(BaseModel):
     deal_price_mismatch: dict[str, int] | None = None

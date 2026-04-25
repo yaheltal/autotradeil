@@ -746,6 +746,23 @@ async def sell_item(
     if payload.purchase_cost is not None:
         item.purchase_cost = payload.purchase_cost
 
+    # Phase 6.8.4 — persist buyer details + trade-in (only the fields the
+    # caller actually filled in; nulls otherwise so partial submissions
+    # don't blank existing data on a re-sell flow).
+    if payload.buyer_name:
+        item.buyer_name = payload.buyer_name.strip()
+    if payload.buyer_id_number:
+        item.buyer_id_number = payload.buyer_id_number
+    if payload.buyer_phone:
+        item.buyer_phone = payload.buyer_phone.strip()
+    item.was_trade_in = payload.was_trade_in
+    if payload.was_trade_in:
+        item.trade_in_make = payload.trade_in_make
+        item.trade_in_model = payload.trade_in_model
+        item.trade_in_year = payload.trade_in_year
+        item.trade_in_value = payload.trade_in_value
+        item.trade_in_plate = payload.trade_in_plate
+
     warnings: SellWarning | None = None
     if payload.sold_to == "b2b":
         deal = (
