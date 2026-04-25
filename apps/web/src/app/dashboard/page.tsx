@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
+import { DealerStatsCards } from "@/components/DealerStatsCards";
 import { ProfileEditor } from "@/components/ProfileEditor";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
@@ -183,6 +184,8 @@ export default function DashboardPage() {
           שלום, {dealer.business_name}!
         </h1>
         <p className="text-brand-ink/70 mt-2">החשבון שלך מאושר — להלן פרטי הפרופיל.</p>
+
+        {token ? <DealerStatsCards token={token} /> : null}
 
         <section aria-labelledby="profile-heading" className="mt-10">
           <h2 id="profile-heading" className="text-brand-navy text-lg font-semibold">
