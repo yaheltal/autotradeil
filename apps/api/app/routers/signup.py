@@ -211,6 +211,11 @@ async def signup_dealer(
             verified=False,
         )
         db.add(dealer)
+        # Mirror phone to users.phone so the OTP-by-phone login flow can
+        # find the dealer via users.phone (the canonical lookup path now
+        # that admins also have OTP login).
+        if payload.phone and not user.phone:
+            user.phone = payload.phone
         await db.flush()
 
         await emit_event(

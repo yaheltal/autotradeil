@@ -502,7 +502,40 @@ function OtpLoginSection({ router, next }: { router: ReturnType<typeof useRouter
           refresh_token: resp.refresh_token,
         });
       }
-      router.push(next || "/dashboard");
+      // Same routing logic the password login uses — admin → /admin,
+      // dealer → /dashboard or pending/rejected based on verification status.
+      try {
+        const who = await apiFetch<Whoami>("/api/v1/auth/whoami", {
+          token: resp.access_token,
+        });
+        if (who.user_type === "admin") {
+          router.push(next || "/admin");
+          return;
+        }
+        if (who.user_type === "dealer") {
+          try {
+            const me = await apiFetch<DealerMe>("/api/v1/dealers/me", {
+              token: resp.access_token,
+            });
+            if (me.verified) {
+              router.push(next || "/dashboard");
+            } else if (me.rejected_at) {
+              const reason = encodeURIComponent(me.rejection_reason ?? "other");
+              router.push(`/signup/dealer/rejected?reason=${reason}`);
+            } else {
+              router.push("/signup/dealer/pending");
+            }
+            return;
+          } catch {
+            router.push("/signup/dealer/pending");
+            return;
+          }
+        }
+        setErr("סוג המשתמש אינו נתמך");
+      } catch {
+        // whoami failed — fall back to /dashboard.
+        router.push(next || "/dashboard");
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "קוד שגוי");
       codeInputRef.current?.focus();
