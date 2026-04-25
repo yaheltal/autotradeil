@@ -15,7 +15,12 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next();
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  // Accept either the legacy ANON_KEY or the new PUBLISHABLE_KEY name
+  // Supabase v2 introduced. Failing closed on a name mismatch causes the
+  // exact symptom users see: immediate bounce from /dashboard back to
+  // /login after a successful login.
+  const anon =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
   if (!url || !anon || anon === "FILL_ME_IN") {
     // Fail closed when misconfigured — redirect to login.
