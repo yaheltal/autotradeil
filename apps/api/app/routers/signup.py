@@ -622,7 +622,14 @@ async def public_otp_request(
     delivered_via = body.delivery
 
     if body.delivery == "sms" and dealer.phone:
-        sms_msg = f"AutoTradeIL: קוד הכניסה שלך הוא {code}. תקף ל-{OTP_TTL_MINUTES} דקות."
+        # Domain-bound OTP format so iOS Safari auto-suggests the code into
+        # the input. The trailing `@domain #code` line is the magic incantation
+        # that ties the code to the originating origin per Apple's spec.
+        sms_msg = (
+            f"AutoTradeIL: קוד הכניסה שלך הוא {code}. "
+            f"תקף ל-{OTP_TTL_MINUTES} דקות.\n\n"
+            f"@brink-entire-easter.ngrok-free.dev #{code}"
+        )
         sent = await send_sms(to_phone=dealer.phone, message=sms_msg)
         if not sent:
             # SMS failed (Twilio unavailable, bad number, etc.) — fall back
@@ -747,7 +754,9 @@ async def public_otp_verify(
         "Authorization": f"Bearer {settings.supabase_secret_key}",
         "Content-Type": "application/json",
     }
-    payload = {"type": "magiclink", "email": body.email}
+    # When the OTP request used SMS, body.email is None — but Supabase's
+    # admin generate_link still needs an email. Use the resolved user.email.
+    payload = {"type": "magiclink", "email": user.email}
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, headers=headers, json=payload)
