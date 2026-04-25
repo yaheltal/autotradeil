@@ -10,6 +10,7 @@ from app.models.inventory_view import InventoryView
 from app.models.listing import Listing
 from app.models.notification import Notification
 from app.models.offer import Offer
+from app.models.suspension_reason_template import SuspensionReasonTemplate
 from app.models.system_settings import SystemSettings
 from app.models.user import User
 
@@ -24,6 +25,7 @@ __all__ = [
     "Listing",
     "Notification",
     "Offer",
+    "SuspensionReasonTemplate",
     "SystemSettings",
     "User",
 ]

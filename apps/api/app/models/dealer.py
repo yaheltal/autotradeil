@@ -152,6 +152,24 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     suspended_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Phase 6.7 — admin moderation hardening
+    suspended_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    suspension_silent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("false")
+    )
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    archived_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    archived_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     notification_offers: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default=text("true")
     )
