@@ -80,15 +80,22 @@ export const metadata: Metadata = {
   // scripts/process_brand_logo.py. Keeping them as real /public files (not
   // dynamic Next.js routes) so social-link validators and PWA installers
   // see immutable URLs they can cache.
+  //
+  // Cache-busting: browsers (especially iOS Safari + Chrome desktop)
+  // hold favicons forever once cached. The ?v=N query string forces a
+  // fresh fetch when the brand logo changes. Bump the integer when you
+  // ship a new logo. Same idea applies to apple-touch-icon (iOS pins
+  // home-screen icons more aggressively still).
   icons: {
     icon: [
-      { url: "/favicon.ico", sizes: "any" },
-      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
-      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.ico?v=2", sizes: "any" },
+      { url: "/favicon-16x16.png?v=2", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png?v=2", sizes: "32x32", type: "image/png" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png?v=2", sizes: "180x180", type: "image/png" }],
+    shortcut: ["/favicon.ico?v=2"],
   },
-  manifest: "/manifest.json",
+  manifest: "/manifest.json?v=2",
   robots: {
     index: true,
     follow: true,
