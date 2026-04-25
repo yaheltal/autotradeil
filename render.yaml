@@ -1,0 +1,66 @@
+# Render Blueprint — declarative service config.
+#
+# When this file is committed to the repo, Render lets you "Sync from
+# render.yaml" in the dashboard. Doing so means every future deploy
+# uses the build + start commands defined here, including
+# `alembic upgrade head` before uvicorn launches — no more "did the
+# migration run?" guesswork.
+#
+# Manual one-time step: in the Render dashboard, open the existing
+# autotradeil-api service → Settings → Build & Deploy → "Sync from
+# render.yaml" (or recreate the service via Blueprint).
+
+services:
+  - type: web
+    name: autotradeil-api
+    runtime: python
+    region: frankfurt
+    plan: starter
+    branch: main
+    rootDir: apps/api
+    pythonVersion: "3.11.9"
+    buildCommand: pip install -r requirements.txt
+    # The start script runs `alembic upgrade head` before launching
+    # uvicorn so a schema-bearing deploy can never out-run its
+    # migration.
+    startCommand: bash scripts/start.sh
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # All secrets stay in the dashboard — listed here only so a
+      # blueprint sync doesn't clear them. `sync: false` means Render
+      # preserves whatever value is already set.
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: SUPABASE_JWT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: GMAIL_FROM
+        sync: false
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_FROM_NUMBER
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ENVIRONMENT
+        value: production
+      - key: WEB_CONCURRENCY
+        value: "2"
