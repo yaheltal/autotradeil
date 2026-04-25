@@ -36,6 +36,7 @@ type Dealer = {
   lot_size: number;
   description: string | null;
   logo_url: string | null;
+  license_number?: string;
 };
 
 export default function DashboardPage() {
@@ -146,9 +147,15 @@ export default function DashboardPage() {
 
   if (!dealer) return null;
 
+  // Phase 6.8.1 — show business name + license number on the cards.
+  // tier + trust_score are in the combined card below.
   const stats = [
-    { key: "city", label: "עיר", value: dealer.city },
-    { key: "phone", label: "טלפון", value: dealer.phone },
+    { key: "business_name", label: "שם העסק", value: dealer.business_name },
+    {
+      key: "license_number",
+      label: "מספר רישיון סוחר",
+      value: dealer.license_number ?? "—",
+    },
   ];
 
   return (

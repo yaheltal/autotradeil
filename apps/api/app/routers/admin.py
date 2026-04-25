@@ -244,9 +244,36 @@ async def verify_dealer(
         to_email=user.email,
         business_name=dealer.business_name,
     )
-    logger.info("dealer.verify dealer_id=%s email_sent=%s", dealer_id, email_ok)
 
-    return {"ok": True, "dealer_id": str(dealer_id), "email_sent": email_ok}
+    # Phase 6.8.5 — also notify by SMS so the dealer doesn't have to
+    # check email. Best-effort; email is the authoritative channel.
+    sms_ok = False
+    if dealer.phone:
+        from app.core.sms import send_sms
+
+        login_url = "https://autotradeil.com/login"
+        sms_msg = (
+            f"AutoTradeIL: שלום {dealer.business_name}, חשבון הסוחר שלך אושר! "
+            f"להתחברות: {login_url}"
+        )
+        try:
+            sms_ok = await send_sms(to_phone=dealer.phone, message=sms_msg)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("dealer verify sms failed: %s", exc)
+
+    logger.info(
+        "dealer.verify dealer_id=%s email_sent=%s sms_sent=%s",
+        dealer_id,
+        email_ok,
+        sms_ok,
+    )
+
+    return {
+        "ok": True,
+        "dealer_id": str(dealer_id),
+        "email_sent": email_ok,
+        "sms_sent": sms_ok,
+    }
 
 
 @router.post("/dealers/{dealer_id}/reject")

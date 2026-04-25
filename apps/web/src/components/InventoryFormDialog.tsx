@@ -1004,25 +1004,43 @@ export function InventoryFormDialog({
               <fieldset className="border-brand-navy/15 rounded-lg border bg-white p-4">
                 <legend className="text-brand-navy px-2 text-sm font-semibold">חשיפת הרכב</legend>
                 <div className="mt-2 space-y-2">
+                  {/* Phase 6.8.3 — B2C and "both" are locked behind a
+                   *  "בקרוב" tooltip until the B2C marketplace launches. */}
                   {(
                     [
-                      ["private", "פרטי — רק אני רואה"],
-                      ["b2b", "B2B — סוחרים בלבד"],
-                      ["b2c", "B2C — לקוחות בלבד"],
-                      ["both", "שניהם — סוחרים + לקוחות"],
+                      ["private", "פרטי — רק אני רואה", false],
+                      ["b2b", "B2B — סוחרים בלבד", false],
+                      ["b2c", "B2C — לקוחות בלבד", true],
+                      ["both", "שניהם — סוחרים + לקוחות", true],
                     ] as const
-                  ).map(([v, label]) => (
+                  ).map(([v, label, locked]) => (
                     <label
                       key={v}
-                      className="border-brand-navy/20 hover:bg-brand-navy/5 flex min-h-11 cursor-pointer items-center gap-2 rounded-md border bg-white px-3 py-2"
+                      title={locked ? "בקרוב — שוק B2C עדיין לא פתוח" : undefined}
+                      className={[
+                        "flex min-h-11 items-center gap-2 rounded-md border bg-white px-3 py-2",
+                        locked
+                          ? "border-brand-navy/10 cursor-not-allowed opacity-50"
+                          : "border-brand-navy/20 hover:bg-brand-navy/5 cursor-pointer",
+                      ].join(" ")}
                     >
                       <input
                         type="radio"
                         value={v}
+                        disabled={locked}
+                        aria-describedby={locked ? `vis-${v}-soon` : undefined}
                         {...register("visibility")}
                         className="accent-brand-navy"
                       />
                       <span className="text-brand-navy text-sm font-medium">{label}</span>
+                      {locked ? (
+                        <span
+                          id={`vis-${v}-soon`}
+                          className="bg-brand-navy/10 text-brand-navy/70 ms-auto rounded-full px-2 py-0.5 text-xs font-semibold"
+                        >
+                          בקרוב
+                        </span>
+                      ) : null}
                     </label>
                   ))}
                 </div>
