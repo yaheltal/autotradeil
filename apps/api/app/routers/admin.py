@@ -100,6 +100,11 @@ async def list_dealers(
         .join(User, User.id == Dealer.user_id)
     )
 
+    # Phase 6.7 — by default exclude archived dealers from the main list.
+    # The /admin/dealers/archived endpoint surfaces them separately.
+    base_q = base_q.where(Dealer.archived_at.is_(None))
+    count_q = count_q.where(Dealer.archived_at.is_(None))
+
     if status_filter == "pending":
         base_q = base_q.where(Dealer.verified.is_(False), Dealer.rejected_at.is_(None))
         count_q = count_q.where(Dealer.verified.is_(False), Dealer.rejected_at.is_(None))
@@ -133,6 +138,40 @@ async def list_dealers(
 
     base_q = (
         base_q.order_by(Dealer.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+    )
+    rows = (await db.execute(base_q)).all()
+
+    items = [_to_list_item(row.Dealer, row.User) for row in rows]
+    pages = math.ceil(total / per_page) if total > 0 else 1
+
+    return DealerListResponse(
+        items=items, total=total, page=page, pages=pages, per_page=per_page
+    )
+
+
+@router.get("/dealers/archived", response_model=DealerListResponse)
+async def list_archived_dealers(
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+) -> DealerListResponse:
+    """List dealers that have been archived (soft-deleted). Phase 6.7."""
+    count_q = (
+        select(func.count())
+        .select_from(Dealer)
+        .join(User, User.id == Dealer.user_id)
+        .where(Dealer.archived_at.is_not(None))
+    )
+    total = (await db.execute(count_q)).scalar_one()
+
+    base_q = (
+        select(Dealer, User)
+        .join(User, User.id == Dealer.user_id)
+        .where(Dealer.archived_at.is_not(None))
+        .order_by(Dealer.archived_at.desc())
         .offset((page - 1) * per_page)
         .limit(per_page)
     )

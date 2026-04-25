@@ -133,7 +133,16 @@ export default function DealersListPage() {
   return (
     <main id="main" tabIndex={-1} className="focus:outline-none">
       <div className="mx-auto max-w-6xl px-6 py-10">
-        <h1 className="text-brand-navy text-3xl font-bold tracking-tight">סוחרים</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-brand-navy text-3xl font-bold tracking-tight">סוחרים</h1>
+          <Link
+            href="/admin/dealers/archived"
+            className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center gap-1.5 rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            <span aria-hidden="true">📦</span>
+            ארכיון סוחרים
+          </Link>
+        </div>
         <p className="text-brand-ink/70 mt-2">נהל את כל בקשות ההרשמה והפרופילים.</p>
 
         <nav aria-label="סינון לפי סטטוס" className="border-brand-navy/10 mt-8 border-b">
