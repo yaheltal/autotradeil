@@ -57,6 +57,20 @@ export default function DashboardPage() {
         router.push("/login");
         return;
       }
+      // Admins shouldn't be on /dashboard — redirect to /admin so the page
+      // doesn't 404 trying to load a non-existent dealer profile.
+      try {
+        const who = await apiFetch<{ user_type: string }>("/api/v1/auth/whoami", {
+          token: session.access_token,
+        });
+        if (who.user_type === "admin") {
+          router.replace("/admin");
+          return;
+        }
+      } catch {
+        // whoami failed — fall through; the dealer fetch will surface its
+        // own error.
+      }
       try {
         const me = await apiFetch<Dealer>("/api/v1/dealers/me", {
           token: session.access_token,
