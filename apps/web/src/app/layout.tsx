@@ -20,9 +20,85 @@ const frankRuhl = Frank_Ruhl_Libre({
   display: "swap",
 });
 
+// `metadataBase` lets Next.js resolve relative og:image / twitter:image
+// paths (`/opengraph-image`) against the production origin. Falls back
+// to localhost in dev so previews still render.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://autotradeil.com";
+
 export const metadata: Metadata = {
-  title: "AutoTradeIL — פלטפורמת מסחר רכב לסוחרים וצרכנים בישראל",
-  description: "זירת מסחר ברכבים לסוחרים מוסמכים ולצרכנים פרטיים — מלאי, הצעות, ועסקאות במקום אחד.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "AutoTradeIL — זירת המסחר של סוחרי הרכב",
+    template: "%s · AutoTradeIL",
+  },
+  description:
+    "זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית — מלאי משותף, הצעות מתועדות, אימות KYC, וזירה אחת לכל מחזור החיים של העסקה.",
+  applicationName: "AutoTradeIL",
+  keywords: [
+    "AutoTradeIL",
+    "סוחרי רכב",
+    "מסחר רכבים",
+    "B2B רכב",
+    "שוק סוחרים",
+    "רכבים יד שנייה",
+    "ישראל",
+  ],
+  authors: [{ name: "AutoTradeIL" }],
+  creator: "AutoTradeIL",
+  publisher: "AutoTradeIL",
+  formatDetection: {
+    telephone: false,
+    email: false,
+    address: false,
+  },
+  openGraph: {
+    type: "website",
+    locale: "he_IL",
+    url: SITE_URL,
+    siteName: "AutoTradeIL",
+    title: "AutoTradeIL — זירת המסחר של סוחרי הרכב",
+    description:
+      "זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית עם הצעות מתועדות, מלאי משותף, ואימות KYC.",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "AutoTradeIL — זירת המסחר של סוחרי הרכב",
+        type: "image/png",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AutoTradeIL — זירת המסחר של סוחרי הרכב",
+    description:
+      "זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית עם הצעות מתועדות, מלאי משותף, ואימות KYC.",
+    images: ["/og-image.png"],
+  },
+  // Static favicons + apple-touch-icon, generated from the brand logo via
+  // scripts/process_brand_logo.py. Keeping them as real /public files (not
+  // dynamic Next.js routes) so social-link validators and PWA installers
+  // see immutable URLs they can cache.
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+  manifest: "/manifest.json",
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
 };
 
 export const viewport: Viewport = {

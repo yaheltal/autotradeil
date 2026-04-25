@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { ApiStatus } from "@/components/ApiStatus";
@@ -79,15 +80,19 @@ export default function Home() {
             <Link
               href="/"
               aria-label="AutoTradeIL — דף הבית"
-              className="focus-visible:outline-brand-navy group flex items-baseline gap-1.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
+              className="focus-visible:outline-brand-navy group flex items-center gap-2.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
             >
+              <Image
+                src="/logo-icon.png"
+                alt=""
+                width={40}
+                height={40}
+                priority
+                className="h-9 w-9 transition-transform group-hover:scale-105 sm:h-10 sm:w-10"
+              />
               <span className="text-brand-navy font-serif text-lg font-bold tracking-tight sm:text-xl">
                 AutoTradeIL
               </span>
-              <span
-                aria-hidden="true"
-                className="bg-brand-gold inline-block h-1.5 w-1.5 rounded-full transition-transform group-hover:scale-150"
-              />
             </Link>
             <ul className="hidden items-center gap-1 sm:flex">
               <li>
@@ -150,6 +155,16 @@ export default function Home() {
           />
 
           <div className="relative mx-auto max-w-6xl px-4 pb-16 pt-12 sm:px-6 sm:pb-24 sm:pt-20 lg:pt-28">
+            {/* Hero logo lockup — full brand mark, large */}
+            <Image
+              src="/logo-full.png"
+              alt="AutoTradeIL — זירת המסחר של סוחרי הרכב"
+              width={1408}
+              height={768}
+              priority
+              className="mb-8 h-auto w-[min(280px,80vw)] sm:w-[360px] lg:w-[420px]"
+            />
+
             {/* Issue label — editorial trade-journal touch */}
             <p className="text-brand-navy/70 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
               <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
@@ -162,9 +177,9 @@ export default function Home() {
             >
               זירת המסחר
               <br />
-              <span className="text-brand-navy/90">ברכבים</span>
+              <span className="text-brand-navy/90">של סוחרי</span>
               <span className="text-brand-gold"> · </span>
-              <span className="text-brand-navy/90">של ישראל.</span>
+              <span className="text-brand-navy/90">הרכב.</span>
             </h1>
 
             <p className="text-brand-ink/80 mt-7 max-w-xl text-lg leading-relaxed sm:text-xl">
@@ -468,15 +483,13 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
             <div>
-              <div className="flex items-baseline gap-1.5">
+              <div className="flex items-center gap-2.5">
+                <Image src="/logo-icon.png" alt="" width={40} height={40} className="h-10 w-10" />
                 <span className="font-serif text-xl font-bold tracking-tight">AutoTradeIL</span>
-                <span
-                  aria-hidden="true"
-                  className="bg-brand-gold inline-block h-1.5 w-1.5 rounded-full"
-                />
               </div>
               <p className="text-brand-cream/75 mt-4 max-w-xs text-sm leading-relaxed">
-                פלטפורמת המסחר המקצועית של ישראל לסוחרי רכב מאומתים. מבוססת בתל-אביב.
+                זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית עם הצעות מתועדות, מלאי משותף
+                ואימות KYC.
               </p>
             </div>
 

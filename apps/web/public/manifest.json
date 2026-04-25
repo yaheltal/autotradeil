@@ -1,0 +1,45 @@
+{
+  "name": "AutoTradeIL — זירת המסחר של סוחרי הרכב",
+  "short_name": "AutoTradeIL",
+  "description": "פלטפורמה מקצועית למסחר ברכבים בין סוחרים מוסמכים — מלאי, הצעות, ועסקאות במקום אחד.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f8f6",
+  "theme_color": "#1B2B4B",
+  "lang": "he",
+  "dir": "rtl",
+  "categories": ["business", "productivity", "shopping"],
+  "icons": [
+    {
+      "src": "/favicon-16x16.png",
+      "sizes": "16x16",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon-32x32.png",
+      "sizes": "32x32",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
