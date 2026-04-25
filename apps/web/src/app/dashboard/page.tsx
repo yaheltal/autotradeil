@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
@@ -40,8 +40,30 @@ type Dealer = {
 };
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardPageInner />
+    </Suspense>
+  );
+}
+
+function DashboardPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // ?error=admin_required arrives when a non-admin tries to open /admin/*
+  // (useAdminAuth.ts redirects them here). Surface the cause once, then
+  // strip the query param so a refresh doesn't re-announce.
+  const errorCode = searchParams.get("error");
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const [adminGateMsg, setAdminGateMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (errorCode !== "admin_required" || typeof window === "undefined") return;
+    setAdminGateMsg("הדף שניסית לפתוח זמין רק למנהלי מערכת. הוחזרת ללוח שלך.");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("error");
+    window.history.replaceState({}, "", url.toString());
+  }, [errorCode]);
 
   const [dealer, setDealer] = useState<Dealer | null>(null);
   const [loading, setLoading] = useState(true);
@@ -179,6 +201,15 @@ export default function DashboardPage() {
       <DashboardSubNav />
 
       <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
+        {adminGateMsg ? (
+          <div
+            role="alert"
+            className="mb-6 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          >
+            {adminGateMsg}
+          </div>
+        ) : null}
+
         <h1
           ref={headingRef}
           tabIndex={-1}

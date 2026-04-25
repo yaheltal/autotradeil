@@ -56,7 +56,11 @@ export function useAdminAuth(): AdminAuthState {
         if (cancelled) return;
 
         if (who.user_type !== "admin") {
-          router.replace("/login?next=/admin");
+          // Authenticated but not an admin — sending them back to /login
+          // would force a re-auth they can't satisfy and is confusing.
+          // Send them to their own dashboard with an error code the
+          // dashboard surfaces in a polite alert.
+          router.replace("/dashboard?error=admin_required");
           return;
         }
 
@@ -66,6 +70,8 @@ export function useAdminAuth(): AdminAuthState {
           loading: false,
         });
       } catch {
+        // whoami failed (network, JWT expired, etc.) — only here do we
+        // bounce to /login since the session itself is questionable.
         if (!cancelled) {
           router.replace("/login?next=/admin");
         }
