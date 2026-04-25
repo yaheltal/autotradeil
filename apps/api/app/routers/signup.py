@@ -804,19 +804,33 @@ async def public_otp_verify(
         if hashed_token:
             verify_url = f"{settings.supabase_url}/auth/v1/verify"
             try:
-                async with httpx.AsyncClient(timeout=10.0) as client:
+                async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
                     vresp = await client.post(
                         verify_url,
                         headers={
                             "apikey": settings.supabase_secret_key,
                             "Content-Type": "application/json",
                         },
-                        json={"type": "magiclink", "token": hashed_token},
+                        # Supabase requires email along with the token for
+                        # magiclink verification.
+                        json={
+                            "type": "magiclink",
+                            "token": hashed_token,
+                            "email": user.email,
+                        },
                     )
                 if vresp.status_code == 200:
                     vd = vresp.json()
                     access = vd.get("access_token")
                     refresh = vd.get("refresh_token")
+                elif vresp.status_code in (302, 303):
+                    # Some Supabase deployments respond with a 302 to the
+                    # redirect_to URL with the tokens in the hash. Parse it.
+                    loc = vresp.headers.get("Location", "")
+                    fragment = urlparse(loc).fragment
+                    qparams = parse_qs(fragment)
+                    access = qparams.get("access_token", [None])[0]
+                    refresh = qparams.get("refresh_token", [None])[0]
                 else:
                     logger.warning(
                         "supabase verify hashed_token failed status=%s body=%r",
