@@ -690,12 +690,24 @@ async def lookup_by_image(
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
     file: UploadFile = File(...),
 ) -> dict[str, object | None]:
-    """Identify vehicle (make/model/year/color) from a user-supplied image
-    using Claude's vision model. Returns best-effort guess or nulls."""
+    """Identify a vehicle from a user-supplied image.
+
+    Two-pass strategy:
+      1. Claude vision extracts a visual guess (make/model/year/color) AND
+         attempts OCR on the license plate, if visible.
+      2. If a plausible plate number was extracted (6–9 digits), call the
+         gov.il registry — its data is authoritative and overrides the
+         visual guess for any field it returns.
+
+    `source` in the response says which path was used:
+      * `"plate+vision"` — both succeeded; gov.il fields took priority
+      * `"vision"`       — no plate detected (or gov.il lookup failed)
+    """
     import base64
     import json as json_stdlib
 
     import anthropic
+    import httpx
 
     from app.core.config import settings as app_settings
 
@@ -728,7 +740,7 @@ async def lookup_by_image(
     try:
         message = client.messages.create(
             model="claude-opus-4-7",
-            max_tokens=300,
+            max_tokens=400,
             messages=[
                 {
                     "role": "user",
@@ -744,15 +756,18 @@ async def lookup_by_image(
                         {
                             "type": "text",
                             "text": (
-                                "Identify the vehicle in this image. Return ONLY a JSON object "
+                                "Look at this image of a vehicle. Return ONLY a JSON object "
                                 "with these fields:\n"
                                 "{\n"
                                 '  "make": "manufacturer in Hebrew when there is an Israeli market name, otherwise English",\n'
                                 '  "model": "model name (Hebrew if applicable, otherwise English)",\n'
                                 '  "year": estimated year as integer or null,\n'
-                                '  "color": "color in Hebrew"\n'
+                                '  "color": "color in Hebrew",\n'
+                                '  "plate_number": "Israeli license plate as digits only (no dashes, no spaces) if you can read it clearly, otherwise null"\n'
                                 "}\n"
-                                'If you cannot identify, return {"make": null, "model": null, "year": null, "color": null}.\n'
+                                "Israeli plates are 7 or 8 digits, sometimes shown as XX-XXX-XX or XXX-XX-XXX. Strip all non-digits. "
+                                "Only return a plate if you can read it with high confidence — do not guess.\n"
+                                'If you cannot identify the vehicle at all, return {"make": null, "model": null, "year": null, "color": null, "plate_number": null}.\n'
                                 "Return ONLY the JSON, no other text."
                             ),
                         },
@@ -784,15 +799,91 @@ async def lookup_by_image(
             cleaned = cleaned.strip()
         parsed = json_stdlib.loads(cleaned)
     except (json_stdlib.JSONDecodeError, IndexError):
-        parsed = {"make": None, "model": None, "year": None, "color": None}
+        parsed = {
+            "make": None,
+            "model": None,
+            "year": None,
+            "color": None,
+            "plate_number": None,
+        }
 
-    # Normalize output
+    # Normalize the visual pass.
     result: dict[str, object | None] = {
         "make": parsed.get("make") or None,
         "model": parsed.get("model") or None,
         "year": parsed.get("year") if isinstance(parsed.get("year"), int) else None,
         "color": parsed.get("color") or None,
+        "fuel_type": None,
+        "plate_number": None,
+        "source": "vision",
     }
+
+    # Plate OCR + cross-reference. Strip non-digits Claude may have left in.
+    plate_raw = parsed.get("plate_number")
+    plate_digits = (
+        "".join(c for c in str(plate_raw) if c.isdigit()) if plate_raw else ""
+    )
+    if 6 <= len(plate_digits) <= 9:
+        try:
+            async with httpx.AsyncClient(timeout=10) as gov:
+                resp = await gov.get(
+                    "https://data.gov.il/api/3/action/datastore_search",
+                    params={
+                        "resource_id": "053cea08-09bc-40ec-8f7a-156f0677aff3",
+                        "q": plate_digits,
+                        "limit": 1,
+                    },
+                )
+            if resp.status_code == 200:
+                records = resp.json().get("result", {}).get("records", [])
+                if records:
+                    r = records[0]
+                    fuel_map = {
+                        "בנזין": "petrol",
+                        "דיזל": "diesel",
+                        "חשמלי": "electric",
+                        "היברידי": "hybrid",
+                        "גז": "petrol",
+                    }
+                    fuel_raw = (r.get("sug_delek_nm") or "").strip()
+                    make_he = (r.get("tozeret_nm") or "").strip()
+                    model_raw = (
+                        r.get("kinuy_mishari") or r.get("degem_nm") or ""
+                    ).strip()
+                    make_prefixes = [
+                        make_he.upper(),
+                        make_he.split()[0].upper() if make_he else "",
+                    ]
+                    model_clean = model_raw
+                    for prefix in make_prefixes:
+                        if prefix and model_clean.upper().startswith(prefix):
+                            model_clean = model_clean[len(prefix):].strip()
+                            break
+
+                    # gov.il is authoritative — overwrite visual fields where
+                    # we have a registry value.
+                    if make_he:
+                        result["make"] = make_he
+                    if model_clean or model_raw:
+                        result["model"] = model_clean or model_raw
+                    year_reg = r.get("shnat_yitzur")
+                    try:
+                        result["year"] = int(year_reg) if year_reg else result["year"]
+                    except (TypeError, ValueError):
+                        pass
+                    color_reg = (r.get("tzeva_rechev") or "").strip()
+                    if color_reg:
+                        result["color"] = color_reg
+                    fuel_mapped = fuel_map.get(fuel_raw)
+                    if fuel_mapped:
+                        result["fuel_type"] = fuel_mapped
+                    result["plate_number"] = plate_digits
+                    result["source"] = "plate+vision"
+        except httpx.HTTPError as exc:
+            # Plate OCR succeeded but registry was unreachable — keep the
+            # visual guess, surface plate so the user can retry the lookup.
+            logger.info("gov plate lookup (image-derived) failed: %s", exc)
+            result["plate_number"] = plate_digits
 
     # Market price hint — only if we have all three identity bits.
     if result["make"] and result["model"] and isinstance(result["year"], int):

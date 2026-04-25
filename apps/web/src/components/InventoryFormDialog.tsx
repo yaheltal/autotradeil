@@ -169,6 +169,9 @@ type ImageLookupResult = {
   model: string | null;
   year: number | null;
   color: string | null;
+  fuel_type: FuelType | null;
+  plate_number: string | null;
+  source: "vision" | "plate+vision";
   market_price: number | null;
 };
 
@@ -218,6 +221,10 @@ export function InventoryFormDialog({
   const [plateBusy, setPlateBusy] = useState(false);
   const [plateStatus, setPlateStatus] = useState<string>("");
   const [plateError, setPlateError] = useState<string>("");
+  // True when the plate input was populated by image OCR (not user typing).
+  // Drives an extra aria-describedby line so AT users hear "auto-detected,
+  // editable" when they focus the field.
+  const [plateAutofilled, setPlateAutofilled] = useState(false);
 
   // Image lookup
   const imgInputRef = useRef<HTMLInputElement>(null);
@@ -258,6 +265,7 @@ export function InventoryFormDialog({
       setPlate("");
       setPlateStatus("");
       setPlateError("");
+      setPlateAutofilled(false);
       setImgFile(null);
       setImgStatus("");
       setImgError("");
@@ -428,12 +436,47 @@ export function InventoryFormDialog({
         throw new Error(msg);
       }
       const data = (await res.json()) as ImageLookupResult;
+      // Plate OCR populates the existing plate input so the user can edit
+      // and re-search via the existing button. Track the OCR origin so the
+      // input announces "auto-detected, editable" on focus.
+      if (data.plate_number) {
+        setPlate(data.plate_number);
+        setPlateAutofilled(true);
+        setPlateError("");
+        // Auto-expand the plate panel so the dealer SEES the detected
+        // number even if they only opened the image panel. The disclosure
+        // flip is a direct, expected consequence of the upload they just
+        // initiated. Expand-only — do NOT steal focus (WCAG 3.2.2).
+        setPanelPlate(true);
+      }
       if (data.make || data.model) {
-        applyAutoFill(data, "זיהוי מתמונה");
+        const sourceLabel =
+          data.source === "plate+vision" && data.plate_number
+            ? `מספר רכב מהתמונה (${data.plate_number})`
+            : "זיהוי מתמונה";
+        applyAutoFill(
+          {
+            make: data.make,
+            model: data.model,
+            year: data.year,
+            color: data.color,
+            fuel_type: data.fuel_type,
+          },
+          sourceLabel,
+        );
         const mp = data.market_price && data.market_price > 0 ? data.market_price : null;
         setMarketPriceHint(mp);
         announcePrice(mp);
+        // Keep imgStatus generic — plate detection is announced via the
+        // sourceLabel that applyAutoFill writes to comboStatus, so we don't
+        // collide three live regions in the same tick.
         setImgStatus("הרכב זוהה ✓");
+      } else if (data.plate_number) {
+        // Plate detected but no make/model — applyAutoFill didn't run, so
+        // announce the plate detection through the comboStatus region so AT
+        // users hear what happened.
+        setComboStatus(`מספר רכב זוהה מהתמונה: ${data.plate_number} — אנא מלא את שאר הפרטים`);
+        setImgStatus("מספר רכב זוהה ✓");
       } else {
         setImgStatus("");
         setImgError("לא הצלחנו לזהות את הרכב, אנא מלא ידנית");
@@ -494,9 +537,10 @@ export function InventoryFormDialog({
         />
         <Dialog.Content
           aria-describedby="inventory-form-desc"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 motion-reduce:transition-none"
+          dir="rtl"
+          className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
-          <div className="bg-brand-cream max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl p-6 shadow-xl">
+          <div className="bg-brand-cream max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6">
             <Dialog.Title className="text-brand-navy text-lg font-bold">{title}</Dialog.Title>
             <Dialog.Description id="inventory-form-desc" className="text-brand-ink/70 mt-1 text-sm">
               שדות המסומנים ב־<span aria-hidden="true">*</span>
@@ -597,24 +641,38 @@ export function InventoryFormDialog({
                       inputMode="numeric"
                       autoComplete="off"
                       value={plate}
-                      onChange={(e) => setPlate(e.target.value)}
+                      onChange={(e) => {
+                        setPlate(e.target.value);
+                        // User typed → no longer "auto-detected from image".
+                        if (plateAutofilled) setPlateAutofilled(false);
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
                           e.preventDefault();
                           void runPlateLookup();
                         }
                       }}
-                      aria-describedby="plate-lookup-hint"
+                      aria-describedby={
+                        plateAutofilled
+                          ? "plate-lookup-hint plate-lookup-source"
+                          : "plate-lookup-hint"
+                      }
                       className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
                     />
+                    {plateAutofilled ? (
+                      <span id="plate-lookup-source" className="sr-only">
+                        זוהה אוטומטית מהתמונה — ניתן לערוך
+                      </span>
+                    ) : null}
                     <button
                       type="button"
                       onClick={() => void runPlateLookup()}
                       disabled={plateBusy}
                       aria-busy={plateBusy || undefined}
+                      aria-label={plateBusy ? "מחפש לפי מספר רכב" : "חפש לפי מספר רכב"}
                       className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
                     >
-                      {plateBusy ? "מחפש…" : "חפש"}
+                      {plateBusy ? "מחפש…" : "חפש לפי מספר רכב"}
                     </button>
                   </div>
                   {plateStatus ? (

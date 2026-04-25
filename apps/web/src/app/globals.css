@@ -2,6 +2,20 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent the document from becoming horizontally scrollable on mobile.
+ * Without this, any element wider than the viewport (an overflowing card
+ * title, an image, an unwrapped row of badges) makes the whole page scroll
+ * sideways, and on iOS Safari that breaks `position: fixed` modals in RTL
+ * (the modal anchors to the document, not the visual viewport).
+ *
+ * `overflow-x: clip` (not `hidden`) lets descendants keep `position: sticky`.
+ * Applied to `html` only — applying to `body` can clip 1–2px of RTL content
+ * with iOS Safari's scrollbar gutter. Children that need horizontal scroll
+ * (data tables) opt back in with `overflow-x-auto`. */
+html {
+  overflow-x: clip;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

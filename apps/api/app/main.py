@@ -11,6 +11,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger, log_request
 from app.routers import (
     admin,
+    ai,
     auth_test,
     dealers,
     health,
@@ -84,6 +85,7 @@ app.include_router(inventory.router)
 app.include_router(marketplace.marketplace_router)
 app.include_router(marketplace.notifications_router)
 app.include_router(security.router)
+app.include_router(ai.router)
 
 
 @app.get("/")
