@@ -323,13 +323,20 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
                   </div>
                   <canvas ref={canvasRef} className="hidden" />
                 </div>
+                {/* Alignment hint — VISUAL GUIDANCE ONLY. Previously
+                    this blocked the shutter, but the Sobel heuristic
+                    is too noisy in real environments (textured walls,
+                    glare, dim light) and users got stuck unable to
+                    capture. Modern KYC UX (Stripe Identity, Onfido)
+                    keeps the shutter always available — the overlay
+                    just guides. */}
                 <p
                   className={[
                     "rounded-md px-3 py-2 text-center text-sm font-semibold",
                     aligned ? "bg-emerald-50 text-emerald-900" : "bg-amber-50 text-amber-900",
                   ].join(" ")}
                 >
-                  {aligned ? "✓ הכרטיס מיושר — מוכן לצילום" : "מקם את הכרטיס במסגרת"}
+                  {aligned ? "✓ הכרטיס מיושר — אפשר לצלם" : "מקם את הכרטיס במסגרת ולחץ צלם"}
                 </p>
 
                 <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
@@ -350,10 +357,9 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
                   <button
                     type="button"
                     onClick={capture}
-                    disabled={!aligned}
-                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
-                    {aligned ? "📸 צלם" : "ממתין למסגרת…"}
+                    📸 צלם
                   </button>
                 </div>
               </div>

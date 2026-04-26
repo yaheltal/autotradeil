@@ -160,8 +160,17 @@ export default function DealerSignupPage() {
           license_until: data.license_until ?? "",
         });
         if (data.warnings && data.warnings.length > 0) {
+          // Distinguish "service not configured" (env-var gap on the
+          // backend) from partial-success warnings — they read very
+          // differently to the user and the former is actionable only
+          // by the operator (set ANTHROPIC_API_KEY on Render).
+          const notConfigured = data.warnings.some((w) =>
+            w.toLowerCase().includes("not configured"),
+          );
           setExtractWarning(
-            `הזיהוי האוטומטי הצליח חלקית — אנא בדוק את הפרטים. (${data.warnings.join(", ")})`,
+            notConfigured
+              ? "המילוי האוטומטי לא זמין כרגע — אנא מלא את הפרטים ידנית."
+              : `הזיהוי האוטומטי הצליח חלקית — אנא בדוק את הפרטים. (${data.warnings.join(", ")})`,
           );
         }
       } else {
