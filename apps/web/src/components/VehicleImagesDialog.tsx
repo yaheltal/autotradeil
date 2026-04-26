@@ -1,6 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
@@ -299,11 +300,15 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
                 className="border-danger-text/30 mt-4 rounded-md border bg-white p-4"
               >
                 <div className="flex items-center gap-4">
-                  <img
-                    src={pendingDelete.url}
-                    alt=""
-                    className="h-20 w-28 shrink-0 rounded-md object-cover"
-                  />
+                  <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-md">
+                    <Image
+                      src={pendingDelete.url}
+                      alt=""
+                      fill
+                      sizes="112px"
+                      className="object-cover"
+                    />
+                  </div>
                   <div className="flex-1">
                     <p className="text-brand-navy text-sm font-semibold">
                       למחוק את תמונה מספר {pendingDelete.position + 1}?
@@ -352,11 +357,13 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
                       key={img.id}
                       className="border-brand-navy/10 relative aspect-[4/3] overflow-hidden rounded-md border bg-white"
                     >
-                      <img
+                      <Image
                         src={img.url}
                         alt=""
+                        fill
+                        sizes="(max-width: 768px) 50vw, 25vw"
                         className={[
-                          "absolute inset-0 h-full w-full object-cover transition-opacity",
+                          "object-cover transition-opacity",
                           img.hidden ? "opacity-40" : "",
                         ].join(" ")}
                       />

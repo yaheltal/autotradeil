@@ -1,6 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
@@ -535,9 +536,12 @@ function CaptureStep({
               className="border-brand-navy/15 flex items-center gap-3 rounded-lg border bg-white p-4"
             >
               {blob ? (
-                <img
+                <Image
                   src={URL.createObjectURL(blob)}
                   alt={`תצוגה מקדימה: ${SLOT_LABELS[slot]}`}
+                  width={96}
+                  height={64}
+                  unoptimized
                   className="border-brand-navy/10 h-16 w-24 rounded border object-cover"
                 />
               ) : (

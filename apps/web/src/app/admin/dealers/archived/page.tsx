@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
@@ -43,7 +43,7 @@ export default function ArchivedDealersPage() {
   const [restoringId, setRestoringId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!token) return;
     try {
       const res = await apiFetch<ListResponse>("/api/v1/admin/dealers/archived?per_page=50", {
@@ -53,11 +53,11 @@ export default function ArchivedDealersPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "שגיאה בטעינת ארכיון הסוחרים");
     }
-  };
+  }, [token]);
 
   useEffect(() => {
     if (token) void load();
-  }, [token]);
+  }, [token, load]);
 
   useEffect(() => {
     if (data) headingRef.current?.focus();

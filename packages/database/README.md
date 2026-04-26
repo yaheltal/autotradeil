@@ -6,14 +6,14 @@ Database schema and migrations for AutoTradeIL (Supabase / PostgreSQL 16).
 
 6 tables:
 
-| Table | Purpose | Access |
-|-------|---------|--------|
-| `users` | Auth + user type (consumer / dealer / admin) | Self-read, self-update |
-| `dealers` | Business profile, trust_score, tier | Public profile read; self-write |
+| Table       | Purpose                                               | Access                                  |
+| ----------- | ----------------------------------------------------- | --------------------------------------- |
+| `users`     | Auth + user type (consumer / dealer / admin)          | Self-read, self-update                  |
+| `dealers`   | Business profile, trust_score, tier                   | Public profile read; self-write         |
 | `inventory` | Vehicle + `price_dealer` (B2B) + `price_retail` (B2C) | **Dealer-only** — consumers cannot read |
-| `listings` | Public-facing listings with `public_price` | Public read when active; owner write |
-| `offers` | B2B dealer-to-dealer negotiation | Only involved dealers |
-| `deals` | Completed transactions (B2B or B2C) | Seller / buyer / admin |
+| `listings`  | Public-facing listings with `public_price`            | Public read when active; owner write    |
+| `offers`    | B2B dealer-to-dealer negotiation                      | Only involved dealers                   |
+| `deals`     | Completed transactions (B2B or B2C)                   | Seller / buyer / admin                  |
 
 ## B2B / B2C Separation
 

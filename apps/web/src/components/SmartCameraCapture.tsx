@@ -87,32 +87,10 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
   }, [open, stopStream]);
 
   // --- Start camera + edge-detection loop ---------------------------
-  const startCamera = useCallback(async () => {
-    setMode("camera");
-    setPermissionError(null);
-    queueMicrotask(() => backBtnRef.current?.focus());
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false,
-      });
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (video) {
-        video.srcObject = stream;
-        await video.play().catch(() => {});
-      }
-      runEdgeLoop();
-    } catch (err) {
-      stopStream();
-      setPermissionError(
-        err instanceof Error ? `לא ניתן לפתוח מצלמה: ${err.message}` : "לא ניתן לפתוח מצלמה",
-      );
-    }
-  }, [stopStream]);
-
   // --- Edge detection (lightweight Sobel) ---------------------------
+  // Defined before startCamera so we can pass it as a dep without a
+  // forward reference. (eslint-disable-next-line react-hooks/exhaustive-deps
+  // would also work, but explicit ordering is clearer.)
   const runEdgeLoop = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -166,6 +144,32 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
     };
     rafRef.current = requestAnimationFrame(tick);
   }, []);
+
+  // --- Start camera (depends on runEdgeLoop, hence defined after) ---
+  const startCamera = useCallback(async () => {
+    setMode("camera");
+    setPermissionError(null);
+    queueMicrotask(() => backBtnRef.current?.focus());
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = stream;
+        await video.play().catch(() => {});
+      }
+      runEdgeLoop();
+    } catch (err) {
+      stopStream();
+      setPermissionError(
+        err instanceof Error ? `לא ניתן לפתוח מצלמה: ${err.message}` : "לא ניתן לפתוח מצלמה",
+      );
+    }
+  }, [runEdgeLoop, stopStream]);
 
   // --- Capture current frame ----------------------------------------
   const capture = useCallback(() => {

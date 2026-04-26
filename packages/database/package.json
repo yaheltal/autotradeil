@@ -3,5 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "description": "Schema, migrations, and SQL for AutoTradeIL",
-  "files": ["schema.sql", "migrations"]
+  "files": [
+    "schema.sql",
+    "migrations"
+  ]
 }
