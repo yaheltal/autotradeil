@@ -67,23 +67,16 @@ export default function DealsPage() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      // /me endpoint not yet defined — fall back to reading buyer/seller ids
-      // off each deal and matching by token session. We inject `myDealerId`
-      // from the first "received" offer's seller_dealer_id if present, else
-      // from the first "sent" offer's buyer_dealer_id. For now the dealer
-      // can be inferred by which side of every deal has their id repeated.
-      const res = await apiFetch<Resp>("/api/v1/marketplace/deals", { token });
+      // Fetch own dealer id + deals in parallel. /dealers/me is the
+      // source of truth for "which side of each deal am I" — the old
+      // first-deal inference broke when the dealer had zero deals or
+      // when both sides of every deal happened to share an id.
+      const [me, res] = await Promise.all([
+        apiFetch<{ id: string }>("/api/v1/dealers/me", { token }).catch(() => null),
+        apiFetch<Resp>("/api/v1/marketplace/deals", { token }),
+      ]);
       setData(res);
-
-      // Derive my dealer id: the id that appears on every deal.
-      if (res.items.length > 0) {
-        const first = res.items[0]!;
-        const candidates = [first.buyer_dealer_id, first.seller_dealer_id];
-        const mine = candidates.find((id) =>
-          res.items.every((d) => d.buyer_dealer_id === id || d.seller_dealer_id === id),
-        );
-        if (mine) setMyDealerId(mine);
-      }
+      if (me?.id) setMyDealerId(me.id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "שגיאה בטעינת היסטוריית העסקאות");
     }
