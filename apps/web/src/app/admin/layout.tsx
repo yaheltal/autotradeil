@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { ApiStatus } from "@/components/ApiStatus";
-import { WatermarkOverlay } from "@/components/WatermarkOverlay";
 import { createClient } from "@/lib/supabase";
 
 /*
@@ -218,7 +217,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <div className="min-w-0 flex-1">{children}</div>
       </div>
-      <WatermarkOverlay />
+      {/* WatermarkOverlay intentionally NOT mounted on /admin —
+          admins are operators, not the audience for the anti-leak
+          tile. Only dealers see the watermark (mounted in
+          dashboard/layout.tsx). */}
     </div>
   );
 }

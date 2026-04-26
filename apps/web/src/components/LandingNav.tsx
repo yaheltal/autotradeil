@@ -79,28 +79,26 @@ export function LandingNav() {
     <header className="border-brand-navy/10 bg-brand-cream/85 supports-[backdrop-filter]:bg-brand-cream/70 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="flex items-center justify-between gap-3 py-3 sm:gap-6 sm:py-4">
-          {/* Logo — icon + wordmark only. Tagline lives in the Hero
-              eyebrow chip now (per dealer feedback the small Hebrew
-              line under the wordmark felt cluttered at this size). */}
+          {/* Logo — original full PNG (logo-full.png) WITHOUT the
+              tagline strip. We crop the visible region to ~71% of
+              the natural height (361px → ~256px) so the bottom
+              tagline strip is hidden. The image keeps its natural
+              ratio inside an overflow-hidden box. */}
           <Link
             href="/"
             aria-label="AutoTradeIL — דף הבית"
-            className="focus-visible:outline-brand-navy group flex min-w-0 items-center gap-2.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
+            className="focus-visible:outline-brand-navy group flex min-w-0 shrink-0 items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
           >
-            <Image
-              src="/logo-icon.png"
-              alt=""
-              width={455}
-              height={455}
-              priority
-              className="h-10 w-10 shrink-0 transition-transform group-hover:scale-[1.05] sm:h-11 sm:w-11"
-            />
-            <p className="text-brand-navy font-serif text-xl font-bold tracking-tight sm:text-2xl">
-              <span lang="en">autotrade</span>
-              <span className="text-brand-gold" lang="en">
-                IL
-              </span>
-            </p>
+            <span className="block h-10 w-[7.5rem] overflow-hidden sm:h-12 sm:w-[9rem]">
+              <Image
+                src="/logo-full.png"
+                alt="AutoTradeIL"
+                width={1095}
+                height={361}
+                priority
+                className="block h-[140%] w-auto max-w-none transition-transform group-hover:scale-[1.03]"
+              />
+            </span>
           </Link>
 
           {/* Desktop section nav with scroll-spy */}
@@ -139,13 +137,25 @@ export function LandingNav() {
             </ul>
           </nav>
 
-          {/* Login CTA — visible on every viewport */}
-          <Link
-            href="/login"
-            className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 shrink-0 items-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            כניסה
-          </Link>
+          {/* CTAs — visible on every viewport. "הצטרף" is the primary
+              gold pill (matches the page's signup-first voice);
+              "כניסה" is secondary. On very narrow phones the labels
+              shrink; the gold pill stays prominent. */}
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              href="/signup/dealer"
+              className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-3 py-2 text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 sm:px-4 sm:text-sm"
+            >
+              <span className="hidden sm:inline">הצטרף עכשיו</span>
+              <span className="sm:hidden">הצטרף</span>
+            </Link>
+            <Link
+              href="/login"
+              className="text-brand-navy border-brand-navy/30 hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md border bg-white px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 sm:px-4 sm:text-sm"
+            >
+              כניסה
+            </Link>
+          </div>
         </div>
 
         {/* Mobile section nav — horizontal scroll row of small pills.

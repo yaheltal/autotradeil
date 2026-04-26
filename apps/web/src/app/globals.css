@@ -37,6 +37,21 @@ body {
   }
 }
 
+/* Landing-page anchor offset — the sticky LandingNav covers the top of
+ * any section a user jumps to via #anchor. scroll-margin-top tells the
+ * browser "treat the top of this element as if it started N pixels
+ * lower", so the heading lands below the nav instead of behind it.
+ * Mobile nav is taller (logo row + pill row), so we use a larger
+ * offset by default and tighten on md+. */
+section[id] {
+  scroll-margin-top: 8.5rem;
+}
+@media (min-width: 768px) {
+  section[id] {
+    scroll-margin-top: 5rem;
+  }
+}
+
 /* PWA install banner slide-up. Honored only with motion-safe; the
  * global prefers-reduced-motion block above tames the duration. */
 @keyframes slide-up {
