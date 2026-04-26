@@ -354,6 +354,54 @@ async def ai_search(
     return AISearchResponse(filters=filters, results=results)
 
 
+# Lightweight variant of /search: parse only, no marketplace query.
+# Each page (marketplace, admin inventory, dealer's own inventory)
+# applies the resulting filters to ITS OWN data set client-side.
+# Saves a DB round-trip per call and keeps the response shape stable
+# across all the search bars that wire this up.
+
+class ParseFiltersResponse(BaseModel):
+    filters: AISearchFilters
+    # Words/tokens from the original query that didn't map to any
+    # structured filter. Frontend can use this as a residual full-text
+    # search term against make/model/notes columns.
+    fallback_q: str | None = None
+
+
+@router.post("/parse-filters", response_model=ParseFiltersResponse)
+async def ai_parse_filters(
+    payload: AISearchRequest,
+    _ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+) -> ParseFiltersResponse:
+    """Pure Hebrew NL → structured filters. No DB query, no caller-scoped
+    data — same parser as /search but only returns the AISearchFilters
+    object so any list page can apply them to its own dataset.
+
+    Returns the original query as fallback_q when Claude couldn't pull
+    out a single structured filter, so the caller can still do a
+    substring fallback against make/model."""
+    filters = await parse_vehicle_query(payload.query)
+    any_set = any(
+        getattr(filters, f) is not None
+        for f in (
+            "make",
+            "model",
+            "year_min",
+            "year_max",
+            "price_min",
+            "price_max",
+            "mileage_max",
+            "transmission",
+            "fuel_type",
+            "color",
+        )
+    )
+    return ParseFiltersResponse(
+        filters=filters,
+        fallback_q=payload.query.strip() if not any_set else None,
+    )
+
+
 @router.post("/dashboard-assistant", response_model=DashboardAskResponse)
 async def dashboard_assistant(
     payload: DashboardAskRequest,

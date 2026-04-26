@@ -10,6 +10,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { TrustBadge } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
+import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake } from "@/lib/car-data";
 import { formatMileage, formatPrice } from "@/lib/format";
@@ -157,11 +158,42 @@ export default function MarketplacePage() {
     if (data) h1Ref.current?.focus();
   }, [data]);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setPage(1);
-    void refresh(1, filters);
     setMobileFiltersOpen(false);
+    setPage(1);
+
+    // Smart-search: if the free-text box has content, route through
+    // Claude to extract structured filters, then merge them on top of
+    // any explicit filter the user already set in the dropdowns. The
+    // explicit dropdown values WIN — Claude only fills in gaps so we
+    // don't override an intentional choice.
+    let next = filters;
+    const q = filters.q.trim();
+    if (q) {
+      const parsed = await parseSmart(q);
+      if (parsed) {
+        const f = parsed.filters;
+        next = {
+          ...filters,
+          // Keep the original q — backend can use it as substring fallback
+          q: parsed.fallback_q ?? "",
+          make: filters.make || f.make || "",
+          model: filters.model || f.model || "",
+          year_min: filters.year_min || (f.year_min ? String(f.year_min) : ""),
+          year_max: filters.year_max || (f.year_max ? String(f.year_max) : ""),
+          price_min: filters.price_min || (f.price_min ? String(f.price_min) : ""),
+          price_max: filters.price_max || (f.price_max ? String(f.price_max) : ""),
+          mileage_max: filters.mileage_max || (f.mileage_max ? String(f.mileage_max) : ""),
+          transmission: filters.transmission || (f.transmission ?? ""),
+          fuel_type: filters.fuel_type || (f.fuel_type ?? ""),
+        };
+        setFilters(next);
+      }
+    }
+    void refresh(1, next);
   };
 
   const resetFilters = () => {
@@ -244,7 +276,14 @@ export default function MarketplacePage() {
                 <div className="space-y-4">
                   <div>
                     <label htmlFor="f-q" className="text-brand-navy block text-sm font-medium">
-                      חיפוש חופשי
+                      חיפוש חכם
+                      <span
+                        aria-hidden="true"
+                        title="חיפוש חופשי בעברית — Claude יזהה אוטומטית יצרן, מחיר, שנה, ק״מ"
+                        className="text-brand-gold ms-1.5 text-xs"
+                      >
+                        ✦
+                      </span>
                     </label>
                     <input
                       id="f-q"
@@ -252,9 +291,13 @@ export default function MarketplacePage() {
                       autoComplete="off"
                       value={filters.q}
                       onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-                      placeholder="יצרן / דגם / מילת מפתח"
+                      placeholder='למשל: "BMW עד 80,000" או "סוזוקי 2020"'
+                      aria-describedby="f-q-hint"
                       className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
                     />
+                    <p id="f-q-hint" className="text-brand-ink/55 mt-1 text-xs">
+                      ✦ ניתן להזין משפט בעברית — המערכת תחלץ אוטומטית פילטרים
+                    </p>
                   </div>
 
                   <SearchableSelect
@@ -429,9 +472,11 @@ export default function MarketplacePage() {
                 <div className="mt-5 flex flex-col gap-2 sm:flex-row">
                   <button
                     type="submit"
-                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                    disabled={parsingSmart}
+                    aria-busy={parsingSmart || undefined}
+                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
                   >
-                    חפש
+                    {parsingSmart ? "מנתח…" : "חפש"}
                   </button>
                   <button
                     type="button"
