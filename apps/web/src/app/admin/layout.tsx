@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { WatermarkOverlay } from "@/components/WatermarkOverlay";
 import { createClient } from "@/lib/supabase";
 
 /*
@@ -171,6 +172,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
         <div className="min-w-0 flex-1">{children}</div>
       </div>
+      <WatermarkOverlay />
     </div>
   );
 }
