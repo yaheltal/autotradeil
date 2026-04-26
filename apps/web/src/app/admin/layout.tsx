@@ -166,21 +166,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           // When closed it must translate +100% (off-screen to the right).
           // Tailwind's `translate-x-full` doesn't auto-flip in RTL so we
           // use an arbitrary [transform:…] value paired with md:!transform-none
-          // (the md: variant forces transform back to none above 768px so
-          // the desktop in-flow sidebar isn't affected).
+          // so desktop layout is unaffected.
+          //
+          // Mobile drawer is now FULL-WIDTH (w-screen) — the previous
+          // 80vw cap left a sliver of the page peeking through which
+          // looked broken in mobile Safari + PWA standalone mode where
+          // iOS Safari inserts its own bottom toolbar.
           className={[
             // Desktop: sticky in-flow column with no transform.
             "md:relative md:block md:!transform-none",
-            // Mobile: fixed overlay anchored at start (RTL-aware).
-            "fixed bottom-0 start-0 top-[57px] z-40 w-64 max-w-[80vw]",
-            "border-brand-navy/10 border-s bg-white shadow-xl",
+            // Mobile: fixed overlay anchored at start (RTL-aware), full width.
+            "fixed bottom-0 start-0 top-[57px] z-50 w-screen",
+            "border-brand-navy/10 border-s bg-white shadow-2xl",
             "transition-transform duration-200 motion-reduce:transition-none",
             drawerOpen ? "[transform:translateX(0)]" : "[transform:translateX(100%)]",
             // Hide entirely from layout on mobile when closed (avoids
             // sneaking into the tab order behind the backdrop).
             !drawerOpen ? "pointer-events-none md:pointer-events-auto" : "",
             // On md+ reset all the mobile-specific positioning.
-            "md:bottom-auto md:top-0 md:w-56 md:max-w-none md:shadow-none",
+            "md:bottom-auto md:top-0 md:w-56 md:shadow-none",
           ].join(" ")}
         >
           <nav

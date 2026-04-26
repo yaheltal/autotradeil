@@ -78,7 +78,7 @@ export function LandingNav() {
   return (
     <header className="border-brand-navy/10 bg-brand-cream/85 supports-[backdrop-filter]:bg-brand-cream/70 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
-        <div className="flex items-center justify-between gap-3 py-3 sm:gap-6 sm:py-4">
+        <div className="flex items-center justify-between gap-3 py-2 sm:gap-6 sm:py-4">
           {/* Logo — original full PNG with the legacy tagline shown
               exactly as on every other page (per dealer instruction
               to bring it back as it was). */}
@@ -93,7 +93,7 @@ export function LandingNav() {
               width={1095}
               height={361}
               priority
-              className="h-10 w-auto transition-transform group-hover:scale-[1.03] sm:h-14"
+              className="h-8 w-auto transition-transform group-hover:scale-[1.03] sm:h-14"
             />
           </Link>
 
@@ -137,17 +137,17 @@ export function LandingNav() {
               gold pill (matches the page's signup-first voice);
               "כניסה" is secondary. On very narrow phones the labels
               shrink; the gold pill stays prominent. */}
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <Link
               href="/signup/dealer"
-              className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-3 py-2 text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 sm:px-4 sm:text-sm"
+              className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy inline-flex min-h-9 items-center rounded-md px-2.5 py-1.5 text-xs font-bold shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 sm:min-h-11 sm:px-4 sm:py-2 sm:text-sm"
             >
               <span className="hidden sm:inline">הצטרף עכשיו</span>
               <span className="sm:hidden">הצטרף</span>
             </Link>
             <Link
               href="/login"
-              className="text-brand-navy border-brand-navy/30 hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md border bg-white px-3 py-2 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 sm:px-4 sm:text-sm"
+              className="text-brand-navy border-brand-navy/30 hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-9 items-center rounded-md border bg-white px-2.5 py-1.5 text-xs font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 sm:min-h-11 sm:px-4 sm:py-2 sm:text-sm"
             >
               כניסה
             </Link>
@@ -159,7 +159,7 @@ export function LandingNav() {
             The pills are NOT wrapped — they overflow horizontally so
             users can swipe through them on phones. */}
         <nav aria-label="ניווט לסקשנים — מובייל" className="-mx-4 md:hidden">
-          <ul className="flex gap-2 overflow-x-auto px-4 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <ul className="flex gap-2 overflow-x-auto px-4 pb-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {SECTIONS.map((s) => {
               const id = s.href.replace("#", "");
               const isActive = activeId === id;

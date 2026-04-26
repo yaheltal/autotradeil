@@ -67,6 +67,21 @@ body {
   }
 }
 
+/* Universal sticky-header safe-top — every <header> across the app
+ * automatically picks up env(safe-area-inset-top). On phones with a
+ * notch / Dynamic Island this prevents the header bar from sitting
+ * UNDER the status bar; on devices without a notch it falls back to
+ * 0 so the existing inner py-* utility rules control vertical
+ * rhythm. Particularly important in PWA standalone mode where
+ * there's no browser chrome to absorb the status bar height.
+ *
+ * NOTE: the value is `env()` alone (not max(0.75rem, ...)) so we
+ * don't double-pad on phones without a notch — the header element's
+ * own Tailwind py-* utilities handle the baseline padding. */
+header {
+  padding-top: env(safe-area-inset-top);
+}
+
 /* WebKit autofill overrides — Chrome / Safari / iOS apply a light
  * yellow/green background to fields they auto-fill (saved passwords,
  * email completions). The override below preserves our white field

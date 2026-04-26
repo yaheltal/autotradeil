@@ -1164,7 +1164,9 @@ async def confirm_deal(
         )
         db.add(deal)
 
-        # Flip inventory to sold
+        # Flip inventory to sold (admin in_transaction workflow is
+        # gated until the next backend deploy that ships the migration
+        # + admin completion endpoint).
         vehicle.status = "sold"
 
         # Bump completed counters on BOTH sides
