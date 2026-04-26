@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { LandingNav } from "@/components/LandingNav";
 import { RenderKeepAlive } from "@/components/RenderKeepAlive";
 
 /*
@@ -457,51 +458,7 @@ export default function Home() {
     <>
       <RenderKeepAlive />
 
-      <header className="border-brand-navy/10 bg-brand-cream/85 supports-[backdrop-filter]:bg-brand-cream/70 sticky top-0 z-30 border-b backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:gap-6 sm:px-6 sm:py-4">
-          <nav aria-label="ראשי" className="flex min-w-0 items-center gap-3 sm:gap-6">
-            <Link
-              href="/"
-              aria-label="AutoTradeIL — דף הבית"
-              className="focus-visible:outline-brand-navy group flex items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
-            >
-              <Image
-                src="/logo-full.png"
-                alt="AutoTradeIL"
-                width={1095}
-                height={361}
-                priority
-                className="h-10 w-auto transition-transform group-hover:scale-[1.03] sm:h-14"
-              />
-            </Link>
-            <ul className="hidden items-center gap-1 sm:flex">
-              {[
-                { href: "#dealers", label: "לסוחרים" },
-                { href: "#ai", label: "AI" },
-                { href: "#security", label: "אבטחה" },
-                { href: "#tiers", label: "דירוגים" },
-              ].map((l) => (
-                <li key={l.href}>
-                  <a
-                    href={l.href}
-                    className="text-brand-navy/80 hover:text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
-                  >
-                    {l.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          </nav>
-          <div className="flex items-center gap-2 sm:gap-3">
-            <Link
-              href="/login"
-              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              כניסה
-            </Link>
-          </div>
-        </div>
-      </header>
+      <LandingNav />
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
         {/* ===================================================================
@@ -930,9 +887,12 @@ export default function Home() {
           className="bg-brand-navy/[0.04] border-brand-navy/10 relative border-y"
         >
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-            <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-center text-xs font-semibold uppercase tracking-[0.2em]">
+            <p
+              lang="en"
+              className="text-brand-navy/70 flex items-center justify-center gap-2 text-center text-xs font-semibold uppercase tracking-[0.2em]"
+            >
               <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-              בעבודה
+              Coming Soon
               <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
             </p>
             <h2 id="future-heading" className="sr-only">

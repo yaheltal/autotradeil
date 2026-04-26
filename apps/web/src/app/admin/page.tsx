@@ -98,15 +98,33 @@ export default function AdminHomePage() {
             סטטיסטיקת סוחרים
           </h2>
           <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard id="total" label="סך סוחרים" value={stats.total_dealers} />
+            <StatCard
+              id="total"
+              label="סך סוחרים"
+              value={stats.total_dealers}
+              href="/admin/dealers"
+            />
             <StatCard
               id="pending"
               label="ממתינים לאישור"
               value={stats.pending}
               tone={pendingActive ? "gold" : "muted"}
+              href="/admin/dealers?status=pending"
             />
-            <StatCard id="verified" label="מאושרים" value={stats.verified} tone="ok" />
-            <StatCard id="rejected" label="נדחו" value={stats.rejected} tone="danger" />
+            <StatCard
+              id="verified"
+              label="מאושרים"
+              value={stats.verified}
+              tone="ok"
+              href="/admin/dealers?status=verified"
+            />
+            <StatCard
+              id="rejected"
+              label="נדחו"
+              value={stats.rejected}
+              tone="danger"
+              href="/admin/dealers?status=rejected"
+            />
           </ul>
         </section>
 
@@ -198,27 +216,63 @@ function StatCard({
   label,
   value,
   tone = "muted",
+  href,
 }: {
   id: string;
   label: string;
   value: number;
   tone?: Tone;
+  href?: string;
 }) {
+  // Tone classes split: base color + hover state. Hover deepens the tint
+  // so the card reads as interactive when href is present, without
+  // changing layout.
   const toneClasses: Record<Tone, string> = {
-    muted: "border-brand-navy/10 bg-white",
-    gold: "border-brand-gold/60 bg-amber-50",
-    ok: "border-ok/30 bg-ok-bg/50",
-    danger: "border-danger/30 bg-danger-bg/60",
+    muted: "border-brand-navy/10 bg-white hover:border-brand-navy/30 hover:bg-brand-navy/[0.03]",
+    gold: "border-brand-gold/60 bg-amber-50 hover:border-brand-gold hover:bg-amber-100",
+    ok: "border-ok/30 bg-ok-bg/50 hover:border-ok/60 hover:bg-ok-bg/70",
+    danger: "border-danger/30 bg-danger-bg/60 hover:border-danger/60 hover:bg-danger-bg/80",
   };
+
+  const inner = (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <p id={`stat-${id}-label`} className="text-brand-ink/70 text-sm font-medium">
+          {label}
+        </p>
+        {href ? (
+          <span
+            aria-hidden="true"
+            className="text-brand-ink/40 group-hover:text-brand-gold text-lg leading-none transition-colors"
+          >
+            ←
+          </span>
+        ) : null}
+      </div>
+      <p className="text-brand-navy mt-2 text-4xl font-bold tracking-tight">{value}</p>
+    </>
+  );
+
+  if (href) {
+    return (
+      <li aria-labelledby={`stat-${id}-label`}>
+        <Link
+          href={href}
+          aria-label={`${label} — ${value}. פתיחת רשימה.`}
+          className={`focus-visible:outline-brand-navy group block rounded-lg border p-5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${toneClasses[tone]}`}
+        >
+          {inner}
+        </Link>
+      </li>
+    );
+  }
+
   return (
     <li
       aria-labelledby={`stat-${id}-label`}
       className={`rounded-lg border p-5 ${toneClasses[tone]}`}
     >
-      <p id={`stat-${id}-label`} className="text-brand-ink/70 text-sm">
-        {label}
-      </p>
-      <p className="text-brand-navy mt-2 text-4xl font-bold tracking-tight">{value}</p>
+      {inner}
     </li>
   );
 }
