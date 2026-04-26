@@ -229,9 +229,9 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
         />
         <Dialog.Content
           aria-describedby="img-dialog-desc"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 motion-reduce:transition-none"
+          className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
-          <div className="bg-brand-cream max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl p-6 shadow-xl">
+          <div className="bg-brand-cream max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-6 shadow-xl">
             <Dialog.Title className="text-brand-navy text-lg font-bold">
               תמונות – {vehicleLabel}
             </Dialog.Title>

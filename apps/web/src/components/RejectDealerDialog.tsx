@@ -58,9 +58,9 @@ export function RejectDealerDialog({ open, onOpenChange, onSubmit, businessName 
         />
         <Dialog.Content
           aria-describedby="reject-desc"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 motion-reduce:transition-none"
+          className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
-          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+          <div className="max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <Dialog.Title className="text-brand-navy text-lg font-bold">דחיית סוחר</Dialog.Title>
             <Dialog.Description id="reject-desc" className="text-brand-ink/70 mt-1 text-sm">
               נדחה את הבקשה של <span className="text-brand-navy font-semibold">{businessName}</span>

@@ -92,8 +92,8 @@ export function CounterOfferDialog({
           aria-hidden="true"
           className="bg-brand-navy/40 fixed inset-0 z-40 motion-reduce:transition-none"
         />
-        <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4 motion-reduce:transition-none">
-          <div className="bg-brand-cream w-full max-w-md rounded-xl p-6 shadow-xl">
+        <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
+          <div className="bg-brand-cream max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-xl">
             <Dialog.Title className="text-brand-navy text-lg font-bold">
               שליחת הצעה נגדית
             </Dialog.Title>

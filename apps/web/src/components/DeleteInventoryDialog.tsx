@@ -36,9 +36,9 @@ export function DeleteInventoryDialog({ open, onOpenChange, onConfirm, label }: 
         />
         <Dialog.Content
           aria-describedby="del-inv-desc"
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 motion-reduce:transition-none"
+          className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
-          <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-xl">
+          <div className="max-h-[95dvh] w-full max-w-sm overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <Dialog.Title className="text-brand-navy text-lg font-bold">מחיקת רכב</Dialog.Title>
             <Dialog.Description id="del-inv-desc" className="text-brand-ink/80 mt-2 text-sm">
               האם למחוק את <span className="text-brand-navy font-semibold">{label}</span> מהמלאי?
