@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { WatermarkOverlay } from "@/components/WatermarkOverlay";
 import { createClient } from "@/lib/supabase";
@@ -40,6 +40,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const drawerToggleRef = useRef<HTMLButtonElement>(null);
+  const firstNavLinkRef = useRef<HTMLAnchorElement>(null);
+
+  // Escape closes the drawer, body scroll locked while open, focus
+  // moves into the first nav item on open + back to the toggle on
+  // close. Without this, mobile users tapping the hamburger saw the
+  // sidebar fly in but couldn't dismiss it on iOS Safari (no swipe
+  // gesture, Escape on hardware keyboards did nothing) and the page
+  // behind kept scrolling under the overlay.
+  useEffect(() => {
+    if (!drawerOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setDrawerOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+
+    queueMicrotask(() => firstNavLinkRef.current?.focus());
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKey);
+      queueMicrotask(() => drawerToggleRef.current?.focus());
+    };
+  }, [drawerOpen]);
 
   const handleLogout = async () => {
     setSigningOut(true);
@@ -54,11 +82,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <button
+              ref={drawerToggleRef}
               type="button"
               onClick={() => setDrawerOpen((v) => !v)}
               aria-expanded={drawerOpen}
               aria-controls="admin-sidebar"
-              aria-label="פתיחת תפריט ניווט"
+              aria-label={drawerOpen ? "סגור תפריט ניווט" : "פתיחת תפריט ניווט"}
               className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex h-11 w-11 items-center justify-center rounded-md border focus-visible:outline-2 focus-visible:outline-offset-2 md:hidden"
             >
               <svg
@@ -124,19 +153,25 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <aside
           id="admin-sidebar"
           aria-hidden={!drawerOpen ? true : undefined}
+          // RTL slide: drawer is anchored at start (right edge in RTL).
+          // When closed it must translate +100% (off-screen to the right).
+          // Tailwind's `translate-x-full` doesn't auto-flip in RTL so we
+          // use an arbitrary [transform:…] value paired with md:!transform-none
+          // (the md: variant forces transform back to none above 768px so
+          // the desktop in-flow sidebar isn't affected).
           className={[
-            // Desktop: sticky in-flow column.
-            "md:relative md:block md:translate-x-0",
-            // Mobile: fixed overlay sliding in from the start (RTL-aware).
+            // Desktop: sticky in-flow column with no transform.
+            "md:relative md:block md:!transform-none",
+            // Mobile: fixed overlay anchored at start (RTL-aware).
             "fixed bottom-0 start-0 top-[57px] z-40 w-64 max-w-[80vw]",
             "border-brand-navy/10 border-s bg-white shadow-xl",
             "transition-transform duration-200 motion-reduce:transition-none",
-            drawerOpen ? "translate-x-0" : "translate-x-full md:translate-x-0",
+            drawerOpen ? "[transform:translateX(0)]" : "[transform:translateX(100%)]",
             // Hide entirely from layout on mobile when closed (avoids
             // sneaking into the tab order behind the backdrop).
             !drawerOpen ? "pointer-events-none md:pointer-events-auto" : "",
             // On md+ reset all the mobile-specific positioning.
-            "md:bottom-auto md:top-0 md:w-56 md:max-w-none md:translate-x-0 md:shadow-none",
+            "md:bottom-auto md:top-0 md:w-56 md:max-w-none md:shadow-none",
           ].join(" ")}
         >
           <nav
@@ -144,11 +179,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             className="sticky top-0 h-[calc(100vh-57px)] overflow-y-auto p-3 md:min-h-[calc(100vh-57px)]"
           >
             <ul className="flex flex-col gap-1">
-              {NAV_ITEMS.map((item) => {
+              {NAV_ITEMS.map((item, idx) => {
                 const active = isActive(pathname, item);
                 return (
                   <li key={item.href}>
                     <Link
+                      ref={idx === 0 ? firstNavLinkRef : undefined}
                       href={item.href}
                       aria-current={active ? "page" : undefined}
                       onClick={() => setDrawerOpen(false)}
