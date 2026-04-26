@@ -548,6 +548,113 @@ async def get_audit_log(
 # ==========================================================================
 
 
+@router.get("/inventory/{inventory_id}")
+async def admin_get_inventory_item(
+    inventory_id: uuid.UUID,
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Admin view of a single vehicle: every column on the row + the
+    owning dealer's identity + every image (including hidden ones,
+    since admins audit content the dealer hides). Buyer + trade-in
+    columns from the P6.8.4 migration are surfaced when present.
+
+    Path is registered BEFORE /inventory (the list route below) so
+    FastAPI routes /inventory/{uuid} here instead of treating "{uuid}"
+    as a query param to the list."""
+    from app.models import InventoryImage
+
+    row = (
+        await db.execute(
+            select(Inventory, Dealer, User)
+            .join(Dealer, Dealer.id == Inventory.dealer_id)
+            .join(User, User.id == Dealer.user_id)
+            .where(Inventory.id == inventory_id)
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="רכב לא נמצא"
+        )
+    inv, dealer, dealer_user = row
+
+    images = (
+        (
+            await db.execute(
+                select(InventoryImage)
+                .where(InventoryImage.inventory_id == inventory_id)
+                .order_by(InventoryImage.position)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return {
+        "id": str(inv.id),
+        "make": inv.make,
+        "model": inv.model,
+        "year": inv.year,
+        "mileage": inv.mileage,
+        "color": inv.color,
+        "transmission": inv.transmission,
+        "fuel_type": inv.fuel_type,
+        "engine_volume": str(inv.engine_volume) if inv.engine_volume is not None else None,
+        "notes": inv.notes,
+        "plate_number": getattr(inv, "plate_number", None),
+        # Pricing
+        "price": inv.price,
+        "b2b_price": inv.b2b_price,
+        "b2c_price": inv.b2c_price,
+        "purchase_cost": inv.purchase_cost,
+        # Lifecycle
+        "status": inv.status,
+        "visibility": inv.visibility,
+        "paused_until": inv.paused_until.isoformat() if inv.paused_until else None,
+        "pause_reason": inv.pause_reason,
+        "created_at": inv.created_at.isoformat(),
+        "updated_at": inv.updated_at.isoformat(),
+        # Sale closure (P6.5)
+        "sale_price": inv.sale_price,
+        "sold_at": inv.sold_at.isoformat() if inv.sold_at else None,
+        "sold_to": inv.sold_to,
+        "warranty_type": inv.warranty_type,
+        "warranty_until": inv.warranty_until.isoformat() if inv.warranty_until else None,
+        # Buyer + trade-in (P6.8.4)
+        "buyer_name": inv.buyer_name,
+        "buyer_id_number": inv.buyer_id_number,
+        "buyer_phone": inv.buyer_phone,
+        "was_trade_in": inv.was_trade_in,
+        "trade_in_make": inv.trade_in_make,
+        "trade_in_model": inv.trade_in_model,
+        "trade_in_year": inv.trade_in_year,
+        "trade_in_value": inv.trade_in_value,
+        "trade_in_plate": inv.trade_in_plate,
+        # Owning dealer
+        "dealer": {
+            "id": str(dealer.id),
+            "business_name": dealer.business_name,
+            "city": dealer.city,
+            "phone": dealer.phone,
+            "email": dealer_user.email,
+            "tier": dealer.tier,
+            "trust_score": int(dealer.trust_score or 0),
+            "verified": dealer.verified,
+            "suspended_at": dealer.suspended_at.isoformat() if dealer.suspended_at else None,
+        },
+        # Images — admin sees hidden ones too with the flag
+        "images": [
+            {
+                "id": str(img.id),
+                "url": img.url,
+                "position": img.position,
+                "hidden": img.hidden,
+            }
+            for img in images
+        ],
+    }
+
+
 @router.get("/inventory")
 async def admin_list_inventory(
     _admin: Annotated[User, Depends(require_admin)],

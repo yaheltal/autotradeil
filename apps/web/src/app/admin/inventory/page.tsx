@@ -242,7 +242,7 @@ export default function AdminInventoryPage() {
                     <tr key={r.id} className="border-brand-navy/10 border-t">
                       <td className="px-4 py-3">
                         <Link
-                          href={`/dashboard/marketplace/${r.id}`}
+                          href={`/admin/inventory/${r.id}`}
                           className="text-brand-navy focus-visible:outline-brand-navy rounded font-semibold underline focus-visible:outline-2 focus-visible:outline-offset-2"
                         >
                           {r.make} {r.model} {r.year}
