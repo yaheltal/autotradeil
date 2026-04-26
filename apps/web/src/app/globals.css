@@ -49,3 +49,29 @@ body {
     opacity: 1;
   }
 }
+
+/* Landing-page gold accent stripe — soft luminance sweep along its
+ * length. Subtle (not a dazzle), gated by motion-safe at the call site. */
+@keyframes shine {
+  0%,
+  100% {
+    transform: translateY(-100%);
+  }
+  50% {
+    transform: translateY(100%);
+  }
+}
+
+/* Landing-page AI search demo — typewriter caret + width animation
+ * that replays on a 4s loop. The element has motion-safe:overflow-hidden
+ * + motion-safe:whitespace-nowrap so reduced-motion users see the full
+ * static query without the typing sweep. */
+@keyframes typecaret {
+  0% {
+    width: 0;
+  }
+  60%,
+  100% {
+    width: 100%;
+  }
+}

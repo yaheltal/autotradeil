@@ -5,63 +5,449 @@ import { ApiStatus } from "@/components/ApiStatus";
 import { RenderKeepAlive } from "@/components/RenderKeepAlive";
 
 /*
- * AutoTradeIL — landing page (editorial automotive aesthetic).
+ * AutoTradeIL — landing page (premium B2B trading infrastructure).
  *
- * Design direction: premium Israeli automotive trade journal. Frank Ruhl
- * Libre Hebrew serif for display headlines (warm, editorial, not generic
- * SaaS); Heebo for body. Navy + cream + gold palette. Asymmetric layout
- * with numbered Hebrew section markers (א/ב/ג).
+ * Editorial automotive aesthetic. Frank Ruhl Libre Hebrew serif for
+ * display headlines, Heebo for body. Navy + cream + gold palette.
+ * Mobile-first; every section reflows cleanly to a single column on
+ * narrow viewports.
  *
- * Contrast (audited at every use site):
- *   text-brand-navy  on bg-brand-cream  → 15.9:1 (AAA)
- *   text-brand-cream on bg-brand-navy   → 15.9:1 (AAA)
- *   text-brand-ink   on bg-brand-cream  → 17.0:1 (AAA)
- *   text-brand-navy/70 on bg-brand-cream → 11.1:1 (AAA)
- *   text-brand-cream/80 on bg-brand-navy → 12.7:1 (AAA)
- *   text-brand-gold  on bg-brand-navy   →  7.6:1 (AAA)
- *   bg-brand-gold + text-brand-navy     → 11.4:1 (AAA)
+ * Sections in order:
+ *   1. Header (sticky)
+ *   2. Hero — gradient gold accent + "live" pulse on the active-market chip
+ *   3. Stats band — 4 KPIs
+ *   4. WHAT DEALERS GET — 6 features in a 2x3 grid (SVG icons, no emoji)
+ *   5. AI agent — dark navy band, "Powered by Claude AI" subtle credit
+ *   6. SECURITY — bank-grade dark band, 4 SVG pillars
+ *   7. TRUST TIERS — Bronze / Silver / Gold / Platinum with concrete benefits
+ *   8. Coming soon — split (damaged-cars market + native app)
+ *   9. Final CTA — beta seat scarcity
+ *  10. Footer (kept)
  *
- * "אני קונה" CTA pattern: <button disabled> + visible "בקרוב" chip +
- * native title (tooltip) + sr-only explanation. Disabled buttons
- * remain announced as "disabled" by AT and are skipped from tab order
- * by the browser, which matches the product intent (not yet available).
+ * A11y notes:
+ *   - Every section has aria-labelledby pointing at its heading.
+ *   - All decorative SVGs aria-hidden; emoji NEVER used in copy.
+ *   - Pulse + gradient animations honor prefers-reduced-motion via
+ *     motion-safe / motion-reduce classes (the global CSS already
+ *     short-circuits animation duration when reduced motion is on,
+ *     so the marketing animations are gated cleanly).
+ *   - Disabled buttons use native `disabled` (not aria-disabled) so
+ *     AT skips them from tab order.
+ *
+ * Contrast (audited):
+ *   text-brand-navy on bg-brand-cream    → 15.9:1 (AAA)
+ *   text-brand-cream on bg-brand-navy    → 15.9:1 (AAA)
+ *   text-brand-gold on bg-brand-navy     →  7.6:1 (AAA)
+ *   bg-brand-gold + text-brand-navy      → 11.4:1 (AAA)
  */
 
-const features = [
+// ============================================================================
+// Inline SVG icons — kept here (not lucide-react) to skip ~30KB of bundle.
+// Each is decorative; aria-hidden lives on the parent element so the icon
+// itself doesn't need it.
+// ============================================================================
+
+function IconAI(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+      <circle cx="12" cy="12" r="3.5" />
+    </svg>
+  );
+}
+
+function IconInventory(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M3 7l9-4 9 4-9 4-9-4z" />
+      <path d="M3 7v10l9 4 9-4V7" />
+      <path d="M12 11v10" />
+    </svg>
+  );
+}
+
+function IconMarket(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M3 9l1.5-5h15L21 9" />
+      <path d="M3 9v11h18V9" />
+      <path d="M3 9h18" />
+      <path d="M9 14h6v6H9z" />
+    </svg>
+  );
+}
+
+function IconClipboard(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <rect x="6" y="4" width="12" height="17" rx="2" />
+      <path d="M9 4v-1a1 1 0 011-1h4a1 1 0 011 1v1" />
+      <path d="M9 11h6M9 15h6M9 19h4" />
+    </svg>
+  );
+}
+
+function IconBell(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9z" />
+      <path d="M10.3 21a1.94 1.94 0 003.4 0" />
+    </svg>
+  );
+}
+
+function IconAward(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <circle cx="12" cy="9" r="6" />
+      <path d="M8.21 13.89L7 22l5-3 5 3-1.21-8.12" />
+    </svg>
+  );
+}
+
+function IconShield(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M12 2l8 3v7c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V5l8-3z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
+
+function IconLock(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <rect x="4" y="11" width="16" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 018 0v4" />
+      <circle cx="12" cy="16" r="1.2" fill="currentColor" />
+    </svg>
+  );
+}
+
+function IconEye(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function IconWatermark(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z" />
+      <path d="M14 3v5h5" />
+      <path d="M8 14l8-4" opacity="0.4" />
+      <path d="M8 17l8-4" opacity="0.4" />
+    </svg>
+  );
+}
+
+function IconCar(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M5 14l1.5-5a2 2 0 012-1.5h7a2 2 0 012 1.5L19 14" />
+      <path d="M3 14h18v4H3z" />
+      <circle cx="7" cy="18" r="1.5" />
+      <circle cx="17" cy="18" r="1.5" />
+    </svg>
+  );
+}
+
+function IconPhone(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <rect x="6" y="2" width="12" height="20" rx="2" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
+
+function IconSearch(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
+    </svg>
+  );
+}
+
+function IconScan(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M3 7V5a2 2 0 012-2h2M3 17v2a2 2 0 002 2h2M21 7V5a2 2 0 00-2-2h-2M21 17v2a2 2 0 01-2 2h-2" />
+      <path d="M7 12h10" />
+    </svg>
+  );
+}
+
+function IconChart(props: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={props.className}
+    >
+      <path d="M3 21h18" />
+      <path d="M5 18V9M10 18V5M15 18v-7M20 18v-4" />
+    </svg>
+  );
+}
+
+// ============================================================================
+// Data — sections content
+// ============================================================================
+
+type FeatureKey = "ai" | "inventory" | "market" | "clipboard" | "bell" | "award";
+const FEATURE_ICON: Record<FeatureKey, (p: { className?: string }) => JSX.Element> = {
+  ai: IconAI,
+  inventory: IconInventory,
+  market: IconMarket,
+  clipboard: IconClipboard,
+  bell: IconBell,
+  award: IconAward,
+};
+
+const dealerFeatures: Array<{ icon: FeatureKey; title: string; body: string }> = [
   {
-    mark: "א",
-    title: "מלאי אחד, שני שווקים",
-    body: "סוחרים רואים מחיר סוחר; צרכנים פרטיים יראו מחיר קמעונאי. הפרדה מלאה ברמת בסיס הנתונים — בלי דליפות מחירים, בלי בלבול.",
+    icon: "ai",
+    title: "סוכן AI חכם",
+    body: "חיפוש בשפה טבעית, תמחור חכם, זיהוי מסמכים אוטומטי וסוכן דשבורד שמבין אותך.",
   },
   {
-    mark: "ב",
-    title: "דירוג אמון לסוחרים",
-    body: "ציון אמון ורמה (Bronze · Silver · Gold · Platinum) על בסיס היסטוריית עסקאות, ביקורות, ותוקף הרישיון. אמינות שניתן למדוד.",
+    icon: "inventory",
+    title: "ניהול מלאי מתקדם",
+    body: "מלאי פרטי + שוק B2B במקום אחד. תמונות, סטטוסים, וזיהוי לוחית רישוי.",
   },
   {
-    mark: "ג",
-    title: "הצעות ועסקאות מתועדות",
-    body: "B2B דילר־לדילר עם מנגנון הצעה־נגד־הצעה, מעקב מצב, וחותמת זמן על כל פעולה. תיק עסקה מלא לכל רכב.",
+    icon: "market",
+    title: "שוק B2B בלעדי",
+    body: "מסחר בין סוחרים מאומתים בלבד. הצעות מחיר, מו״מ דיגיטלי, חיפוש חכם.",
+  },
+  {
+    icon: "clipboard",
+    title: "מעקב עסקאות מלא",
+    body: "היסטוריית עסקאות, פרטי קונה ומוכר, טרייד-אין, ודוח רווח והפסד.",
+  },
+  {
+    icon: "bell",
+    title: "התראות בזמן אמת",
+    body: "Push notifications, SMS ומייל — על כל הצעה, עסקה, ואירוע חשוב.",
+  },
+  {
+    icon: "award",
+    title: "דירוג אמון מקצועי",
+    body: "Bronze / Silver / Gold / Platinum — Trust Score שנבנה עם כל עסקה.",
   },
 ];
 
-const trust = [
+type AICapKey = "search" | "scan" | "chart";
+const AI_ICON: Record<AICapKey, (p: { className?: string }) => JSX.Element> = {
+  search: IconSearch,
+  scan: IconScan,
+  chart: IconChart,
+};
+
+const aiCapabilities: Array<{ icon: AICapKey; title: string; body: string }> = [
   {
-    label: "אימות זהות",
-    body: "תעודת זהות + רישיון סוחר נסרקים, מאומתים אוטומטית מול מאגרי משרד התחבורה ונבדקים ידנית ע״י הצוות שלנו.",
+    icon: "search",
+    title: "חיפוש בעברית טבעית",
+    body: '"BMW 2020 מתחת ל-80 אלף" — והפילטרים מתמלאים מעצמם.',
   },
   {
-    label: "תקשורת מאובטחת",
-    body: "הצעות, מסמכים והודעות עוברים בערוץ מוצפן. אימות דו־שלבי (2FA) זמין לכל סוחר.",
+    icon: "scan",
+    title: "זיהוי מסמכים מיידי",
+    body: "תעודת זהות + רישיון סוחר נסרקים ומאומתים בשניות.",
   },
   {
-    label: "תיעוד מלא",
-    body: "כל פעולה — העלאה, הצעה, סגירה — נרשמת באוטיט־לוג עם חותמת זמן בלתי ניתנת לשינוי.",
+    icon: "chart",
+    title: "תמחור חכם בזמן אמת",
+    body: "ניתוח שוק לכל רכב — האם המחיר הוגן, גבוה או הזדמנות.",
+  },
+];
+
+type SecurityKey = "shield" | "lock" | "eye" | "watermark";
+const SECURITY_ICON: Record<SecurityKey, (p: { className?: string }) => JSX.Element> = {
+  shield: IconShield,
+  lock: IconLock,
+  eye: IconEye,
+  watermark: IconWatermark,
+};
+
+const securityPillars: Array<{ icon: SecurityKey; title: string; body: string }> = [
+  {
+    icon: "shield",
+    title: "KYC + אימות זהות",
+    body: "כל סוחר עובר אימות זהות + רישיון סוחר תקף לפני כניסה למערכת.",
+  },
+  {
+    icon: "lock",
+    title: "2FA + הצפנה",
+    body: "אימות דו-שלבי על כל כניסה. כל תקשורת רגישה עוברת ערוץ מוצפן.",
+  },
+  {
+    icon: "eye",
+    title: "Audit Log מלא",
+    body: "כל פעולה במערכת נרשמת עם חותמת זמן בלתי ניתנת לשינוי.",
+  },
+  {
+    icon: "watermark",
+    title: "סימון מים על מסמכים",
+    body: "כל מסמך KYC נושא Watermark עם זהות הסוחר — הגנה מפני דליפת מידע.",
+  },
+];
+
+const tiers: Array<{
+  name: string;
+  hue: string;
+  text: string;
+  benefits: string[];
+}> = [
+  {
+    name: "Bronze",
+    hue: "bg-amber-700/15 border-amber-700/40",
+    text: "text-amber-800",
+    benefits: ["סוחר חדש מאומת", "גישה מלאה לשוק B2B", "5 העלאות תמונה לרכב"],
+  },
+  {
+    name: "Silver",
+    hue: "bg-slate-300/30 border-slate-400/50",
+    text: "text-slate-700",
+    benefits: ["10+ עסקאות סגורות", "10 העלאות תמונה לרכב", "סדר עדיפות בפניות תמיכה"],
+  },
+  {
+    name: "Gold",
+    hue: "bg-amber-300/30 border-amber-500/50",
+    text: "text-amber-900",
+    benefits: ["50+ עסקאות סגורות", "Priority Listing במרקטפלייס", "ניתוח שוק מורחב"],
+  },
+  {
+    name: "Platinum",
+    hue: "bg-brand-navy/10 border-brand-navy/40",
+    text: "text-brand-navy",
+    benefits: ["100+ עסקאות סגורות", "תג Platinum מובלט בכל מודעה", "Account Manager אישי"],
   },
 ];
 
 const stats = [
-  { value: "B2B", label: "שוק סוחרים פעיל" },
+  { value: "B2B", label: "שוק סוחרים פעיל", live: true },
   { value: "24h", label: "אישור סוחר ממוצע" },
   { value: "100%", label: "סוחרים מאומתים" },
   { value: "₪0", label: "עמלת רישום" },
@@ -70,15 +456,8 @@ const stats = [
 export default function Home() {
   return (
     <>
-      {/* Fire-and-forget /healthz ping to keep the Render free-tier
-          worker warm — every landing visit buys the API another 15min
-          of hot uptime so logged-in flows never pay the cold start. */}
       <RenderKeepAlive />
-      {/* ===================================================================
-          NAVBAR — sticky, cream surface with subtle bottom rule.
-          Logo wordmark uses display serif so the brand reads as a publication
-          masthead rather than a typical SaaS logo.
-          =================================================================== */}
+
       <header className="border-brand-navy/10 bg-brand-cream/85 supports-[backdrop-filter]:bg-brand-cream/70 sticky top-0 z-30 border-b backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:gap-6 sm:px-6 sm:py-4">
           <nav aria-label="ראשי" className="flex min-w-0 items-center gap-3 sm:gap-6">
@@ -97,30 +476,21 @@ export default function Home() {
               />
             </Link>
             <ul className="hidden items-center gap-1 sm:flex">
-              <li>
-                <a
-                  href="#why"
-                  className="text-brand-navy/80 hover:text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  יתרונות
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#trust"
-                  className="text-brand-navy/80 hover:text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  אמון
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#consumer"
-                  className="text-brand-navy/80 hover:text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  לקונה הפרטי
-                </a>
-              </li>
+              {[
+                { href: "#dealers", label: "לסוחרים" },
+                { href: "#ai", label: "AI" },
+                { href: "#security", label: "אבטחה" },
+                { href: "#tiers", label: "דירוגים" },
+              ].map((l) => (
+                <li key={l.href}>
+                  <a
+                    href={l.href}
+                    className="text-brand-navy/80 hover:text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-3 py-2 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    {l.label}
+                  </a>
+                </li>
+              ))}
             </ul>
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
@@ -136,12 +506,10 @@ export default function Home() {
       </header>
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
-        {/* =================================================================
-            HERO — generous editorial spacing, decorative dot grid, big serif
-            headline. CTAs are large and unmistakable on mobile.
-            ================================================================= */}
+        {/* ===================================================================
+            1. HERO
+            =================================================================== */}
         <section aria-labelledby="hero-heading" className="relative overflow-hidden">
-          {/* Decorative dot grid — subtle navy dots on cream */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 opacity-[0.08]"
@@ -150,11 +518,16 @@ export default function Home() {
               backgroundSize: "28px 28px",
             }}
           />
-          {/* Decorative gold accent stripe — top-end corner */}
+          {/* Animated gold accent stripe — subtle gradient sweep along its
+              length so the eye catches it as a "live" element on land but
+              honors prefers-reduced-motion via the global CSS gate. */}
           <div
             aria-hidden="true"
-            className="bg-brand-gold pointer-events-none absolute end-0 top-0 h-24 w-1.5 sm:h-32"
-          />
+            className="pointer-events-none absolute end-0 top-0 h-24 w-1.5 overflow-hidden sm:h-32"
+          >
+            <div className="bg-brand-gold absolute inset-0" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/60 to-transparent motion-safe:animate-[shine_3.5s_ease-in-out_infinite]" />
+          </div>
 
           <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-16 text-center sm:px-6 sm:pb-24 sm:pt-24 lg:pt-32">
             <h1
@@ -173,7 +546,6 @@ export default function Home() {
               אחת לכל מחזור החיים של העסקה.
             </p>
 
-            {/* CTAs — full-width stacked on mobile (primary platform), inline on sm+. */}
             <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:mt-10 sm:flex-row">
               <Link
                 href="/signup/dealer"
@@ -191,7 +563,7 @@ export default function Home() {
               <button
                 type="button"
                 disabled
-                title="ממש ממש עוד מעט, סבלנות 😊"
+                title="ממש ממש עוד מעט, סבלנות"
                 aria-describedby="buyer-cta-hint"
                 className="bg-brand-navy/5 text-brand-navy/60 border-brand-navy/10 inline-flex min-h-[52px] w-full cursor-not-allowed items-center justify-center gap-3 rounded-md border px-5 py-3.5 text-base font-semibold sm:w-auto sm:px-7 sm:text-lg"
               >
@@ -214,10 +586,9 @@ export default function Home() {
           </div>
         </section>
 
-        {/* =================================================================
-            STATS BAND — dark navy strip with 4 KPIs. Frames the hero and
-            transitions visually to the next sections.
-            ================================================================= */}
+        {/* ===================================================================
+            2. STATS BAND
+            =================================================================== */}
         <section
           aria-labelledby="stats-heading"
           className="bg-brand-navy text-brand-cream relative overflow-hidden"
@@ -225,7 +596,6 @@ export default function Home() {
           <h2 id="stats-heading" className="sr-only">
             נתוני הפלטפורמה
           </h2>
-          {/* Diagonal gold rule */}
           <div
             aria-hidden="true"
             className="bg-brand-gold absolute inset-x-0 top-0 h-px opacity-60"
@@ -233,8 +603,14 @@ export default function Home() {
           <div className="mx-auto grid max-w-5xl grid-cols-2 gap-y-8 px-4 py-10 text-center sm:px-6 sm:py-12 lg:grid-cols-4">
             {stats.map((s) => (
               <div key={s.label} className="min-w-0 px-2">
-                <p className="text-brand-gold font-serif text-3xl font-bold leading-none sm:text-4xl lg:text-5xl">
+                <p className="text-brand-gold inline-flex items-baseline gap-2 font-serif text-3xl font-bold leading-none sm:text-4xl lg:text-5xl">
                   {s.value}
+                  {s.live ? (
+                    <span aria-hidden="true" className="relative inline-flex h-2 w-2 self-center">
+                      <span className="bg-brand-gold absolute inline-flex h-full w-full rounded-full opacity-75 motion-safe:animate-ping" />
+                      <span className="bg-brand-gold relative inline-flex h-2 w-2 rounded-full" />
+                    </span>
+                  ) : null}
                 </p>
                 <p className="text-brand-cream/80 mt-3 text-base font-medium leading-snug">
                   {s.label}
@@ -244,237 +620,363 @@ export default function Home() {
           </div>
         </section>
 
-        {/* =================================================================
-            B2C TEASER — split layout. Big "בקרוב" tag, exciting copy.
-            ================================================================= */}
-        <section id="consumer" aria-labelledby="consumer-heading" className="relative">
-          <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 sm:py-24">
-            {/* Centered intro block */}
+        {/* ===================================================================
+            3. WHAT DEALERS GET — 6 features
+            =================================================================== */}
+        <section id="dealers" aria-labelledby="dealers-heading" className="relative">
+          <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
             <div className="text-center">
-              <span className="bg-brand-navy text-brand-gold inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em]">
-                <span
-                  aria-hidden="true"
-                  className="bg-brand-gold inline-block h-1.5 w-1.5 rounded-full"
-                />
-                בקרוב · פאזה 2
-              </span>
+              <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                לסוחרים
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              </p>
               <h2
-                id="consumer-heading"
-                className="text-brand-navy mx-auto mt-5 max-w-2xl font-serif text-3xl font-bold leading-tight sm:text-4xl lg:text-5xl"
+                id="dealers-heading"
+                className="text-brand-navy mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
               >
-                קונה פרטי? אנחנו בונים לך משהו אחר.
+                כל מה שסוחר מקצועי צריך — במקום אחד.
               </h2>
-              <p className="text-brand-ink/80 mx-auto mt-5 max-w-2xl text-lg leading-relaxed sm:text-xl">
-                מאות אלפי מודעות יד שנייה בישראל — וכמעט אף אחת מהן לא מסומנת &ldquo;נמכר על־ידי
-                סוחר מאומת&rdquo;. אנחנו משנים את זה.
+              <p className="text-brand-ink/75 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+                לא עוד שילוב של 4 כלים, אקסל ו-WhatsApp. תשתית מסחר אחת שעוברת איתך מתחילת היום ועד
+                סגירת העסקה.
               </p>
             </div>
 
-            {/* 3-column value props grid (1 col mobile, 3 cols sm+) */}
-            <ul className="mt-12 grid gap-6 text-start sm:mt-16 sm:grid-cols-3">
-              {[
-                {
-                  title: "רק סוחרים מאומתים",
-                  body: "כל רכב שתראה מגיע מסוחר עם רישיון תקף, ציון אמון ציבורי, והיסטוריית עסקאות שקופה.",
-                },
-                {
-                  title: "מחיר אחד — בלי משחקים",
-                  body: "המחיר שאתה רואה הוא המחיר. אין מחיר ״תיאום בטלפון״, אין הפתעות בסוף.",
-                },
-                {
-                  title: "תיק רכב מלא מראש",
-                  body: "תמונות באיכות גבוהה, היסטוריית בעלות, מסמכי טסט ותחזוקה — הכול במקום אחד.",
-                },
-              ].map((item) => (
-                <li
-                  key={item.title}
-                  className="border-brand-navy/15 hover:border-brand-navy/30 rounded-lg border bg-white p-6 transition-colors"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="bg-brand-gold inline-block h-1 w-10 rounded-full"
-                  />
-                  <p className="text-brand-navy mt-4 font-serif text-xl font-bold sm:text-2xl">
-                    {item.title}
-                  </p>
-                  <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-base">
-                    {item.body}
-                  </p>
-                </li>
-              ))}
+            <ul className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {dealerFeatures.map((f) => {
+                const Icon = FEATURE_ICON[f.icon];
+                return (
+                  <li
+                    key={f.title}
+                    className="border-brand-navy/12 hover:border-brand-gold/60 group relative overflow-hidden rounded-xl border bg-white p-6 transition-all hover:shadow-lg motion-reduce:transition-none sm:p-7"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="bg-brand-gold/0 group-hover:bg-brand-gold/100 absolute inset-x-0 top-0 h-0.5 transition-colors"
+                    />
+                    <div
+                      aria-hidden="true"
+                      className="bg-brand-navy/5 text-brand-navy group-hover:bg-brand-gold group-hover:text-brand-navy inline-flex h-12 w-12 items-center justify-center rounded-lg transition-colors"
+                    >
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <h3 className="text-brand-navy mt-5 font-serif text-xl font-bold sm:text-[1.4rem]">
+                      {f.title}
+                    </h3>
+                    <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-[15px]">
+                      {f.body}
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
-
-            {/* App store badges — disabled (apps not shipped yet). */}
-            <div className="mt-14 flex flex-col items-center text-center">
-              <p className="text-brand-navy/70 text-xs font-semibold uppercase tracking-[0.2em]">
-                האפליקציה לקונים — בקרוב
-              </p>
-              <div className="mt-4 flex flex-row items-stretch justify-center gap-3">
-                {/* Apple App Store badge */}
-                <button
-                  type="button"
-                  disabled
-                  title="ממש ממש עוד מעט, סבלנות 😊"
-                  aria-describedby="appstore-hint"
-                  className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/65 inline-flex min-h-[52px] flex-1 cursor-not-allowed items-center gap-2.5 rounded-xl border px-3 py-2.5 text-start sm:flex-initial sm:px-5"
-                >
-                  {/* Apple logo */}
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 384 512"
-                    className="h-8 w-8 shrink-0 fill-current"
-                  >
-                    <path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zM205 73.7c25-29.7 22.7-56.8 22-66.5C202.3 5.3 173.9 21.4 158.4 41.4c-17.3 21.5-27.4 47.9-25.2 73.4 26.5 2 50.7-11.4 71.8-41.1z" />
-                  </svg>
-                  <span className="leading-tight">
-                    <span className="text-brand-navy/55 block text-[10px] font-medium uppercase tracking-wider">
-                      Download on the
-                    </span>
-                    <span className="text-brand-navy/80 block text-base font-semibold">
-                      App Store
-                    </span>
-                  </span>
-                </button>
-
-                {/* Google Play badge */}
-                <button
-                  type="button"
-                  disabled
-                  title="ממש ממש עוד מעט, סבלנות 😊"
-                  aria-describedby="playstore-hint"
-                  className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/65 inline-flex min-h-[52px] flex-1 cursor-not-allowed items-center gap-2.5 rounded-xl border px-3 py-2.5 text-start sm:flex-initial sm:px-5"
-                >
-                  {/* Google Play triangle */}
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 512 512"
-                    className="h-8 w-8 shrink-0 fill-current"
-                  >
-                    <path d="M325.3 234.3 104.6 13l280.8 161.2zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256zm425.2 225.6-58.9-34.1-65.7 64.5 65.7 64.5 60-34.1c18-14.3 18-46.5-1.1-60.8zM104.6 499l280.8-161.2-60.1-60.1z" />
-                  </svg>
-                  <span className="leading-tight">
-                    <span className="text-brand-navy/55 block text-[10px] font-medium uppercase tracking-wider">
-                      GET IT ON
-                    </span>
-                    <span className="text-brand-navy/80 block text-base font-semibold">
-                      Google Play
-                    </span>
-                  </span>
-                </button>
-              </div>
-              <span id="appstore-hint" className="sr-only">
-                ממש ממש עוד מעט, סבלנות. אפליקציית האייפון לא זמינה עדיין.
-              </span>
-              <span id="playstore-hint" className="sr-only">
-                ממש ממש עוד מעט, סבלנות. אפליקציית אנדרואיד לא זמינה עדיין.
-              </span>
-            </div>
-
-            <p className="text-brand-ink/60 mt-10 text-center text-sm">
-              ההרשמה לקונים פרטיים תיפתח בהמשך השנה. בינתיים — סוחרים יכולים להצטרף ולבנות נוכחות
-              לפני ההשקה.
-            </p>
           </div>
         </section>
 
-        {/* =================================================================
-            WHY / FEATURES — 3 numbered editorial cards (א/ב/ג).
-            ================================================================= */}
+        {/* ===================================================================
+            4. AI AGENT — dark navy, "Powered by Claude AI" small footnote
+            =================================================================== */}
         <section
-          id="why"
-          aria-labelledby="why-heading"
-          className="bg-brand-navy text-brand-cream relative"
+          id="ai"
+          aria-labelledby="ai-heading"
+          className="bg-brand-navy text-brand-cream relative overflow-hidden"
         >
-          {/* Bottom-end gold corner accent */}
           <div
             aria-hidden="true"
-            className="bg-brand-gold pointer-events-none absolute bottom-0 start-0 h-1.5 w-24 sm:w-40"
+            className="bg-brand-gold pointer-events-none absolute end-0 top-0 h-1.5 w-32 sm:w-48"
           />
+          <div className="mx-auto max-w-5xl px-4 py-20 sm:px-6 sm:py-28">
+            <div className="text-center">
+              <p className="text-brand-gold flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                סוכן AI
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              </p>
+              <h2
+                id="ai-heading"
+                className="mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
+              >
+                הסוכן החכם שעובד בשבילך.
+              </h2>
+              <p className="text-brand-cream/80 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+                AI מובנה לכל אורך הזרימה — מהעלאת הרכב, דרך החיפוש, ועד ניתוח התמחור. בעברית.
+              </p>
+            </div>
 
-          <div className="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6 sm:py-24">
-            <p className="text-brand-gold flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-              למה AutoTradeIL
-              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-            </p>
-            <h2
-              id="why-heading"
-              className="mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
-            >
-              לא עוד לוח מודעות. תשתית מסחר.
-            </h2>
-
-            <ul className="bg-brand-cream/10 mt-12 grid gap-px sm:grid-cols-3 sm:overflow-hidden sm:rounded-xl">
-              {features.map((f) => (
-                <li key={f.title} className="bg-brand-navy group relative p-6 sm:p-8">
+            {/* Demo panel — looks like a real search input with a typed query.
+                Pure CSS — no API call. Uses motion-safe gating so reduced-motion
+                users see the final state without the typing animation. */}
+            <div className="mx-auto mt-12 max-w-2xl">
+              <div className="border-brand-cream/15 bg-brand-cream/5 rounded-xl border p-4 shadow-2xl backdrop-blur sm:p-5">
+                <div className="border-brand-cream/15 flex items-center gap-2 rounded-lg border bg-white/5 px-3 py-2.5">
+                  <IconSearch className="text-brand-gold h-5 w-5 shrink-0" />
                   <span
                     aria-hidden="true"
-                    className="text-brand-gold/80 font-serif text-5xl font-bold leading-none"
+                    className="text-brand-cream font-mono text-sm motion-safe:animate-[typecaret_4s_steps(40,end)_infinite] motion-safe:overflow-hidden motion-safe:whitespace-nowrap motion-safe:[border-inline-end:2px_solid_theme(colors.brand.gold)] sm:text-base"
                   >
-                    {f.mark}
+                    BMW 2020 מתחת ל-80 אלף
                   </span>
-                  <h3 className="text-brand-cream mt-5 font-serif text-xl font-bold sm:text-2xl">
-                    {f.title}
-                  </h3>
-                  <p className="text-brand-cream/80 mt-3 text-sm leading-relaxed sm:text-base">
-                    {f.body}
-                  </p>
-                </li>
-              ))}
+                </div>
+                <p className="text-brand-cream/60 mt-3 text-center text-xs">
+                  כך מחפשים — בלי טפסים, בלי dropdown, בלי מילוי 8 שדות.
+                </p>
+              </div>
+            </div>
+
+            <ul className="mt-14 grid gap-6 sm:grid-cols-3">
+              {aiCapabilities.map((c) => {
+                const Icon = AI_ICON[c.icon];
+                return (
+                  <li
+                    key={c.title}
+                    className="border-brand-cream/12 bg-brand-cream/5 rounded-xl border p-6 sm:p-7"
+                  >
+                    <div
+                      aria-hidden="true"
+                      className="bg-brand-gold/15 text-brand-gold inline-flex h-11 w-11 items-center justify-center rounded-lg"
+                    >
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="text-brand-cream mt-4 font-serif text-lg font-bold sm:text-xl">
+                      {c.title}
+                    </h3>
+                    <p className="text-brand-cream/75 mt-2 text-sm leading-relaxed">{c.body}</p>
+                  </li>
+                );
+              })}
+            </ul>
+
+            {/* Small "Powered by" credit — Anthropic brand-safe attribution
+                without using their wordmark prominently. */}
+            <p className="text-brand-cream/55 mt-12 text-center text-xs">
+              Powered by{" "}
+              <span lang="en" className="text-brand-cream/70 font-semibold tracking-wide">
+                Claude AI
+              </span>{" "}
+              · Anthropic
+            </p>
+          </div>
+        </section>
+
+        {/* ===================================================================
+            5. SECURITY — bank-grade dark band
+            =================================================================== */}
+        <section
+          id="security"
+          aria-labelledby="security-heading"
+          className="bg-brand-ink text-brand-cream relative"
+          style={{ backgroundColor: "#0d1224" }}
+        >
+          {/* Subtle grid background — reads as "infrastructure" not "marketing" */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 opacity-[0.05]"
+            style={{
+              backgroundImage:
+                "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
+              backgroundSize: "40px 40px",
+            }}
+          />
+          <div className="relative mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+            <div className="text-center">
+              <p className="text-brand-gold flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                אבטחה
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              </p>
+              <h2
+                id="security-heading"
+                className="mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
+              >
+                אבטחה ברמה בנקאית.
+              </h2>
+              <p className="text-brand-cream/75 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+                כי מסחר ברכבים דורש אמון אמיתי.
+              </p>
+            </div>
+
+            <ul className="mt-14 grid gap-5 sm:grid-cols-2">
+              {securityPillars.map((p) => {
+                const Icon = SECURITY_ICON[p.icon];
+                return (
+                  <li
+                    key={p.title}
+                    className="border-brand-cream/15 bg-brand-cream/[0.03] flex gap-4 rounded-xl border p-6 sm:p-7"
+                  >
+                    <div
+                      aria-hidden="true"
+                      className="bg-brand-gold/10 text-brand-gold inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg"
+                    >
+                      <Icon className="h-6 w-6" />
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="text-brand-cream font-serif text-lg font-bold sm:text-xl">
+                        {p.title}
+                      </h3>
+                      <p className="text-brand-cream/75 mt-2 text-sm leading-relaxed">{p.body}</p>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>
 
-        {/* =================================================================
-            TRUST — three pillars on cream.
-            ================================================================= */}
-        <section id="trust" aria-labelledby="trust-heading" className="relative">
-          <div className="mx-auto max-w-5xl px-4 py-16 text-center sm:px-6 sm:py-24">
-            <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-              אמון לפני הכול
-              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-            </p>
-            <h2
-              id="trust-heading"
-              className="text-brand-navy mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
-            >
-              שלוש שכבות הגנה על כל עסקה.
-            </h2>
-            <p className="text-brand-ink/70 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
-              בנינו את AutoTradeIL מתוך הנחה שכל סוחר חדש זקוק להוכיח את עצמו — ושכל רוכש זקוק לכלים
-              כדי לוודא שהוא מתעסק עם מי שאמור.
-            </p>
+        {/* ===================================================================
+            6. TRUST TIERS — 4 cards
+            =================================================================== */}
+        <section id="tiers" aria-labelledby="tiers-heading" className="relative">
+          <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
+            <div className="text-center">
+              <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                Trust Score
+                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              </p>
+              <h2
+                id="tiers-heading"
+                className="text-brand-navy mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
+              >
+                ככל שמוכרים יותר — הדירוג עולה.
+              </h2>
+              <p className="text-brand-ink/75 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+                ארבע רמות. כל עסקה סגורה, כל ביקורת חיובית, כל חודש ללא תלונות — מקדמים אותך.
+              </p>
+            </div>
 
-            <ul className="mt-12 grid gap-6 text-start sm:grid-cols-3">
-              {trust.map((t, i) => (
+            <ul className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {tiers.map((t, i) => (
                 <li
-                  key={t.label}
-                  className="border-brand-navy/15 hover:border-brand-navy/30 group relative rounded-lg border bg-white p-6 transition-colors sm:p-7"
+                  key={t.name}
+                  className={[
+                    "rounded-xl border p-6 transition-transform hover:-translate-y-1 motion-reduce:transition-none sm:p-7",
+                    t.hue,
+                  ].join(" ")}
                 >
-                  <span
-                    aria-hidden="true"
-                    className="text-brand-navy/30 group-hover:text-brand-gold absolute end-5 top-5 font-serif text-2xl font-bold leading-none transition-colors"
+                  <div className="flex items-center gap-2">
+                    <span
+                      aria-hidden="true"
+                      className={["text-brand-navy/40 font-serif text-2xl font-bold", t.text].join(
+                        " ",
+                      )}
+                    >
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <IconAward className={["h-5 w-5", t.text].join(" ")} />
+                  </div>
+                  <p
+                    lang="en"
+                    className={["mt-4 font-serif text-2xl font-bold tracking-wide", t.text].join(
+                      " ",
+                    )}
                   >
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <h3 className="text-brand-navy font-serif text-xl font-bold sm:text-2xl">
-                    {t.label}
-                  </h3>
-                  <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-base">
-                    {t.body}
+                    {t.name}
                   </p>
+                  <ul className="mt-4 space-y-2">
+                    {t.benefits.map((b) => (
+                      <li
+                        key={b}
+                        className="text-brand-ink/85 flex items-start gap-2 text-sm leading-snug"
+                      >
+                        <span aria-hidden="true" className="text-brand-gold mt-1 shrink-0">
+                          ✓
+                        </span>
+                        <span>{b}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </li>
               ))}
             </ul>
           </div>
         </section>
 
-        {/* =================================================================
-            FINAL CTA — quiet but confident. Repeats the dealer signup.
-            ================================================================= */}
+        {/* ===================================================================
+            7. COMING SOON — split layout
+            =================================================================== */}
+        <section
+          aria-labelledby="future-heading"
+          className="bg-brand-navy/[0.04] border-brand-navy/10 relative border-y"
+        >
+          <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
+            <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-center text-xs font-semibold uppercase tracking-[0.2em]">
+              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              בעבודה
+              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+            </p>
+            <h2 id="future-heading" className="sr-only">
+              מה בעבודה
+            </h2>
+            <div className="mt-8 grid gap-5 lg:grid-cols-2">
+              {/* Damaged-cars market */}
+              <article className="border-brand-navy/15 rounded-xl border bg-white p-6 sm:p-8">
+                <div className="flex items-center gap-3">
+                  <div
+                    aria-hidden="true"
+                    className="bg-brand-navy/5 text-brand-navy inline-flex h-12 w-12 items-center justify-center rounded-lg"
+                  >
+                    <IconCar className="h-6 w-6" />
+                  </div>
+                  <span className="bg-brand-navy text-brand-gold inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
+                    בקרוב
+                  </span>
+                </div>
+                <h3 className="text-brand-navy mt-5 font-serif text-xl font-bold sm:text-2xl">
+                  שוק רכבים פגועים
+                </h3>
+                <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-[15px]">
+                  סוחרים יוכלו לקנות ולמכור רכבים שעברו תאונה במחיר מתחת למחירון — עם דוח נזק מתועד
+                  וזירה מקצועית בלבד.
+                </p>
+              </article>
+
+              {/* Mobile app */}
+              <article className="border-brand-navy/15 rounded-xl border bg-white p-6 sm:p-8">
+                <div className="flex items-center gap-3">
+                  <div
+                    aria-hidden="true"
+                    className="bg-brand-navy/5 text-brand-navy inline-flex h-12 w-12 items-center justify-center rounded-lg"
+                  >
+                    <IconPhone className="h-6 w-6" />
+                  </div>
+                  <span className="bg-brand-navy text-brand-gold inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
+                    בקרוב
+                  </span>
+                </div>
+                <h3 className="text-brand-navy mt-5 font-serif text-xl font-bold sm:text-2xl">
+                  אפליקציה מובילית
+                </h3>
+                <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-[15px]">
+                  iOS + Android — התראות native, מצלמת KYC, וצפייה בשוק במהירות מירבית. בינתיים:
+                  האתר מותקן כ-PWA למסך הבית.
+                </p>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled
+                    className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/60 inline-flex min-h-9 cursor-not-allowed items-center rounded-md border px-3 py-1.5 text-xs font-semibold"
+                  >
+                    App Store · בקרוב
+                  </button>
+                  <button
+                    type="button"
+                    disabled
+                    className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/60 inline-flex min-h-9 cursor-not-allowed items-center rounded-md border px-3 py-1.5 text-xs font-semibold"
+                  >
+                    Google Play · בקרוב
+                  </button>
+                </div>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        {/* ===================================================================
+            8. FINAL CTA — beta seat scarcity
+            =================================================================== */}
         <section aria-labelledby="cta-heading" className="relative">
-          <div className="mx-auto max-w-5xl px-4 pb-20 pt-4 sm:px-6 sm:pb-24">
+          <div className="mx-auto max-w-5xl px-4 pb-24 pt-20 sm:px-6">
             <div className="border-brand-navy/15 from-brand-cream to-brand-cream/40 relative overflow-hidden rounded-2xl border bg-gradient-to-br p-6 sm:p-12 lg:p-16">
               <div
                 aria-hidden="true"
@@ -482,15 +984,21 @@ export default function Home() {
               />
               <div className="text-center lg:grid lg:grid-cols-[1.4fr_1fr] lg:items-center lg:gap-12 lg:text-start">
                 <div>
+                  <span className="bg-brand-gold/15 text-brand-navy inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
+                    <span
+                      aria-hidden="true"
+                      className="bg-brand-gold inline-flex h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
+                    />
+                    מקומות מוגבלים · שלב הבטא
+                  </span>
                   <h2
                     id="cta-heading"
-                    className="text-brand-navy font-serif text-[1.75rem] font-bold leading-tight sm:text-4xl lg:text-5xl"
+                    className="text-brand-navy mt-4 font-serif text-[1.75rem] font-bold leading-tight sm:text-4xl lg:text-5xl"
                   >
                     מוכן להתחיל לסחור באופן מקצועי?
                   </h2>
                   <p className="text-brand-ink/75 mx-auto mt-5 max-w-xl text-base leading-relaxed sm:text-lg lg:mx-0">
-                    הצטרף לסוחרים שכבר משתמשים ב-AutoTradeIL לניהול מלאי, הצעות, ועסקאות. הקמת חשבון
-                    לוקחת פחות מ-10 דקות.
+                    הצטרפות בשלב הבטא חינמית לחלוטין — וכוללת liaison אישי לאורך 30 יום ראשונים.
                   </p>
                 </div>
                 <div className="mt-8 flex flex-col items-stretch gap-3 lg:mt-0">
@@ -519,9 +1027,9 @@ export default function Home() {
         </section>
       </main>
 
-      {/* ===================================================================
-          FOOTER — dark navy, structured nav, copyright.
-          =================================================================== */}
+      {/* =====================================================================
+          FOOTER
+          ===================================================================== */}
       <footer className="bg-brand-navy text-brand-cream relative">
         <div
           aria-hidden="true"
@@ -530,8 +1038,6 @@ export default function Home() {
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
             <div>
-              {/* Footer uses the WHITE-recolored variant so the navy + bronze
-                  brand glyphs become cream and read clearly on the navy bg. */}
               <Image
                 src="/logo-full-white.png"
                 alt="AutoTradeIL"
@@ -552,26 +1058,34 @@ export default function Home() {
               <ul className="mt-4 space-y-2">
                 <li>
                   <a
-                    href="#why"
+                    href="#dealers"
                     className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
-                    יתרונות
+                    לסוחרים
                   </a>
                 </li>
                 <li>
                   <a
-                    href="#trust"
+                    href="#ai"
                     className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
-                    אמון ובטחון
+                    סוכן AI
                   </a>
                 </li>
                 <li>
                   <a
-                    href="#consumer"
+                    href="#security"
                     className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
-                    לקונה הפרטי
+                    אבטחה
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="#tiers"
+                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    דירוגים
                   </a>
                 </li>
               </ul>
