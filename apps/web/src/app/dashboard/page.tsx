@@ -4,8 +4,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { AISearchBar } from "@/components/dashboard/AISearchBar";
+import { CommandCenter } from "@/components/dashboard/CommandCenter";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { DealerStatsCards } from "@/components/DealerStatsCards";
+import { NotificationBell } from "@/components/NotificationBell";
 import { ProfileEditor } from "@/components/ProfileEditor";
 import { SuspensionBanner } from "@/components/SuspensionBanner";
 import { apiFetch } from "@/lib/api";
@@ -184,23 +187,26 @@ function DashboardPageInner() {
     <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
       <SuspensionBanner token={token} />
       <header className="border-brand-navy/10 border-b bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
           <BrandMark />
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={signingOut}
-            aria-busy={signingOut || undefined}
-            className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-          >
-            {signingOut ? "מתנתק…" : "התנתקות"}
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            {token ? <NotificationBell token={token} /> : null}
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={signingOut}
+              aria-busy={signingOut || undefined}
+              className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
+            >
+              {signingOut ? "מתנתק…" : "התנתקות"}
+            </button>
+          </div>
         </div>
       </header>
 
       <DashboardSubNav />
 
-      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
+      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
         {adminGateMsg ? (
           <div
             role="alert"
@@ -210,18 +216,45 @@ function DashboardPageInner() {
           </div>
         ) : null}
 
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-brand-navy text-3xl font-bold tracking-tight focus:outline-none"
-        >
-          שלום, {dealer.business_name}!
-        </h1>
-        <p className="text-brand-ink/70 mt-2">החשבון שלך מאושר — להלן פרטי הפרופיל.</p>
+        {/* ============================================================
+            COMMAND CENTER — greeting + AI bar + KPI tiles + recent inv
+            ============================================================ */}
+        <header>
+          <p className="text-brand-navy/65 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+            <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+            לוח הפיקוד שלך
+          </p>
+          <h1
+            ref={headingRef}
+            tabIndex={-1}
+            className="text-brand-navy mt-3 font-serif text-3xl font-bold tracking-tight focus:outline-none sm:text-4xl"
+          >
+            שלום, {dealer.business_name}.
+          </h1>
+        </header>
 
-        {token ? <DealerStatsCards token={token} /> : null}
+        {token ? (
+          <div className="mt-6">
+            <AISearchBar token={token} />
+          </div>
+        ) : null}
 
-        <section aria-labelledby="profile-heading" className="mt-10">
+        {token ? <CommandCenter token={token} /> : null}
+
+        {/* ============================================================
+            DETAILED ANALYTICS (period switcher + bigger trends)
+            ============================================================ */}
+        <section aria-labelledby="analytics-heading" className="mt-12">
+          <h2
+            id="analytics-heading"
+            className="text-brand-navy font-serif text-xl font-bold tracking-tight sm:text-2xl"
+          >
+            ניתוח מפורט
+          </h2>
+          <div className="mt-4">{token ? <DealerStatsCards token={token} /> : null}</div>
+        </section>
+
+        <section aria-labelledby="profile-heading" className="mt-12">
           <h2 id="profile-heading" className="text-brand-navy text-lg font-semibold">
             פרטי העסק
           </h2>

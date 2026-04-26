@@ -88,6 +88,24 @@ class RecommendationsResponse(BaseModel):
     reason: str
 
 
+class DashboardAskRequest(BaseModel):
+    """Free-form Hebrew query the dealer types into the dashboard search bar."""
+    query: str = Field(min_length=1, max_length=500)
+
+
+class DashboardAskAction(BaseModel):
+    """Optional structured CTA the model wants to surface alongside its
+    text answer. Frontend treats this as a hint — it can render a
+    button that navigates to `href` with a Hebrew label."""
+    label: str
+    href: str
+
+
+class DashboardAskResponse(BaseModel):
+    answer: str  # Hebrew NL answer rendered in the response card
+    actions: list[DashboardAskAction] = Field(default_factory=list)
+
+
 # =============================================================================
 # Claude helpers
 # =============================================================================
@@ -334,6 +352,149 @@ async def ai_search(
         db=db, caller_dealer_id=caller.id, filters=filters
     )
     return AISearchResponse(filters=filters, results=results)
+
+
+@router.post("/dashboard-assistant", response_model=DashboardAskResponse)
+async def dashboard_assistant(
+    payload: DashboardAskRequest,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> DashboardAskResponse:
+    """Conversational assistant for the dealer command center.
+
+    Pre-fetches a snapshot of the caller's own data (active inventory
+    count, sold-this-month, open offers in/out, latest deal) and feeds
+    it to Claude as system context. Claude answers in Hebrew, may
+    suggest one navigation CTA in JSON.
+
+    Falls back to a deterministic answer when the API key is missing
+    or Claude errors — the dashboard must never break when AI is down.
+    """
+    from datetime import datetime, timedelta, timezone as _tz
+
+    user, dealer = ud
+    now = datetime.now(tz=_tz.utc)
+    month_ago = now - timedelta(days=30)
+
+    # Single batched probe of the dealer's own state — no per-call API
+    # roundtrips so the assistant feels instant.
+    counts = (
+        await db.execute(
+            select(
+                func.count().filter(Inventory.status == "active").label("active"),
+                func.count().filter(
+                    and_(Inventory.status == "sold", Inventory.sold_at >= month_ago)
+                ).label("sold_30d"),
+                func.coalesce(
+                    func.sum(Inventory.sale_price).filter(
+                        and_(Inventory.status == "sold", Inventory.sold_at >= month_ago)
+                    ),
+                    0,
+                ).label("revenue_30d"),
+            ).where(Inventory.dealer_id == dealer.id)
+        )
+    ).one()
+
+    offers_in = (
+        await db.execute(
+            select(func.count()).where(
+                and_(
+                    Offer.seller_dealer_id == dealer.id,
+                    Offer.status.in_(("pending", "countered")),
+                )
+            )
+        )
+    ).scalar_one()
+
+    offers_out = (
+        await db.execute(
+            select(func.count()).where(
+                and_(
+                    Offer.buyer_dealer_id == dealer.id,
+                    Offer.status.in_(("pending", "countered")),
+                )
+            )
+        )
+    ).scalar_one()
+
+    context_lines = [
+        f"שם העסק: {dealer.business_name}",
+        f"אימייל: {user.email}",
+        f"רכבים פעילים במלאי: {counts.active}",
+        f"מכירות ב-30 הימים האחרונים: {counts.sold_30d}",
+        f"הכנסות 30 יום: ₪{int(counts.revenue_30d):,}".replace(",", ","),
+        f"הצעות פתוחות שקיבלת: {offers_in}",
+        f"הצעות פתוחות ששלחת: {offers_out}",
+        f"ציון אמון: {int(dealer.trust_score or 0)}",
+        f"דרגה: {dealer.tier}",
+    ]
+    dealer_context = "\n".join(context_lines)
+
+    client = _anthropic_client()
+    if client is None:
+        # Deterministic fallback so the dashboard still feels alive.
+        return DashboardAskResponse(
+            answer=(
+                f"שלום {dealer.business_name}, יש לך {counts.active} רכבים פעילים, "
+                f"{offers_in} הצעות שקיבלת, {offers_out} הצעות ששלחת, "
+                f"ו-{counts.sold_30d} מכירות ב-30 הימים האחרונים."
+            ),
+            actions=[
+                DashboardAskAction(label="פתח שוק B2B", href="/dashboard/marketplace")
+            ],
+        )
+
+    system = (
+        "אתה עוזר אישי בעברית של סוחר רכב בפלטפורמת AutoTradeIL. "
+        "ענה תמיד בעברית, קצר וענייני (עד 3 משפטים). "
+        "אם המשתמש מחפש רכב — הצע פעולה שמובילה ל/dashboard/marketplace עם פילטרים. "
+        "אם הוא שואל על המלאי שלו — הצע /dashboard/inventory. "
+        "על הצעות — /dashboard/offers. על עסקאות — /dashboard/deals. "
+        "החזר JSON תקין: "
+        '{"answer": "תשובה בעברית", "actions": [{"label": "טקסט כפתור", "href": "/dashboard/..."}]}'
+        " כש-actions ריק — שלח []."
+    )
+
+    user_msg = f"הקשר הסוחר:\n{dealer_context}\n\nשאלה: {payload.query}"
+
+    try:
+        msg = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=400,
+            timeout=15,
+            system=system,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dashboard_assistant claude call failed: %s", exc)
+        return DashboardAskResponse(
+            answer=f"שלום {dealer.business_name}, אני לא יכול לענות כרגע. נסה שוב עוד רגע.",
+            actions=[],
+        )
+
+    text = ""
+    for blk in msg.content:
+        if getattr(blk, "type", None) == "text":
+            text = blk.text
+            break
+
+    parsed = _safe_json_extract(text)
+    if parsed and isinstance(parsed.get("answer"), str):
+        actions_raw = parsed.get("actions") or []
+        actions: list[DashboardAskAction] = []
+        if isinstance(actions_raw, list):
+            for a in actions_raw[:3]:  # cap at 3 to keep the card tidy
+                if (
+                    isinstance(a, dict)
+                    and isinstance(a.get("label"), str)
+                    and isinstance(a.get("href"), str)
+                    and a["href"].startswith("/")  # only relative paths
+                ):
+                    actions.append(DashboardAskAction(label=a["label"], href=a["href"]))
+        return DashboardAskResponse(answer=parsed["answer"], actions=actions)
+
+    # Model returned plain text without JSON — surface it as-is.
+    return DashboardAskResponse(answer=text.strip() or "לא הבנתי את השאלה, נסה לנסח מחדש.")
 
 
 @router.post("/price-analysis", response_model=PriceAnalysisResponse)
