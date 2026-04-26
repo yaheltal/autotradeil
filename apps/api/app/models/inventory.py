@@ -73,11 +73,15 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     b2b_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # ---- Phase 4.3: visibility + B2C + pause ----
+    # Default is "b2b" (not "private") because the entire point of the
+    # platform is dealer-to-dealer trading — defaulting to private meant
+    # newly-added vehicles never appeared on the marketplace until the
+    # dealer manually flipped a switch they didn't know existed.
     visibility: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        default="private",
-        server_default="private",
+        default="b2b",
+        server_default="b2b",
     )
     b2c_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
     paused_until: Mapped[datetime | None] = mapped_column(

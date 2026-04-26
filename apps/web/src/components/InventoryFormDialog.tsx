@@ -174,7 +174,10 @@ function toFormValues(v: InventoryInitial | null | undefined): FormValues {
     fuel_type: (v?.fuel_type ?? "") as FormValues["fuel_type"],
     engine_volume: normalizeEngineVolume(v?.engine_volume ?? null),
     notes: v?.notes ?? "",
-    visibility: (v?.visibility ?? "private") as Visibility,
+    // Default to b2b for new vehicles (mode === "create" sees v=null) so
+    // every new addition lands on the marketplace by default. Editing an
+    // existing row preserves whatever the dealer chose previously.
+    visibility: (v?.visibility ?? "b2b") as Visibility,
     b2b_price: v?.b2b_price != null ? String(v.b2b_price) : "",
     b2c_price: v?.b2c_price != null ? String(v.b2c_price) : "",
     purchase_cost:
