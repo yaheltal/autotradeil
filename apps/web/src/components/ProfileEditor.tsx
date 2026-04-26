@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 
-import { LogoUploader } from "@/components/LogoUploader";
 import { apiFetch } from "@/lib/api";
 
 /*
@@ -124,15 +123,6 @@ export function ProfileEditor({ token, initial, onSaved }: Props) {
       <fieldset className="mt-4 space-y-4 border-0 p-0">
         <legend className="sr-only">פרטי פרופיל</legend>
 
-        <LogoUploader
-          token={token}
-          currentLogoUrl={logoUrl}
-          onUploaded={(url) => {
-            setLogoUrl(url);
-            setToast("הלוגו הועלה");
-          }}
-        />
-
         <div>
           <label htmlFor="pf-name" className="text-brand-navy block text-sm font-medium">
             שם העסק
@@ -202,15 +192,37 @@ export function ProfileEditor({ token, initial, onSaved }: Props) {
           </p>
         </div>
 
+        {/* Desktop save button — inline. */}
         <button
           type="button"
           onClick={() => void save()}
           disabled={busy || !dirty}
           aria-busy={busy || undefined}
-          className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy hidden min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50 sm:inline-flex"
         >
           {busy ? "שומר…" : "שמור פרטי פרופיל"}
         </button>
+
+        {/* Mobile sticky save — pinned to viewport bottom while the
+            user is editing. Honors safe-area-inset-bottom on iPhone X+
+            so the button doesn't overlap the home indicator. Only
+            enabled when there's something to save. */}
+        {dirty || busy ? (
+          <div
+            className="border-brand-navy/15 fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 px-4 py-3 backdrop-blur sm:hidden"
+            style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
+          >
+            <button
+              type="button"
+              onClick={() => void save()}
+              disabled={busy || !dirty}
+              aria-busy={busy || undefined}
+              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-12 w-full items-center justify-center rounded-md px-5 py-3 text-base font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {busy ? "שומר…" : "שמור פרטי פרופיל"}
+            </button>
+          </div>
+        ) : null}
       </fieldset>
     </section>
   );

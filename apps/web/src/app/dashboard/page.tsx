@@ -10,6 +10,8 @@ import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { DealerStatsCards } from "@/components/DealerStatsCards";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ProfileEditor } from "@/components/ProfileEditor";
+import { ProfileHeader } from "@/components/ProfileHeader";
+import type { Tier } from "@/components/TrustBadge";
 import { SuspensionBanner } from "@/components/SuspensionBanner";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
@@ -262,7 +264,24 @@ function DashboardPageInner() {
           <div className="mt-4">{token ? <DealerStatsCards token={token} /> : null}</div>
         </section>
 
-        <section aria-labelledby="profile-heading" className="mt-12">
+        {/* Profile header — circular logo, business name, tier badge.
+            Sits ABOVE the read-only stats so the dealer's brand is the
+            first thing they see in the profile area. */}
+        {token ? (
+          <div className="mt-12">
+            <ProfileHeader
+              token={token}
+              businessName={dealer.business_name}
+              city={dealer.city}
+              tier={dealer.tier as Tier}
+              trustScore={Number(dealer.trust_score) || 0}
+              logoUrl={dealer.logo_url}
+              onLogoChanged={(url) => setDealer((d) => (d ? { ...d, logo_url: url } : d))}
+            />
+          </div>
+        ) : null}
+
+        <section aria-labelledby="profile-heading" className="mt-8">
           <h2 id="profile-heading" className="text-brand-navy text-lg font-semibold">
             פרטי העסק
           </h2>
