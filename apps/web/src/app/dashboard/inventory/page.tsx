@@ -12,6 +12,7 @@ import {
   type InventoryPayload,
   InventoryFormDialog,
 } from "@/components/InventoryFormDialog";
+import { MobileFAB } from "@/components/MobileFAB";
 import { NotificationBell } from "@/components/NotificationBell";
 import { PauseDialog } from "@/components/PauseDialog";
 import { SellVehicleDialog } from "@/components/SellVehicleDialog";
@@ -671,6 +672,10 @@ function InventoryPageInner() {
           token={token}
         />
       ) : null}
+
+      {/* Mobile FAB — duplicates the in-flow "הוסף רכב" button so phone
+          users have a thumb-reachable add action. Hidden on md+. */}
+      <MobileFAB label="הוסף רכב" onClick={openCreate} />
     </div>
   );
 }

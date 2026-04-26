@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
+import { FilterFABIcon, MobileFAB } from "@/components/MobileFAB";
 import { NotificationBell } from "@/components/NotificationBell";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { TrustBadge } from "@/components/TrustBadge";
@@ -555,6 +556,14 @@ export default function MarketplacePage() {
           </div>
         </div>
       </main>
+
+      {/* Mobile FAB — opens the filters panel on phones where the
+          inline "הצג סינון" toggle is hidden under the results list. */}
+      <MobileFAB
+        label="פתח סינון"
+        icon={<FilterFABIcon />}
+        onClick={() => setMobileFiltersOpen(true)}
+      />
     </div>
   );
 }
