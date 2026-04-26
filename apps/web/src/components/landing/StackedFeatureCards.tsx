@@ -99,7 +99,13 @@ export function StackedFeatureCards({
       onKeyDown={onKeyDown}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
-      className="relative mx-auto w-full max-w-md"
+      // touch-pan-y tells iOS Safari "the user can scroll the page
+      // vertically through this element, but horizontal touches are
+      // ours to handle" — prevents the WHOLE PAGE from sliding
+      // sideways on iOS gestures while the user swipes the cards.
+      // overflow-hidden clips any transform-induced visual overflow
+      // so the carousel never expands the document width.
+      className="relative mx-auto w-full max-w-md touch-pan-y overflow-hidden"
     >
       {/* Live region announces the position change to SR users.
           Keyed on activeIndex so it re-renders + re-announces
