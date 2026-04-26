@@ -71,7 +71,7 @@ export function WatermarkOverlay() {
             // back to email only. Watermark still serves its purpose.
           }
         } else if (who.user_type === "admin") {
-          line = `Admin · ${who.email}`;
+          line = `מנהל מערכת · ${who.email}`;
         }
 
         if (!cancelled) setLabel(line);
