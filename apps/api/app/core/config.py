@@ -71,6 +71,13 @@ class Settings(BaseSettings):
     gmail_app_password: str = Field(default="")
     gmail_from: str = Field(default="")
 
+    # Sentry — error + performance monitoring. Empty DSN disables the
+    # SDK entirely (init becomes a no-op). Sample rates are conservative
+    # for free-tier; bump traces_sample_rate up if you're investigating
+    # a specific perf regression.
+    sentry_dsn: str = Field(default="")
+    sentry_traces_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:

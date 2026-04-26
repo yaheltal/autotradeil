@@ -3,11 +3,49 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.core.config import settings
+
+
+# ---------------------------------------------------------------------------
+# Sentry — initialize BEFORE the FastAPI() instance so the SDK can patch the
+# starlette/asgi internals correctly. Empty DSN → no-op (zero overhead).
+#
+# `before_send` filters out client-error HTTPExceptions (4xx). Those are
+# normal control flow (auth failures, 404s, validation errors) — sending
+# them to Sentry would just create noise + eat the free-tier quota. We
+# still capture 5xx and uncaught exceptions, which is what we actually
+# care about in production.
+# ---------------------------------------------------------------------------
+if settings.sentry_dsn:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+    def _drop_4xx_http_exceptions(event, hint):  # type: ignore[no-untyped-def]
+        exc_info = hint.get("exc_info") if hint else None
+        if exc_info:
+            exc = exc_info[1]
+            if isinstance(exc, HTTPException) and 400 <= exc.status_code < 500:
+                return None  # drop — not a real error
+        return event
+
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.environment,
+        traces_sample_rate=settings.sentry_traces_sample_rate,
+        # PII off by default — we never want dealer ID-document URLs or
+        # JWT contents leaking into Sentry breadcrumbs.
+        send_default_pii=False,
+        integrations=[
+            FastApiIntegration(transaction_style="endpoint"),
+            SqlalchemyIntegration(),
+        ],
+        before_send=_drop_4xx_http_exceptions,
+    )
 from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, get_logger, log_request
 from app.routers import (

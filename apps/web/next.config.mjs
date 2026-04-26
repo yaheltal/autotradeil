@@ -63,4 +63,31 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Sentry — wrap the config when a DSN is set so source-maps upload
+// during prod builds. With no DSN the wrapper is a pass-through.
+// withSentryConfig is dynamic-imported so dev sessions without the
+// package installed (or with @sentry/nextjs failing for any reason)
+// still load the app config cleanly.
+async function maybeWithSentry(cfg) {
+  if (!process.env.NEXT_PUBLIC_SENTRY_DSN) return cfg;
+  try {
+    const { withSentryConfig } = await import("@sentry/nextjs");
+    return withSentryConfig(cfg, {
+      // Source-map upload requires SENTRY_AUTH_TOKEN at build time.
+      // Set it in Vercel project env (NOT NEXT_PUBLIC_*).
+      silent: true,
+      org: process.env.SENTRY_ORG,
+      project: process.env.SENTRY_PROJECT,
+      // Hide source maps from the public bundle but still upload them
+      // to Sentry — keeps stack traces useful without leaking source
+      // to anyone who opens devtools.
+      hideSourceMaps: true,
+      disableLogger: true,
+      automaticVercelMonitors: true,
+    });
+  } catch {
+    return cfg;
+  }
+}
+
+export default await maybeWithSentry(nextConfig);
