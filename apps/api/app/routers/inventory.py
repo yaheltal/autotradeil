@@ -1177,3 +1177,168 @@ async def lookup_by_image(
         result["market_price"] = None
 
     return result
+
+
+@router.post("/scan-registration")
+async def scan_registration(
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    file: UploadFile = File(...),
+) -> dict[str, object | None]:
+    """Extract structured fields from an Israeli vehicle-registration document
+    (רישיון רכב) using Claude Vision.
+
+    Accepts JPEG/PNG/WebP/HEIC. Sends the image to Claude with a strict
+    prompt that asks for plate, make, model, year, engine_volume,
+    fuel_type, color, weight, seats, ownership_type, and license expiry —
+    each with a confidence label per field. Falls back to nulls for
+    fields it can't read.
+    """
+    import base64
+    import json as json_stdlib
+
+    import anthropic
+
+    from app.core.config import settings as app_settings
+
+    if not app_settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="שירות זיהוי לא מוגדר",
+        )
+
+    if file.content_type not in ALLOWED_IMAGE_MIME and file.content_type != "application/pdf":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="סוג קובץ לא נתמך — JPG / PNG / WebP / HEIC / PDF בלבד",
+        )
+
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="הקובץ גדול מדי (מקסימום 10MB)",
+        )
+
+    image_b64 = base64.standard_b64encode(contents).decode("ascii")
+    media_type = (
+        "image/jpeg"
+        if file.content_type == "image/heic"
+        else (file.content_type or "image/jpeg")
+    )
+
+    client = anthropic.Anthropic(api_key=app_settings.anthropic_api_key)
+
+    prompt = (
+        "This is a scan of an Israeli vehicle registration certificate "
+        "(רישיון רכב). Extract every field you can read into JSON.\n\n"
+        "Return ONLY this JSON shape — no commentary, no fences:\n"
+        "{\n"
+        '  "plate_number": "<digits only, no dashes>",\n'
+        '  "make": "<manufacturer in Hebrew when applicable>",\n'
+        '  "model": "<model name>",\n'
+        '  "year": <int year of manufacture or null>,\n'
+        '  "engine_volume": <decimal liters e.g. 1.6 or null>,\n'
+        '  "fuel_type": "petrol" | "diesel" | "electric" | "hybrid" | null,\n'
+        '  "color": "<color in Hebrew>",\n'
+        '  "weight_kg": <int kg or null>,\n'
+        '  "seats": <int or null>,\n'
+        '  "ownership_type": "private" | "dealer" | "leasing" | "rental" | "government" | null,\n'
+        '  "expiry_date": "<YYYY-MM-DD or null>",\n'
+        '  "confidence": {"<field>": "high"|"medium"|"low", ...}\n'
+        "}\n\n"
+        "Engine volume in registration is usually labelled נפח מנוע — convert "
+        "from cm³ to liters (1600 → 1.6). For fuel: בנזין=petrol, דיזל=diesel, "
+        "חשמלי=electric, היברידי=hybrid. For ownership: פרטי=private, סוחר=dealer, "
+        "ליסינג=leasing, השכרה=rental, ממשלתי/רשות=government. "
+        "Plate digits only (strip dashes/spaces). "
+        "Return null for any field you cannot read confidently."
+    )
+
+    try:
+        message = client.messages.create(
+            model="claude-opus-4-7",
+            max_tokens=600,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": image_b64,
+                            },
+                        },
+                        {"type": "text", "text": prompt},
+                    ],
+                }
+            ],
+        )
+    except anthropic.APIError as exc:
+        logger.warning("anthropic registration scan failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="שירות הסריקה לא זמין כרגע",
+        )
+
+    text_block = ""
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            text_block = block.text
+            break
+
+    cleaned = text_block.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("```")[1]
+        if cleaned.startswith("json"):
+            cleaned = cleaned[4:]
+        cleaned = cleaned.strip()
+    try:
+        parsed = json_stdlib.loads(cleaned)
+    except json_stdlib.JSONDecodeError:
+        parsed = {}
+
+    def _coerce_int(v: object) -> int | None:
+        try:
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _coerce_float(v: object) -> float | None:
+        try:
+            return float(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    fuel = parsed.get("fuel_type")
+    if fuel not in ("petrol", "diesel", "electric", "hybrid"):
+        fuel = None
+
+    ownership = parsed.get("ownership_type")
+    if ownership not in ("private", "dealer", "leasing", "rental", "government"):
+        ownership = None
+
+    plate_raw = parsed.get("plate_number")
+    plate_digits = "".join(c for c in str(plate_raw) if c.isdigit()) if plate_raw else None
+    if plate_digits and not (6 <= len(plate_digits) <= 9):
+        plate_digits = None
+
+    confidence = parsed.get("confidence")
+    if not isinstance(confidence, dict):
+        confidence = {}
+
+    return {
+        "plate_number": plate_digits,
+        "make": (parsed.get("make") or None),
+        "model": (parsed.get("model") or None),
+        "year": _coerce_int(parsed.get("year")),
+        "engine_volume": _coerce_float(parsed.get("engine_volume")),
+        "fuel_type": fuel,
+        "color": (parsed.get("color") or None),
+        "weight_kg": _coerce_int(parsed.get("weight_kg")),
+        "seats": _coerce_int(parsed.get("seats")),
+        "ownership_type": ownership,
+        "expiry_date": (parsed.get("expiry_date") or None),
+        "confidence": confidence,
+    }

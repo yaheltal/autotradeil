@@ -325,6 +325,12 @@ export function InventoryFormDialog({
   const [imgStatus, setImgStatus] = useState<string>("");
   const [imgError, setImgError] = useState<string>("");
 
+  // Vehicle-registration scan (Claude Vision)
+  const regInputRef = useRef<HTMLInputElement>(null);
+  const [regBusy, setRegBusy] = useState(false);
+  const [regStatus, setRegStatus] = useState<string>("");
+  const [regError, setRegError] = useState<string>("");
+
   // Live-region for combobox revert announcements
   const [comboStatus, setComboStatus] = useState<string>("");
 
@@ -576,6 +582,111 @@ export function InventoryFormDialog({
       setPlateError(e instanceof Error ? e.message : "שגיאה בחיפוש");
     } finally {
       setPlateBusy(false);
+    }
+  };
+
+  const runRegistrationScan = async (file: File) => {
+    if (!token) return;
+    setRegBusy(true);
+    setRegError("");
+    setRegStatus("סורק רישיון רכב…");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"}/api/v1/inventory/scan-registration`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          body: form,
+        },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg = body.error?.message ?? body.detail ?? `HTTP ${res.status}`;
+        throw new Error(msg);
+      }
+      const data = (await res.json()) as {
+        plate_number: string | null;
+        make: string | null;
+        model: string | null;
+        year: number | null;
+        engine_volume: number | null;
+        fuel_type: FuelType | null;
+        color: string | null;
+        ownership_type: OwnershipType | null;
+      };
+
+      const filled: string[] = [];
+
+      if (data.plate_number) {
+        setPlate(data.plate_number);
+        setPlateAutofilled(true);
+      }
+      if (data.make) {
+        const canonMake = matchMake(data.make) ?? data.make;
+        setValue("make", canonMake, { shouldValidate: true });
+        filled.push("make");
+        if (data.model) {
+          const canonModel = matchModel(canonMake, data.model) ?? data.model;
+          setValue("model", canonModel, { shouldValidate: true });
+          filled.push("model");
+        }
+      } else if (data.model) {
+        setValue("model", data.model, { shouldValidate: true });
+        filled.push("model");
+      }
+      if (data.year) {
+        setValue("year", String(data.year), { shouldValidate: true });
+        filled.push("year");
+      }
+      if (data.color) {
+        setValue("color", data.color, { shouldValidate: true });
+        filled.push("color");
+      }
+      if (data.fuel_type) {
+        setValue("fuel_type", data.fuel_type, { shouldValidate: true });
+        filled.push("fuel_type");
+      }
+      if (data.engine_volume != null && data.engine_volume > 0) {
+        const ev = String(data.engine_volume);
+        // Snap to closed list — the form schema only accepts ENGINE_OPTIONS values.
+        const allowed = ENGINE_OPTIONS.map((o) => o.value);
+        if (allowed.includes(ev)) {
+          setValue("engine_volume", ev as FormValues["engine_volume"], {
+            shouldValidate: true,
+          });
+          filled.push("engine_volume");
+        }
+      }
+      if (data.ownership_type) {
+        // Map to the combined hand_combo dropdown. For private/dealer
+        // we'd need a hand integer too; without it, pick the most common
+        // (יד 1 — private/dealer). leasing/rental/government use no hand.
+        const ownership = data.ownership_type;
+        const fallbackHand = ownership === "private" || ownership === "dealer" ? 1 : null;
+        const encoded = encodeHand(fallbackHand, ownership);
+        if (encoded) {
+          setValue("hand_combo", encoded, { shouldValidate: true });
+          filled.push("hand_combo");
+        }
+      }
+      setAutofilledFields((prev) => {
+        const next = new Set(prev);
+        filled.forEach((f) => next.add(f));
+        return next;
+      });
+
+      setRegStatus(
+        filled.length
+          ? `הרישיון נסרק — מולאו ${filled.length} שדות אוטומטית. בדוק ועדכן לפני שמירה.`
+          : "הרישיון נסרק — לא ניתן היה לחלץ שדות. נסה תמונה ברורה יותר.",
+      );
+    } catch (e) {
+      setRegError(e instanceof Error ? e.message : "שגיאה בסריקת הרישיון");
+      setRegStatus("");
+    } finally {
+      setRegBusy(false);
     }
   };
 
@@ -971,6 +1082,70 @@ export function InventoryFormDialog({
                     </p>
                   ) : null}
                 </div>
+              ) : null}
+            </section>
+
+            {/* ==========================================================
+                Vehicle registration scanner — Claude Vision auto-fills
+                make/model/year/engine_volume/fuel/color/ownership from
+                a photo of the registration document (רישיון רכב).
+                ========================================================== */}
+            <section
+              aria-labelledby="reg-scan-heading"
+              className="border-brand-gold/40 bg-brand-cream/60 mt-5 rounded-lg border p-4"
+            >
+              <h3
+                id="reg-scan-heading"
+                className="text-brand-navy flex items-center gap-2 text-sm font-bold"
+              >
+                <span aria-hidden="true" className="text-brand-gold">
+                  ✦
+                </span>
+                סריקת רישיון רכב — מילוי אוטומטי
+              </h3>
+              <p className="text-brand-ink/70 mt-1 text-xs">
+                צלם או העלה תמונה של רישיון הרכב — Claude AI יחלץ אוטומטית את כל הפרטים.
+              </p>
+              <input
+                ref={regInputRef}
+                type="file"
+                accept="image/*,application/pdf"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void runRegistrationScan(file);
+                  e.target.value = "";
+                }}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => regInputRef.current?.click()}
+                  disabled={regBusy}
+                  aria-busy={regBusy || undefined}
+                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
+                >
+                  <span aria-hidden="true">📋</span>
+                  {regBusy ? "סורק…" : "סרוק רישיון רכב"}
+                </button>
+              </div>
+              {regStatus ? (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  className="text-brand-ink/75 mt-2 text-xs"
+                  key={regStatus}
+                >
+                  {regStatus}
+                </p>
+              ) : null}
+              {regError ? (
+                <p
+                  role="alert"
+                  className="bg-danger-bg text-danger-text mt-2 rounded-md px-3 py-2 text-xs"
+                >
+                  {regError}
+                </p>
               ) : null}
             </section>
 
