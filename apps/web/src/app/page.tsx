@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { LandingNav } from "@/components/LandingNav";
+import { StackedFeatureCards } from "@/components/landing/StackedFeatureCards";
 import { RenderKeepAlive } from "@/components/RenderKeepAlive";
 
 /*
@@ -643,34 +644,17 @@ export default function Home() {
               </p>
             </div>
 
-            <ul className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {dealerFeatures.map((f) => {
-                const Icon = FEATURE_ICON[f.icon];
-                return (
-                  <li
-                    key={f.title}
-                    className="border-brand-navy/12 hover:border-brand-gold/60 group relative overflow-hidden rounded-xl border bg-white p-6 transition-all hover:shadow-lg motion-reduce:transition-none sm:p-7"
-                  >
-                    <span
-                      aria-hidden="true"
-                      className="bg-brand-gold/0 group-hover:bg-brand-gold/100 absolute inset-x-0 top-0 h-0.5 transition-colors"
-                    />
-                    <div
-                      aria-hidden="true"
-                      className="bg-brand-navy/5 text-brand-navy group-hover:bg-brand-gold group-hover:text-brand-navy inline-flex h-12 w-12 items-center justify-center rounded-lg transition-colors"
-                    >
-                      <Icon className="h-6 w-6" />
-                    </div>
-                    <h3 className="text-brand-navy mt-5 font-serif text-xl font-bold sm:text-[1.4rem]">
-                      {f.title}
-                    </h3>
-                    <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-[15px]">
-                      {f.body}
-                    </p>
-                  </li>
-                );
-              })}
-            </ul>
+            <div className="mt-12 sm:mt-14">
+              <StackedFeatureCards
+                ariaLabel="כרטיסי יתרונות לסוחרים"
+                cards={dealerFeatures.map((f) => ({
+                  key: f.title,
+                  icon: FEATURE_ICON[f.icon],
+                  title: f.title,
+                  body: f.body,
+                }))}
+              />
+            </div>
           </div>
         </section>
 
