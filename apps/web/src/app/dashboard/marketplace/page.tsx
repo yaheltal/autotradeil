@@ -54,6 +54,7 @@ type Result = {
   seller_tier: "bronze" | "silver" | "gold" | "platinum";
   primary_image_url: string | null;
   created_at: string;
+  is_own?: boolean;
 };
 
 type SearchResponse = {
@@ -620,9 +621,14 @@ function ResultCard({ v }: { v: Result }) {
   const fullLabel = `${v.make} ${v.model} שנת ${v.year}`;
 
   return (
-    <li className="border-brand-navy/10 overflow-hidden rounded-lg border bg-white">
+    <li
+      className={[
+        "overflow-hidden rounded-lg border bg-white",
+        v.is_own ? "border-ok ring-ok/30 ring-2" : "border-brand-navy/10",
+      ].join(" ")}
+    >
       <article aria-labelledby={titleId}>
-        <div className="bg-brand-navy/5 aspect-[16/9] w-full">
+        <div className="bg-brand-navy/5 relative aspect-[16/9] w-full">
           {v.primary_image_url ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -639,6 +645,14 @@ function ResultCard({ v }: { v: Result }) {
               🚗
             </div>
           )}
+          {v.is_own ? (
+            <span className="bg-ok absolute end-2 top-2 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold text-white shadow">
+              <span aria-hidden="true" className="me-1">
+                ★
+              </span>
+              הרכב שלך
+            </span>
+          ) : null}
         </div>
 
         <div className="p-4">

@@ -282,8 +282,10 @@ async def search_vehicles(
         # check as belt-and-suspenders so a race on auto-unpause doesn't leak.
         (Inventory.paused_until.is_(None)) | (Inventory.paused_until <= now),
     ]
-    if caller_dealer is not None:
-        conds.append(Inventory.dealer_id != caller_dealer.id)
+    # Caller's own vehicles ARE included in the marketplace listing now;
+    # the frontend renders them with a green "הרכב שלך" badge so the
+    # dealer can see how their inventory looks alongside the competition.
+    # We still skip the offer button on the detail page (handled there).
     if seller_dealer_id:
         conds.append(Inventory.dealer_id == seller_dealer_id)
 
@@ -361,6 +363,7 @@ async def search_vehicles(
             seller_tier=dealer.tier,
             primary_image_url=primary_images.get(inv.id),
             created_at=inv.created_at,
+            is_own=(caller_dealer is not None and dealer.id == caller_dealer.id),
         )
         for inv, dealer in rows
     ]
@@ -471,6 +474,7 @@ async def get_vehicle_detail(
             MarketplaceVehicleImage(id=img.id, url=img.url, position=img.position)
             for img in images
         ],
+        is_own=is_seller_viewing,
     )
 
 

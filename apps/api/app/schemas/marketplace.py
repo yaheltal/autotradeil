@@ -49,6 +49,10 @@ class VehicleSearchResult(BaseModel):
     seller_tier: str
     primary_image_url: str | None
     created_at: datetime
+    # True when this card is owned by the calling dealer — frontend
+    # surfaces a green "הרכב שלך" badge and skips the make-offer CTA
+    # on the detail page so you don't bid on yourself.
+    is_own: bool = False
 
 
 class VehicleSearchResponse(BaseModel):
@@ -105,6 +109,9 @@ class MarketplaceVehicleDetail(BaseModel):
     created_at: datetime
     seller: MarketplaceSellerInfo
     images: list[MarketplaceVehicleImage]
+    # Set true when the caller IS the seller — frontend hides the
+    # make-offer CTA and shows a green "הרכב שלך" banner instead.
+    is_own: bool = False
 
 
 # =============================================================================

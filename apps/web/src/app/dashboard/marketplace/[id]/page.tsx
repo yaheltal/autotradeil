@@ -65,6 +65,7 @@ type Detail = {
   created_at: string;
   seller: Seller;
   images: VehicleImage[];
+  is_own?: boolean;
 };
 
 const FUEL_LABEL: Record<string, string> = {
@@ -328,13 +329,23 @@ export default function MarketplaceDetailPage() {
                   <span aria-hidden="true">{priceF.visual}</span>
                   <span className="sr-only">{priceF.sr}</span>
                 </p>
-                <button
-                  type="button"
-                  onClick={() => setOfferOpen(true)}
-                  className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  שלח הצעת מחיר
-                </button>
+                {data.is_own ? (
+                  <p
+                    className="border-ok/40 bg-ok-bg/40 text-ok-text mt-4 inline-flex w-full items-center justify-center gap-1.5 rounded-md border px-3 py-2 text-sm font-semibold"
+                    role="status"
+                  >
+                    <span aria-hidden="true">★</span>
+                    הרכב שלך — אינך יכול להציע על עצמך
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setOfferOpen(true)}
+                    className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-bold focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    שלח הצעת מחיר
+                  </button>
+                )}
               </div>
 
               <div className="border-brand-navy/10 rounded-lg border bg-white p-5">
