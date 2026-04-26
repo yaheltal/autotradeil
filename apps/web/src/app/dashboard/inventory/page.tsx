@@ -171,6 +171,7 @@ function InventoryPageInner() {
   const [smartModel, setSmartModel] = useState("");
   const [smartYearMin, setSmartYearMin] = useState<number | null>(null);
   const [smartYearMax, setSmartYearMax] = useState<number | null>(null);
+  const [smartPriceMin, setSmartPriceMin] = useState<number | null>(null);
   const [smartPriceMax, setSmartPriceMax] = useState<number | null>(null);
   const [smartFallbackQ, setSmartFallbackQ] = useState("");
   const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
@@ -184,6 +185,7 @@ function InventoryPageInner() {
       if (smartModel) qs.set("model", smartModel);
       if (smartYearMin !== null) qs.set("year_min", String(smartYearMin));
       if (smartYearMax !== null) qs.set("year_max", String(smartYearMax));
+      if (smartPriceMin !== null) qs.set("price_min", String(smartPriceMin));
       if (smartPriceMax !== null) qs.set("price_max", String(smartPriceMax));
       if (smartFallbackQ) qs.set("q", smartFallbackQ);
       qs.set("per_page", "20");
@@ -202,6 +204,7 @@ function InventoryPageInner() {
     smartModel,
     smartYearMin,
     smartYearMax,
+    smartPriceMin,
     smartPriceMax,
     smartFallbackQ,
   ]);
@@ -214,6 +217,7 @@ function InventoryPageInner() {
       setSmartModel("");
       setSmartYearMin(null);
       setSmartYearMax(null);
+      setSmartPriceMin(null);
       setSmartPriceMax(null);
       setSmartFallbackQ("");
       return;
@@ -224,6 +228,7 @@ function InventoryPageInner() {
       setSmartModel(parsed.filters.model ?? "");
       setSmartYearMin(parsed.filters.year_min);
       setSmartYearMax(parsed.filters.year_max);
+      setSmartPriceMin(parsed.filters.price_min);
       setSmartPriceMax(parsed.filters.price_max);
       setSmartFallbackQ(parsed.fallback_q ?? "");
     }
@@ -235,6 +240,7 @@ function InventoryPageInner() {
     setSmartModel("");
     setSmartYearMin(null);
     setSmartYearMax(null);
+    setSmartPriceMin(null);
     setSmartPriceMax(null);
     setSmartFallbackQ("");
   };
@@ -244,6 +250,7 @@ function InventoryPageInner() {
     smartModel ||
     smartYearMin ||
     smartYearMax ||
+    smartPriceMin ||
     smartPriceMax ||
     smartFallbackQ
   );
@@ -473,7 +480,13 @@ function InventoryPageInner() {
                   : smartYearMin || smartYearMax
                     ? ` · שנים=${smartYearMin ?? "?"}-${smartYearMax ?? "?"}`
                     : ""}
-                {smartPriceMax ? ` · מחיר עד ${smartPriceMax.toLocaleString("he-IL")}₪` : ""}
+                {smartPriceMin && smartPriceMax
+                  ? ` · מחיר ${smartPriceMin.toLocaleString("he-IL")}–${smartPriceMax.toLocaleString("he-IL")}₪`
+                  : smartPriceMin
+                    ? ` · מחיר מ-${smartPriceMin.toLocaleString("he-IL")}₪`
+                    : smartPriceMax
+                      ? ` · מחיר עד ${smartPriceMax.toLocaleString("he-IL")}₪`
+                      : ""}
                 {smartFallbackQ ? ` · ״${smartFallbackQ}״` : ""}
               </p>
             ) : null}

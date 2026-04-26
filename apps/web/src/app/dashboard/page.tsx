@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { CommandCenter } from "@/components/dashboard/CommandCenter";
+import { DashboardSmartBar } from "@/components/dashboard/DashboardSmartBar";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { DealerStatsCards } from "@/components/DealerStatsCards";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -231,6 +232,8 @@ function DashboardPageInner() {
             שלום, {dealer.business_name}.
           </h1>
         </header>
+
+        {token ? <DashboardSmartBar token={token} /> : null}
 
         {token ? <CommandCenter token={token} /> : null}
 
