@@ -7,6 +7,7 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import { StatusBadge, deriveStatus } from "@/components/StatusBadge";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { useSmartDealerFilters } from "@/hooks/useSmartDealerFilters";
 import { apiFetch } from "@/lib/api";
 
 type DealerListItem = {
@@ -67,6 +68,35 @@ function DealersListPageInner() {
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { parse: parseSmart, busy: parsingSmart } = useSmartDealerFilters(token);
+
+  // Smart-search trigger — fires when the user submits the form (Enter
+  // or button click). Parses the input via Claude → DealerFilters and
+  // applies status/tier/kyc/city to the URL atomically. The residual
+  // text becomes the substring `search` param. Submit short-circuits
+  // the debounced typing path so we don't double-fetch.
+  const handleSmartSearch = async () => {
+    const q = searchInput.trim();
+    if (!q) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const parsed = await parseSmart(q);
+    const next = new URLSearchParams(params.toString());
+    next.delete("page");
+    if (parsed) {
+      const f = parsed.filters;
+      // Explicit existing dropdown choices WIN — Claude only fills gaps
+      if (f.status && !statusParam) next.set("status", f.status);
+      if (f.tier && !tierParam) next.set("tier", f.tier);
+      if (f.kyc_status && !kycParam) next.set("kyc_status", f.kyc_status);
+      const remainder = f.search ?? (f.city ? f.city : null);
+      if (remainder) next.set("search", remainder);
+      else next.delete("search");
+    } else {
+      next.set("search", q);
+    }
+    router.replace(`/admin/dealers?${next.toString()}`);
+  };
 
   // Keep local input in sync when URL changes (back/forward).
   useEffect(() => {
@@ -179,23 +209,49 @@ function DealersListPageInner() {
           </ul>
         </nav>
 
-        <div className="mt-6">
+        <form
+          role="search"
+          aria-label="חיפוש סוחרים"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void handleSmartSearch();
+          }}
+          className="mt-6"
+        >
           <label htmlFor="dealer-search" className="text-brand-navy block text-sm font-medium">
-            חיפוש
+            חיפוש חכם
+            <span
+              aria-hidden="true"
+              title="ניתן להזין משפט בעברית — Claude יחלץ סטטוס/דרגה/KYC/עיר אוטומטית"
+              className="text-brand-gold ms-1.5 text-xs"
+            >
+              ✦
+            </span>
           </label>
           <p id="dealer-search-hint" className="text-brand-navy/70 mt-1 text-xs">
-            חיפוש לפי שם עסק, שם איש קשר, או אימייל.
+            דוגמאות: ״סוחרים שלא אומתו״, ״סוחרי גולד״, ״TalCars״, ״סוחרים עם KYC הוגש״ — או חיפוש
+            רגיל לפי שם עסק / איש קשר / אימייל.
           </p>
-          <input
-            id="dealer-search"
-            type="search"
-            autoComplete="off"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            aria-describedby="dealer-search-hint"
-            className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full max-w-md rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-          />
-        </div>
+          <div className="mt-2 flex max-w-md gap-2">
+            <input
+              id="dealer-search"
+              type="search"
+              autoComplete="off"
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              aria-describedby="dealer-search-hint"
+              className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block min-h-11 flex-1 rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+            />
+            <button
+              type="submit"
+              disabled={parsingSmart || !searchInput.trim()}
+              aria-busy={parsingSmart || undefined}
+              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-60"
+            >
+              {parsingSmart ? "מנתח…" : "חפש"}
+            </button>
+          </div>
+        </form>
 
         <div className="mt-4 grid gap-3 sm:max-w-2xl sm:grid-cols-2">
           <div>

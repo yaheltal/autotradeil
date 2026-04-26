@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_verified_dealer
+from app.core.auth import require_admin, require_verified_dealer
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.database import get_db
@@ -86,6 +86,22 @@ class PriceAnalysisResponse(BaseModel):
 class RecommendationsResponse(BaseModel):
     vehicles: list[VehicleSearchResult]
     reason: str
+
+
+class DealerFilters(BaseModel):
+    """Admin-side dealer-search filters extracted from a Hebrew NL query.
+    Mirrors the column shape of /api/v1/admin/dealers query params."""
+    # Verification status (pending = not verified yet, no rejection;
+    # verified = approved; rejected = explicitly rejected)
+    status: str | None = None  # "pending" | "verified" | "rejected"
+    tier: str | None = None  # bronze | silver | gold | platinum
+    kyc_status: str | None = None  # pending | submitted | approved | rejected
+    city: str | None = None  # passed through to substring search field
+    search: str | None = None  # residual substring (business name, email, contact)
+
+
+class ParseDealerFiltersResponse(BaseModel):
+    filters: DealerFilters
 
 
 class DashboardAskRequest(BaseModel):
@@ -228,6 +244,78 @@ Examples:
     except Exception as exc:  # noqa: BLE001
         logger.info("ai.search filter coercion failed: %s payload=%s", exc, cleaned)
         return AISearchFilters()
+
+
+async def parse_dealer_query(query: str) -> DealerFilters:
+    """Hebrew NL → DealerFilters for the admin dealers search bar.
+
+    Returns an empty DealerFilters on any error so the search still runs
+    (caller falls back to substring on the original query)."""
+    client = _anthropic_client()
+    if client is None:
+        return DealerFilters()
+
+    prompt = f"""Parse this Hebrew dealer-search query into JSON filters.
+
+Query: "{query}"
+
+Return ONLY a JSON object (no prose, no code fences) with these optional fields:
+{{
+  "status": "pending" | "verified" | "rejected" | null,
+  "tier": "bronze" | "silver" | "gold" | "platinum" | null,
+  "kyc_status": "pending" | "submitted" | "approved" | "rejected" | null,
+  "city": "city name in Hebrew or null",
+  "search": "remaining business-name / contact-name substring or null"
+}}
+
+Rules:
+- "סוחרים שלא אומתו" / "ממתין לאישור" → status: "pending"
+- "מאומתים" / "אושרו" → status: "verified"
+- "נדחו" → status: "rejected"
+- "גולד" / "זהב" → tier: "gold". "פלטינום" → "platinum".
+  "כסף" / "סילבר" → "silver". "ברונזה" → "bronze".
+- "KYC הוגש" → kyc_status: "submitted". "KYC מאושר" → "approved".
+  "KYC נדחה" → "rejected". "ללא KYC" / "טרם הגיש" → "pending".
+- City names like "תל אביב" / "חיפה" → city.
+- Anything else (a name fragment) → search.
+- Omit fields you are not sure about (use null).
+
+Examples:
+"סוחרים שלא אומתו מתל אביב" → {{"status": "pending", "city": "תל אביב"}}
+"סוחרי גולד" → {{"tier": "gold"}}
+"TalCars" → {{"search": "TalCars"}}
+"סוחרים עם KYC הוגש" → {{"kyc_status": "submitted"}}
+"""
+    try:
+        message = client.messages.create(
+            model=CLAUDE_MODEL,
+            max_tokens=400,
+            messages=[{"role": "user", "content": prompt}],
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ai.parse_dealer parse failed: %s", exc)
+        return DealerFilters()
+
+    text = ""
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            text = block.text
+            break
+    parsed = _safe_json_extract(text)
+    if parsed is None:
+        return DealerFilters()
+
+    cleaned: dict[str, Any] = {}
+    for key in ("status", "tier", "kyc_status", "city", "search"):
+        v = parsed.get(key)
+        if v is None or v == "":
+            continue
+        cleaned[key] = v
+    try:
+        return DealerFilters(**cleaned)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ai.parse_dealer coercion failed: %s payload=%s", exc, cleaned)
+        return DealerFilters()
 
 
 # =============================================================================
@@ -400,6 +488,19 @@ async def ai_parse_filters(
         filters=filters,
         fallback_q=payload.query.strip() if not any_set else None,
     )
+
+
+@router.post("/parse-dealer-filters", response_model=ParseDealerFiltersResponse)
+async def ai_parse_dealer_filters(
+    payload: AISearchRequest,
+    _admin: Annotated[User, Depends(require_admin)],
+) -> ParseDealerFiltersResponse:
+    """Hebrew NL → admin dealer-list filters.
+
+    Admin-gated since dealer listings are admin-only. Reuses the
+    AISearchRequest body shape for consistency."""
+    filters = await parse_dealer_query(payload.query)
+    return ParseDealerFiltersResponse(filters=filters)
 
 
 @router.post("/dashboard-assistant", response_model=DashboardAskResponse)
