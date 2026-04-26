@@ -368,9 +368,27 @@ function InventoryPageInner() {
             </h2>
 
             {!data ? (
-              <p role="status" className="text-brand-ink/60 p-8">
-                טוען…
-              </p>
+              // Skeleton grid that mirrors the eventual card layout —
+              // prevents layout jump when the data lands. role=status
+              // so SR users hear "loading" once.
+              <div role="status" aria-live="polite" className="mt-2">
+                <span className="sr-only">טוען רכבים…</span>
+                <ul className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <li
+                      key={i}
+                      aria-hidden="true"
+                      className="border-brand-navy/10 rounded-lg border bg-white p-5"
+                    >
+                      <div className="bg-brand-navy/10 h-5 w-2/3 rounded motion-safe:animate-pulse" />
+                      <div className="bg-brand-navy/10 mt-2 h-4 w-1/3 rounded motion-safe:animate-pulse" />
+                      <div className="bg-brand-navy/10 mt-5 h-3 w-full rounded motion-safe:animate-pulse" />
+                      <div className="bg-brand-navy/10 mt-2 h-3 w-4/5 rounded motion-safe:animate-pulse" />
+                      <div className="bg-brand-navy/10 mt-6 h-10 w-full rounded motion-safe:animate-pulse" />
+                    </li>
+                  ))}
+                </ul>
+              </div>
             ) : data.items.length === 0 ? (
               <p className="border-brand-navy/10 text-brand-ink/60 rounded-lg border bg-white p-10 text-center">
                 אין עדיין רכבים במלאי. לחץ על &quot;הוסף רכב&quot; כדי להוסיף את הרכב הראשון.

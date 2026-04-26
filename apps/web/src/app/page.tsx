@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { ApiStatus } from "@/components/ApiStatus";
+import { RenderKeepAlive } from "@/components/RenderKeepAlive";
 
 /*
  * AutoTradeIL — landing page (editorial automotive aesthetic).
@@ -69,6 +70,10 @@ const stats = [
 export default function Home() {
   return (
     <>
+      {/* Fire-and-forget /healthz ping to keep the Render free-tier
+          worker warm — every landing visit buys the API another 15min
+          of hot uptime so logged-in flows never pay the cold start. */}
+      <RenderKeepAlive />
       {/* ===================================================================
           NAVBAR — sticky, cream surface with subtle bottom rule.
           Logo wordmark uses display serif so the brand reads as a publication

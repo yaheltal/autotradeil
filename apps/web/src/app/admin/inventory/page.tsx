@@ -206,9 +206,26 @@ export default function AdminInventoryPage() {
         ) : null}
 
         {data === null ? (
-          <p role="status" className="text-brand-ink/60 mt-8 p-8">
-            טוען…
-          </p>
+          <div role="status" aria-live="polite" className="mt-6">
+            <span className="sr-only">טוען רכבים…</span>
+            <div className="border-brand-navy/10 overflow-hidden rounded-lg border bg-white">
+              <div className="bg-brand-navy/5 h-12" />
+              {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+                <div
+                  key={i}
+                  aria-hidden="true"
+                  className="border-brand-navy/10 grid grid-cols-5 gap-4 border-t px-4 py-3"
+                >
+                  {[0, 1, 2, 3, 4].map((c) => (
+                    <div
+                      key={c}
+                      className="bg-brand-navy/10 h-4 w-full rounded motion-safe:animate-pulse"
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
         ) : data.items.length === 0 ? (
           <p className="border-brand-navy/10 text-brand-ink/60 mt-6 rounded-lg border bg-white p-10 text-center">
             לא נמצאו רכבים תואמים

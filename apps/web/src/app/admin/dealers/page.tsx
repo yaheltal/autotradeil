@@ -283,11 +283,20 @@ function DealersListPageInner() {
             </thead>
             <tbody>
               {loadingData && !data ? (
-                <tr>
-                  <td colSpan={9} className="text-brand-ink/60 px-4 py-8 text-center">
-                    <span role="status">טוען…</span>
-                  </td>
-                </tr>
+                <>
+                  <tr className="sr-only" aria-live="polite">
+                    <td colSpan={9}>טוען רשימת סוחרים…</td>
+                  </tr>
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <tr key={i} aria-hidden="true" className="border-brand-navy/10 border-t">
+                      {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((c) => (
+                        <td key={c} className="px-4 py-3">
+                          <div className="bg-brand-navy/10 h-4 w-full rounded motion-safe:animate-pulse" />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </>
               ) : data && data.items.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="text-brand-ink/60 px-4 py-10 text-center">
