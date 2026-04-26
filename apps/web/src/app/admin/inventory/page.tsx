@@ -103,7 +103,7 @@ export default function AdminInventoryPage() {
 
   return (
     <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-7xl px-6 py-10">
+      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6">
         <Link
           href="/admin"
           className="text-brand-navy focus-visible:outline-brand-navy inline-flex items-center gap-1 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"

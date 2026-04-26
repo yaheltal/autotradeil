@@ -195,7 +195,7 @@ export function NotificationBell({ token }: Props) {
 
         <MenuItems
           anchor="bottom end"
-          className="border-brand-navy/15 origin-top-end z-50 mt-2 w-80 rounded-md border bg-white py-1 text-sm shadow-lg focus:outline-none"
+          className="border-brand-navy/15 origin-top-end z-50 mt-2 w-[min(20rem,calc(100vw-1.5rem))] rounded-md border bg-white py-1 text-sm shadow-lg focus:outline-none"
         >
           <div className="border-brand-navy/10 flex items-center justify-between border-b px-3 py-2">
             <span className="text-brand-navy font-semibold">התראות</span>

@@ -131,7 +131,7 @@ export default function AdminKycPage() {
 
   return (
     <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-5xl px-6 py-10">
+      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
         <Link
           href="/admin"
           className="text-brand-navy focus-visible:outline-brand-navy inline-flex items-center gap-1 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
@@ -265,8 +265,8 @@ export default function AdminKycPage() {
       <Dialog.Root open={!!viewer} onOpenChange={(v) => !v && setViewer(null)}>
         <Dialog.Portal>
           <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/60 fixed inset-0 z-40" />
-          <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-brand-cream w-full max-w-3xl rounded-xl p-4 shadow-xl">
+          <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
+            <div className="bg-brand-cream max-h-[95dvh] w-full max-w-3xl overflow-y-auto rounded-xl p-4 shadow-xl">
               <div className="flex items-start justify-between gap-3">
                 <Dialog.Title className="text-brand-navy text-base font-bold">
                   {viewer?.label}
@@ -308,8 +308,8 @@ export default function AdminKycPage() {
       <Dialog.Root open={!!rejectTarget} onOpenChange={(v) => !v && setRejectTarget(null)}>
         <Dialog.Portal>
           <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/40 fixed inset-0 z-40" />
-          <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-brand-cream w-full max-w-md rounded-xl p-6 shadow-xl">
+          <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
+            <div className="bg-brand-cream max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-xl">
               <Dialog.Title className="text-brand-navy text-lg font-bold">
                 דחיית אימות זהות
               </Dialog.Title>

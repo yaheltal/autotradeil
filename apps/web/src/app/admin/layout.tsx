@@ -101,14 +101,44 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </header>
 
       <div className="mx-auto flex max-w-7xl">
+        {/* Desktop: in-flow sidebar (md and up). Mobile: backdrop +
+            slide-in drawer. The OLD implementation rendered the
+            sidebar as an inline flex child even when open on mobile,
+            which squeezed the main content to ~120px wide. */}
+
+        {/* Mobile drawer backdrop — only mounted when open + below md.
+            Click-to-close. role=presentation so SR doesn't announce it. */}
+        {drawerOpen ? (
+          <button
+            type="button"
+            aria-label="סגור תפריט"
+            onClick={() => setDrawerOpen(false)}
+            className="bg-brand-navy/40 fixed inset-0 z-40 cursor-default md:hidden"
+          />
+        ) : null}
+
         <aside
           id="admin-sidebar"
+          aria-hidden={!drawerOpen ? true : undefined}
           className={[
-            "border-brand-navy/10 border-s bg-white md:block",
-            drawerOpen ? "block" : "hidden",
+            // Desktop: sticky in-flow column.
+            "md:relative md:block md:translate-x-0",
+            // Mobile: fixed overlay sliding in from the start (RTL-aware).
+            "fixed bottom-0 start-0 top-[57px] z-40 w-64 max-w-[80vw]",
+            "border-brand-navy/10 border-s bg-white shadow-xl",
+            "transition-transform duration-200 motion-reduce:transition-none",
+            drawerOpen ? "translate-x-0" : "translate-x-full md:translate-x-0",
+            // Hide entirely from layout on mobile when closed (avoids
+            // sneaking into the tab order behind the backdrop).
+            !drawerOpen ? "pointer-events-none md:pointer-events-auto" : "",
+            // On md+ reset all the mobile-specific positioning.
+            "md:bottom-auto md:top-0 md:w-56 md:max-w-none md:translate-x-0 md:shadow-none",
           ].join(" ")}
         >
-          <nav aria-label="ניווט מנהל" className="sticky top-0 min-h-[calc(100vh-57px)] w-56 p-3">
+          <nav
+            aria-label="ניווט מנהל"
+            className="sticky top-0 h-[calc(100vh-57px)] overflow-y-auto p-3 md:min-h-[calc(100vh-57px)]"
+          >
             <ul className="flex flex-col gap-1">
               {NAV_ITEMS.map((item) => {
                 const active = isActive(pathname, item);

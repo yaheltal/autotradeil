@@ -66,7 +66,7 @@ export default function AuditLogPage() {
 
   return (
     <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-6xl px-6 py-10">
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <h1
           ref={headingRef}
           tabIndex={-1}
@@ -82,8 +82,8 @@ export default function AuditLogPage() {
           </p>
         ) : null}
 
-        <div className="border-brand-navy/10 mt-8 overflow-hidden rounded-lg border bg-white">
-          <table className="w-full text-start text-sm">
+        <div className="border-brand-navy/10 mt-8 overflow-x-auto rounded-lg border bg-white">
+          <table className="w-full min-w-[640px] text-start text-sm">
             <caption className="sr-only">רשומות לוג של פעולות מנהל</caption>
             <thead className="bg-brand-navy/5 text-brand-navy">
               <tr>

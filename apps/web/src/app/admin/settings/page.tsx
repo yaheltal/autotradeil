@@ -145,7 +145,7 @@ export default function AdminSettingsPage() {
 
   return (
     <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-4xl px-6 py-10">
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
         <Link
           href="/admin"
           className="text-brand-navy focus-visible:outline-brand-navy inline-flex items-center gap-1 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
@@ -314,8 +314,8 @@ export default function AdminSettingsPage() {
       <Dialog.Root open={addOpen} onOpenChange={setAddOpen}>
         <Dialog.Portal>
           <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/40 fixed inset-0 z-40" />
-          <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-brand-cream w-full max-w-md rounded-xl p-6 shadow-xl">
+          <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
+            <div className="bg-brand-cream max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-xl">
               <Dialog.Title className="text-brand-navy text-lg font-bold">
                 הענקת הרשאות מנהל
               </Dialog.Title>
