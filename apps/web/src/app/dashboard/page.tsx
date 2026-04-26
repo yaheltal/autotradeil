@@ -4,7 +4,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
-import { AISearchBar } from "@/components/dashboard/AISearchBar";
 import { CommandCenter } from "@/components/dashboard/CommandCenter";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { DealerStatsCards } from "@/components/DealerStatsCards";
@@ -232,12 +231,6 @@ function DashboardPageInner() {
             שלום, {dealer.business_name}.
           </h1>
         </header>
-
-        {token ? (
-          <div className="mt-6">
-            <AISearchBar token={token} />
-          </div>
-        ) : null}
 
         {token ? <CommandCenter token={token} /> : null}
 
