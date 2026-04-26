@@ -102,11 +102,13 @@ type ListResponse = {
   per_page: number;
 };
 
+// Tabs render in source order; with the page in dir="rtl" the FIRST
+// tab sits visually on the RIGHT. "פעיל" leads, "הכל" closes the row.
 const FILTERS = [
-  { key: "", label: "הכל" },
   { key: "active", label: "פעיל" },
   { key: "sold", label: "נמכר" },
   { key: "hidden", label: "מוסתר" },
+  { key: "", label: "הכל" },
 ] as const;
 
 export default function InventoryPage() {
@@ -120,7 +122,10 @@ export default function InventoryPage() {
 function InventoryPageInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const statusParam = params.get("status") ?? "";
+  // Default to the "active" tab when the URL has no explicit status —
+  // dealers care about live listings 95% of the time, so landing on
+  // "הכל" was hiding the answer to "what's selling right now".
+  const statusParam = params.get("status") ?? "active";
 
   const [token, setToken] = useState<string | null>(null);
   const [data, setData] = useState<ListResponse | null>(null);
