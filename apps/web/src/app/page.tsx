@@ -446,11 +446,11 @@ const tiers: Array<{
   },
 ];
 
+// Two headline KPIs only — per dealer feedback "leave just B2B and
+// 100% verified". Fewer numbers reads more confident at a glance.
 const stats = [
   { value: "B2B", label: "שוק סוחרים פעיל", live: true },
-  { value: "24h", label: "אישור סוחר ממוצע" },
   { value: "100%", label: "סוחרים מאומתים" },
-  { value: "₪0", label: "עמלת רישום" },
 ];
 
 export default function Home() {
@@ -575,7 +575,7 @@ export default function Home() {
         </section>
 
         {/* ===================================================================
-            2. STATS BAND
+            2. STATS BAND — two-up KPI strip with center gold divider
             =================================================================== */}
         <section
           aria-labelledby="stats-heading"
@@ -584,14 +584,26 @@ export default function Home() {
           <h2 id="stats-heading" className="sr-only">
             נתוני הפלטפורמה
           </h2>
+          {/* Top + bottom gold hairlines frame the strip */}
           <div
             aria-hidden="true"
             className="bg-brand-gold absolute inset-x-0 top-0 h-px opacity-60"
           />
-          <div className="mx-auto grid max-w-5xl grid-cols-2 gap-y-8 px-4 py-10 text-center sm:px-6 sm:py-12 lg:grid-cols-4">
-            {stats.map((s) => (
-              <div key={s.label} className="min-w-0 px-2">
-                <p className="text-brand-gold inline-flex items-baseline gap-2 font-serif text-3xl font-bold leading-none sm:text-4xl lg:text-5xl">
+          <div
+            aria-hidden="true"
+            className="bg-brand-gold absolute inset-x-0 bottom-0 h-px opacity-30"
+          />
+
+          <div className="relative mx-auto flex max-w-3xl items-stretch px-4 py-9 sm:px-6 sm:py-14">
+            {stats.map((s, i) => (
+              <div
+                key={s.label}
+                className={[
+                  "relative flex min-w-0 flex-1 flex-col items-center justify-center text-center",
+                  i > 0 ? "border-brand-cream/20 border-s" : "",
+                ].join(" ")}
+              >
+                <p className="text-brand-gold inline-flex items-baseline gap-2 font-serif text-4xl font-bold leading-none sm:text-5xl lg:text-6xl">
                   {s.value}
                   {s.live ? (
                     <span aria-hidden="true" className="relative inline-flex h-2 w-2 self-center">
@@ -600,7 +612,7 @@ export default function Home() {
                     </span>
                   ) : null}
                 </p>
-                <p className="text-brand-cream/80 mt-3 text-base font-medium leading-snug">
+                <p className="text-brand-cream/85 mt-3 text-sm font-medium uppercase tracking-[0.18em] sm:text-base">
                   {s.label}
                 </p>
               </div>
