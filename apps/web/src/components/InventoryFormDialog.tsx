@@ -16,6 +16,8 @@ export type Visibility = "private" | "b2b" | "b2c" | "both";
 
 export type WarrantyType = "manufacturer" | "dealer" | "extended" | "none";
 
+export type OwnershipType = "private" | "dealer" | "leasing" | "rental" | "government";
+
 export type InventoryPayload = {
   make: string;
   model: string;
@@ -34,7 +36,50 @@ export type InventoryPayload = {
   purchase_cost: number | null;
   warranty_type: WarrantyType | null;
   warranty_until: string | null; // YYYY-MM-DD
+  // Ownership history — set together via the combined yad dropdown.
+  hand: number | null;
+  ownership_type: OwnershipType | null;
 };
+
+// Combined "יד" dropdown options. The single string value encodes both
+// the hand integer and the ownership_type so the form keeps one field
+// for the dealer; we split before submit and merge on load.
+const HAND_OPTIONS: Array<{
+  value: string;
+  label: string;
+  hand: number | null;
+  ownership: OwnershipType | null;
+}> = [
+  { value: "", label: "בחר יד...", hand: null, ownership: null },
+  { value: "1-private", label: "יד 1 — פרטית", hand: 1, ownership: "private" },
+  { value: "2-private", label: "יד 2 — פרטית", hand: 2, ownership: "private" },
+  { value: "3-private", label: "יד 3 — פרטית", hand: 3, ownership: "private" },
+  { value: "4-private", label: "יד 4+ — פרטית", hand: 4, ownership: "private" },
+  { value: "1-dealer", label: "יד 1 — סוחר", hand: 1, ownership: "dealer" },
+  { value: "2-dealer", label: "יד 2 — סוחר", hand: 2, ownership: "dealer" },
+  { value: "3-dealer", label: "יד 3+ — סוחר", hand: 3, ownership: "dealer" },
+  { value: "leasing", label: "ליסינג", hand: null, ownership: "leasing" },
+  { value: "rental", label: "השכרה", hand: null, ownership: "rental" },
+  { value: "government", label: "ממשלתי / רשות", hand: null, ownership: "government" },
+];
+
+function encodeHand(
+  hand: number | null | undefined,
+  ownership: OwnershipType | null | undefined,
+): string {
+  if (!ownership) return "";
+  if (ownership === "leasing" || ownership === "rental" || ownership === "government") {
+    return ownership;
+  }
+  if (hand == null) return "";
+  return `${hand}-${ownership}`;
+}
+
+function decodeHand(value: string): { hand: number | null; ownership: OwnershipType | null } {
+  const opt = HAND_OPTIONS.find((o) => o.value === value);
+  if (!opt) return { hand: null, ownership: null };
+  return { hand: opt.hand, ownership: opt.ownership };
+}
 
 export type InventoryInitial = Partial<InventoryPayload> & { id?: string };
 
@@ -149,6 +194,11 @@ const schema = z.object({
     .string()
     .optional()
     .refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), "תאריך לא תקין"),
+  // Combined hand+ownership encoded value, validated against HAND_OPTIONS.
+  hand_combo: z
+    .string()
+    .optional()
+    .refine((v) => !v || HAND_OPTIONS.some((o) => o.value === v), "ערך לא תקין"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -188,6 +238,10 @@ function toFormValues(v: InventoryInitial | null | undefined): FormValues {
     warranty_type: ((v as { warranty_type?: WarrantyType | null })?.warranty_type ??
       "") as FormValues["warranty_type"],
     warranty_until: (v as { warranty_until?: string | null })?.warranty_until ?? "",
+    hand_combo: encodeHand(
+      (v as InventoryInitial & { hand?: number | null })?.hand,
+      (v as InventoryInitial & { ownership_type?: OwnershipType | null })?.ownership_type,
+    ),
   };
 }
 
@@ -278,6 +332,15 @@ export function InventoryFormDialog({
   // from our own inventory data. Until then we display the ministry's
   // new-car list price as a non-binding hint.
   const [marketPriceHint, setMarketPriceHint] = useState<number | null>(null);
+  // Dynamic Claude-driven price estimate. Reflects make+model+year+
+  // mileage+hand+ownership_type. Replaces the static "new-car list"
+  // hint as the primary suggestion shown under "מחיר מבוקש".
+  const [priceEstimate, setPriceEstimate] = useState<{
+    price: number;
+    confidence: "high" | "medium" | "low";
+    breakdown: string;
+  } | null>(null);
+  const [priceEstimateBusy, setPriceEstimateBusy] = useState(false);
   // Separate sr-only live region — announcement-only, NOT wired into
   // aria-describedby. Keyed on value to force re-render of the status
   // message when a new price arrives (SRs reliably re-announce then).
@@ -358,6 +421,70 @@ export function InventoryFormDialog({
 
     return () => clearTimeout(timer);
   }, [open, watchMake, watchedModel, watchedYear, token, announcePrice]);
+
+  // Live AI price estimate — fires whenever any of the inputs that
+  // affect price (make+model+year+mileage+hand+ownership) settle for
+  // 1 second. Calls /api/v1/inventory/price-estimate which goes
+  // through Claude with deterministic fallback.
+  const watchedMileage = watch("mileage");
+  const watchedHandCombo = watch("hand_combo");
+
+  useEffect(() => {
+    if (!open || !token) return;
+    const yearNum = parseInt(String(watchedYear), 10);
+    const mileageNum = parseInt(String(watchedMileage), 10);
+    const allValid =
+      !!watchMake &&
+      !!watchedModel &&
+      Number.isFinite(yearNum) &&
+      yearNum >= 1900 &&
+      yearNum <= 2030 &&
+      Number.isFinite(mileageNum) &&
+      mileageNum >= 0;
+    if (!allValid) {
+      setPriceEstimate(null);
+      return;
+    }
+
+    const decoded = decodeHand(String(watchedHandCombo ?? ""));
+
+    const timer = setTimeout(async () => {
+      setPriceEstimateBusy(true);
+      try {
+        const res = await apiFetch<{
+          estimated_price: number | null;
+          confidence: "high" | "medium" | "low" | "unavailable";
+          breakdown: string;
+        }>("/api/v1/inventory/price-estimate", {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            make: watchMake,
+            model: watchedModel,
+            year: yearNum,
+            mileage: mileageNum,
+            hand: decoded.hand,
+            ownership_type: decoded.ownership,
+          }),
+        });
+        if (res.estimated_price && res.estimated_price > 0) {
+          setPriceEstimate({
+            price: res.estimated_price,
+            confidence: res.confidence === "unavailable" ? "low" : res.confidence,
+            breakdown: res.breakdown,
+          });
+        } else {
+          setPriceEstimate(null);
+        }
+      } catch {
+        setPriceEstimate(null);
+      } finally {
+        setPriceEstimateBusy(false);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [open, token, watchMake, watchedModel, watchedYear, watchedMileage, watchedHandCombo]);
 
   const applyAutoFill = useCallback(
     (
@@ -540,6 +667,7 @@ export function InventoryFormDialog({
   };
 
   const submit = handleSubmit(async (values) => {
+    const handDecoded = decodeHand(values.hand_combo ?? "");
     const payload: InventoryPayload = {
       make: values.make,
       model: values.model,
@@ -567,6 +695,8 @@ export function InventoryFormDialog({
       purchase_cost: values.purchase_cost ? parseInt(values.purchase_cost, 10) : null,
       warranty_type: values.warranty_type ? (values.warranty_type as WarrantyType) : null,
       warranty_until: values.warranty_until || null,
+      hand: handDecoded.hand,
+      ownership_type: handDecoded.ownership,
     };
     try {
       const created = await onSubmit(payload);
@@ -898,6 +1028,13 @@ export function InventoryFormDialog({
                   error={errors.year?.message}
                   autofilled={autofilledFields.has("year")}
                 />
+                <SelectField
+                  id="inv-hand"
+                  label="יד / סוג בעלות"
+                  error={errors.hand_combo?.message}
+                  registration={register("hand_combo")}
+                  options={HAND_OPTIONS}
+                />
                 <HighlightedField
                   id="inv-mileage"
                   label="קילומטראז׳"
@@ -918,7 +1055,36 @@ export function InventoryFormDialog({
                   registration={register("price")}
                   error={errors.price?.message}
                   hint={
-                    marketPriceHint ? (
+                    priceEstimateBusy ? (
+                      <>
+                        <span aria-hidden="true">⏳ </span>
+                        מחשב הערכת מחיר שוק…
+                      </>
+                    ) : priceEstimate ? (
+                      <>
+                        <span aria-hidden="true" className="text-brand-gold">
+                          ✦{" "}
+                        </span>
+                        <span className="text-brand-navy font-semibold">
+                          מחיר שוק משוער: ₪{priceEstimate.price.toLocaleString("he-IL")}
+                        </span>
+                        <span className="text-brand-ink/60">
+                          {" "}
+                          —{" "}
+                          {
+                            {
+                              high: "ביטחון גבוה",
+                              medium: "ביטחון בינוני",
+                              low: "ביטחון נמוך",
+                            }[priceEstimate.confidence]
+                          }
+                        </span>
+                        <br />
+                        <span className="text-brand-ink/65 text-[11px]">
+                          {priceEstimate.breakdown}
+                        </span>
+                      </>
+                    ) : marketPriceHint ? (
                       <>
                         <span aria-hidden="true">💡 </span>
                         {`מחיר מחירון רכב חדש: ₪${marketPriceHint.toLocaleString("he-IL")} (לצורך השוואה בלבד)`}

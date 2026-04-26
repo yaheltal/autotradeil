@@ -217,6 +217,8 @@ async def create_inventory_item(
         purchase_cost=payload.purchase_cost,
         warranty_type=payload.warranty_type,
         warranty_until=payload.warranty_until,
+        hand=payload.hand,
+        ownership_type=payload.ownership_type,
     )
     db.add(item)
     await db.flush()

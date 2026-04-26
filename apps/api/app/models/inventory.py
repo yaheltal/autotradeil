@@ -116,6 +116,14 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     trade_in_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
     trade_in_plate: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # ---- ownership history (יד) ----
+    # `hand` = how many owners (1..4+); 4 stored as "4 or more".
+    # `ownership_type` differentiates private/dealer/leasing/rental/government —
+    # major price-impact signal (rentals + leasings depreciate faster).
+    # Both nullable since legacy rows pre-migration won't have it.
+    hand: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ownership_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     __table_args__ = (
         CheckConstraint(
             "year >= 1900 AND year <= 2030",
@@ -162,6 +170,15 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
         CheckConstraint(
             "sold_to IS NULL OR sold_to IN ('b2b', 'b2c', 'external')",
             name="inventory_sold_to_check",
+        ),
+        CheckConstraint(
+            "hand IS NULL OR (hand >= 1 AND hand <= 4)",
+            name="inventory_hand_range",
+        ),
+        CheckConstraint(
+            "ownership_type IS NULL OR ownership_type IN "
+            "('private', 'dealer', 'leasing', 'rental', 'government')",
+            name="inventory_ownership_type_check",
         ),
         CheckConstraint(
             "warranty_type IS NULL OR warranty_type IN ('manufacturer', 'dealer', 'extended', 'none')",

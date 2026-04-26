@@ -7,6 +7,9 @@ from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+_OWNERSHIP_PATTERN = "^(private|dealer|leasing|rental|government)$"
+
+
 class InventoryItemCreate(BaseModel):
     make: str = Field(min_length=1, max_length=100)
     model: str = Field(min_length=1, max_length=100)
@@ -25,6 +28,10 @@ class InventoryItemCreate(BaseModel):
         default=None, pattern="^(manufacturer|dealer|extended|none)$"
     )
     warranty_until: date | None = Field(default=None)
+    # Ownership history — both nullable so legacy / partial uploads
+    # don't break. UI presents the two as a single combined dropdown.
+    hand: int | None = Field(default=None, ge=1, le=4)
+    ownership_type: str | None = Field(default=None, pattern=_OWNERSHIP_PATTERN)
 
 
 class InventoryItemUpdate(BaseModel):
@@ -50,6 +57,8 @@ class InventoryItemUpdate(BaseModel):
         default=None, pattern="^(manufacturer|dealer|extended|none)$"
     )
     warranty_until: date | None = Field(default=None)
+    hand: int | None = Field(default=None, ge=1, le=4)
+    ownership_type: str | None = Field(default=None, pattern=_OWNERSHIP_PATTERN)
 
 
 class InventoryItemResponse(BaseModel):
@@ -82,6 +91,10 @@ class InventoryItemResponse(BaseModel):
     warranty_until: date | None
     created_at: datetime
     updated_at: datetime
+    # Ownership history (יד + סוג בעלות). Surfaced everywhere so cards
+    # and detail pages can show "יד 2 — פרטית" without an extra fetch.
+    hand: int | None = None
+    ownership_type: str | None = None
     # The lowest-position non-hidden image acts as the primary
     # thumbnail. Populated by the list endpoint via a single bulk
     # query so individual rows can render a card preview without
