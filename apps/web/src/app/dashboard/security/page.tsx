@@ -3,6 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -306,10 +307,11 @@ export default function SecurityPage() {
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
         <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+          <BackLink href="/dashboard" label="חזרה ללוח הבקרה" />
           <h1
             ref={h1Ref}
             tabIndex={-1}
-            className="text-brand-navy text-3xl font-bold tracking-tight focus:outline-none"
+            className="text-brand-navy mt-3 text-3xl font-bold tracking-tight focus:outline-none"
           >
             אבטחה ואימות זהות
           </h1>

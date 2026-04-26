@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { BackLink } from "@/components/BackLink";
 import { ArchiveDealerDialog } from "@/components/admin/ArchiveDealerDialog";
 import { SilentSuspendDialog } from "@/components/admin/SilentSuspendDialog";
 import { SuspendWithReasonDialog } from "@/components/admin/SuspendWithReasonDialog";
@@ -218,8 +219,9 @@ export default function DealerDetailPage() {
 
   return (
     <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-4xl px-6 py-10">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
+        <BackLink href="/admin/dealers" label="חזרה לרשימת הסוחרים" />
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <h1
             ref={headingRef}
             tabIndex={-1}

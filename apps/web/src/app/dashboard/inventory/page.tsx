@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
+import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { DeleteInventoryDialog } from "@/components/DeleteInventoryDialog";
@@ -390,7 +391,8 @@ function InventoryPageInner() {
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
         <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-          <div className="flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+          <BackLink href="/dashboard" label="חזרה ללוח הבקרה" />
+          <div className="mt-3 flex flex-col items-stretch gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
             <div>
               <h1
                 ref={headingRef}

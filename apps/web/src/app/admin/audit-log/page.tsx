@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { BackLink } from "@/components/BackLink";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
 
@@ -67,10 +68,11 @@ export default function AuditLogPage() {
   return (
     <main id="main" tabIndex={-1} className="focus:outline-none">
       <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+        <BackLink href="/admin" label="חזרה ללוח ניהול" />
         <h1
           ref={headingRef}
           tabIndex={-1}
-          className="text-brand-navy text-3xl font-bold tracking-tight focus:outline-none"
+          className="text-brand-navy mt-3 text-3xl font-bold tracking-tight focus:outline-none"
         >
           לוג פעולות מנהל
         </h1>
