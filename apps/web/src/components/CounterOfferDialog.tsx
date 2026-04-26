@@ -3,6 +3,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useState } from "react";
 
+import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 
@@ -94,9 +95,12 @@ export function CounterOfferDialog({
         />
         <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
           <div className="bg-brand-cream max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-xl">
-            <Dialog.Title className="text-brand-navy text-lg font-bold">
-              שליחת הצעה נגדית
-            </Dialog.Title>
+            <div className="flex items-start justify-between gap-3">
+              <Dialog.Title className="text-brand-navy text-lg font-bold">
+                שליחת הצעה נגדית
+              </Dialog.Title>
+              <DialogCloseButton className="-me-1 -mt-1" />
+            </div>
             <Dialog.Description className="text-brand-ink/70 mt-1 text-sm">
               {vehicleLabel}
             </Dialog.Description>

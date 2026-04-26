@@ -4,6 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
+import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 
@@ -187,9 +188,12 @@ export function SellVehicleDialog({ open, onOpenChange, vehicle, token, onSold }
           className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
           <div className="bg-brand-cream max-h-[95dvh] w-full max-w-xl overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6">
-            <Dialog.Title className="text-brand-navy text-lg font-bold">
-              סימון רכב כנמכר
-            </Dialog.Title>
+            <div className="flex items-start justify-between gap-3">
+              <Dialog.Title className="text-brand-navy text-lg font-bold">
+                סימון רכב כנמכר
+              </Dialog.Title>
+              <DialogCloseButton className="-me-1 -mt-1" />
+            </div>
             <Dialog.Description id="sell-desc" className="text-brand-ink/70 mt-1 text-sm">
               {vehicle.make} {vehicle.model} {vehicle.year}
             </Dialog.Description>

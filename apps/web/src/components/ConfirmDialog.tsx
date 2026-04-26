@@ -3,6 +3,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useState } from "react";
 
+import { DialogCloseButton } from "@/components/DialogCloseButton";
+
 /**
  * Generic confirm dialog for terminal offer actions (accept/reject).
  *
@@ -71,7 +73,10 @@ export function ConfirmDialog({
         />
         <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
           <div className="bg-brand-cream max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-xl">
-            <Dialog.Title className="text-brand-navy text-lg font-bold">{title}</Dialog.Title>
+            <div className="flex items-start justify-between gap-3">
+              <Dialog.Title className="text-brand-navy text-lg font-bold">{title}</Dialog.Title>
+              <DialogCloseButton className="-me-1 -mt-1" />
+            </div>
             <Dialog.Description className="text-brand-ink/80 mt-2 text-sm">
               {description}
             </Dialog.Description>

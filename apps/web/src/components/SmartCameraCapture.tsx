@@ -3,6 +3,8 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { DialogCloseButton } from "@/components/DialogCloseButton";
+
 /**
  * SmartCameraCapture — Phase 6.6.
  *
@@ -213,7 +215,10 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
           className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
           <div className="bg-brand-cream max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6">
-            <Dialog.Title className="text-brand-navy text-lg font-bold">{label}</Dialog.Title>
+            <div className="flex items-start justify-between gap-3">
+              <Dialog.Title className="text-brand-navy text-lg font-bold">{label}</Dialog.Title>
+              <DialogCloseButton className="-me-1 -mt-1" />
+            </div>
 
             {/* Pre-mounted live region (per a11y-lead) */}
             <p
