@@ -82,6 +82,11 @@ class InventoryItemResponse(BaseModel):
     warranty_until: date | None
     created_at: datetime
     updated_at: datetime
+    # The lowest-position non-hidden image acts as the primary
+    # thumbnail. Populated by the list endpoint via a single bulk
+    # query so individual rows can render a card preview without
+    # an extra round-trip per row.
+    primary_image_url: str | None = None
 
 
 class InventoryListResponse(BaseModel):

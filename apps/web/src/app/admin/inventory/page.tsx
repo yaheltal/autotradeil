@@ -31,6 +31,7 @@ type Row = {
   dealer_id: string;
   dealer_business_name: string;
   dealer_city: string | null;
+  primary_image_url: string | null;
 };
 
 type Resp = {
@@ -290,9 +291,25 @@ export default function AdminInventoryPage() {
                 <li key={r.id}>
                   <Link
                     href={`/admin/inventory/${r.id}`}
-                    className="border-brand-navy/15 hover:border-brand-gold focus-visible:outline-brand-navy block rounded-lg border bg-white p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="border-brand-navy/15 hover:border-brand-gold focus-visible:outline-brand-navy block rounded-lg border bg-white p-3 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-3">
+                      {r.primary_image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={r.primary_image_url}
+                          alt=""
+                          loading="lazy"
+                          className="border-brand-navy/10 h-20 w-28 shrink-0 rounded border object-cover"
+                        />
+                      ) : (
+                        <div
+                          aria-hidden="true"
+                          className="bg-brand-navy/5 border-brand-navy/10 text-brand-ink/40 flex h-20 w-28 shrink-0 items-center justify-center rounded border text-2xl"
+                        >
+                          🚗
+                        </div>
+                      )}
                       <div className="min-w-0 flex-1">
                         <p className="text-brand-navy truncate text-base font-bold">
                           {r.make} {r.model} {r.year}

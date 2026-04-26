@@ -702,6 +702,12 @@ async def admin_list_inventory(
         )
     ).all()
 
+    # Bulk-fetch primary thumbnails so the admin card list can show
+    # previews without N+1 queries.
+    from app.routers.marketplace import _primary_images_bulk
+
+    primary_images = await _primary_images_bulk([inv.id for inv, _ in rows], db)
+
     items = [
         {
             "id": str(inv.id),
@@ -718,6 +724,7 @@ async def admin_list_inventory(
             "dealer_business_name": dealer.business_name,
             "dealer_city": dealer.city,
             "created_at": inv.created_at.isoformat(),
+            "primary_image_url": primary_images.get(inv.id),
         }
         for inv, dealer in rows
     ]

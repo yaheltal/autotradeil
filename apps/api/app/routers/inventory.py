@@ -167,7 +167,18 @@ async def list_inventory(
     )
     rows = (await db.execute(base_q)).scalars().all()
 
-    items = [InventoryItemResponse.model_validate(r) for r in rows]
+    # Bulk-fetch primary thumbnails (lowest-position non-hidden image
+    # per vehicle) so the dealer's own card view renders previews
+    # without N+1 queries.
+    from app.routers.marketplace import _primary_images_bulk
+
+    primary_images = await _primary_images_bulk([r.id for r in rows], db)
+
+    items: list[InventoryItemResponse] = []
+    for r in rows:
+        item = InventoryItemResponse.model_validate(r)
+        item.primary_image_url = primary_images.get(r.id)
+        items.append(item)
     pages = math.ceil(total / per_page) if total > 0 else 1
 
     return InventoryListResponse(

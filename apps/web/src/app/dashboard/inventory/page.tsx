@@ -87,6 +87,10 @@ type Item = {
   warranty_until: string | null;
   created_at: string;
   updated_at: string;
+  // Lowest-position non-hidden image — auto-promoted as the
+  // thumbnail. First upload becomes the primary by virtue of
+  // getting position 0.
+  primary_image_url: string | null;
 };
 
 type ListResponse = {
@@ -558,11 +562,31 @@ function InventoryPageInner() {
                       className="border-brand-navy/10 rounded-lg border bg-white p-5"
                     >
                       <article aria-labelledby={titleId}>
-                        <header className="flex items-start justify-between gap-3">
-                          <h3 id={titleId} className="text-brand-navy text-lg font-bold">
-                            {item.make} {item.model} · {item.year}
-                          </h3>
-                          <StatusBadge status={item.status} />
+                        <header className="flex items-start gap-3">
+                          {item.primary_image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.primary_image_url}
+                              alt=""
+                              loading="lazy"
+                              className="border-brand-navy/10 h-20 w-28 shrink-0 rounded border object-cover sm:h-24 sm:w-32"
+                            />
+                          ) : (
+                            <div
+                              aria-hidden="true"
+                              className="bg-brand-navy/5 border-brand-navy/10 text-brand-ink/40 flex h-20 w-28 shrink-0 items-center justify-center rounded border text-2xl sm:h-24 sm:w-32"
+                            >
+                              🚗
+                            </div>
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <h3 id={titleId} className="text-brand-navy text-lg font-bold">
+                                {item.make} {item.model} · {item.year}
+                              </h3>
+                              <StatusBadge status={item.status} />
+                            </div>
+                          </div>
                         </header>
 
                         <dl className="mt-4 space-y-2 text-sm">
