@@ -281,7 +281,50 @@ export default function AdminInventoryPage() {
           </p>
         ) : (
           <>
-            <div className="border-brand-navy/10 mt-6 overflow-x-auto rounded-lg border bg-white">
+            {/* Desktop: dense table. Mobile: stacked card list — the
+                table was overflow-x scrolling and the small underlined
+                title was the only click target, which made admins
+                think "click does nothing" on phones. */}
+            <ul className="mt-6 grid gap-3 md:hidden" aria-label="כל הרכבים במערכת">
+              {data.items.map((r) => (
+                <li key={r.id}>
+                  <Link
+                    href={`/admin/inventory/${r.id}`}
+                    className="border-brand-navy/15 hover:border-brand-gold focus-visible:outline-brand-navy block rounded-lg border bg-white p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-brand-navy truncate text-base font-bold">
+                          {r.make} {r.model} {r.year}
+                        </p>
+                        <p className="text-brand-ink/70 mt-0.5 truncate text-sm">
+                          {r.dealer_business_name}
+                          {r.dealer_city ? ` · ${r.dealer_city}` : ""}
+                        </p>
+                        <div className="text-brand-ink/70 mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                          <span>חשיפה: {VISIBILITY_LABEL[r.visibility]}</span>
+                          <span>סטטוס: {STATUS_LABEL[r.status]}</span>
+                          {r.paused_until ? (
+                            <span>⏸ עד {new Date(r.paused_until).toLocaleString("he-IL")}</span>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="text-brand-navy shrink-0 text-end">
+                        <p className="text-base font-bold">₪ {r.price.toLocaleString("he-IL")}</p>
+                        <span
+                          aria-hidden="true"
+                          className="text-brand-gold mt-1 inline-block text-lg"
+                        >
+                          ←
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+
+            <div className="border-brand-navy/10 mt-6 hidden overflow-x-auto rounded-lg border bg-white md:block">
               <table className="w-full text-start text-sm">
                 <caption className="sr-only">כל הרכבים במערכת</caption>
                 <thead className="bg-brand-navy/5">
@@ -305,7 +348,10 @@ export default function AdminInventoryPage() {
                 </thead>
                 <tbody>
                   {data.items.map((r) => (
-                    <tr key={r.id} className="border-brand-navy/10 border-t">
+                    <tr
+                      key={r.id}
+                      className="border-brand-navy/10 hover:bg-brand-navy/5 border-t transition-colors"
+                    >
                       <td className="px-4 py-3">
                         <Link
                           href={`/admin/inventory/${r.id}`}
