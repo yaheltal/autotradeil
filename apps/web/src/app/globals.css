@@ -36,3 +36,16 @@ body {
     text-wrap: balance;
   }
 }
+
+/* PWA install banner slide-up. Honored only with motion-safe; the
+ * global prefers-reduced-motion block above tames the duration. */
+@keyframes slide-up {
+  from {
+    transform: translateY(120%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}

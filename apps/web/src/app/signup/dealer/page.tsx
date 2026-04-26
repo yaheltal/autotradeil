@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -9,7 +10,16 @@ import { z } from "zod";
 
 import { BrandMark } from "@/components/BrandMark";
 import { FormField } from "@/components/FormField";
-import { SmartCameraCapture } from "@/components/SmartCameraCapture";
+
+/*
+ * SmartCameraCapture is camera + canvas + Hebrew bidi fallback — only
+ * needed when a doc slot is active. Lazy load saves ~15kB on the
+ * signup page.
+ */
+const SmartCameraCapture = dynamic(
+  () => import("@/components/SmartCameraCapture").then((m) => m.SmartCameraCapture),
+  { ssr: false },
+);
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 

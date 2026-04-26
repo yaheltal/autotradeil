@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Frank_Ruhl_Libre, Heebo } from "next/font/google";
 
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
+import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 
 import "./globals.css";
 
@@ -96,6 +97,15 @@ export const metadata: Metadata = {
     shortcut: ["/favicon.ico?v=3"],
   },
   manifest: "/manifest.json?v=3",
+  // iOS PWA — once "Add to Home Screen" the app launches without
+  // Safari chrome. status-bar-style: black-translucent renders the
+  // status bar over the page content with white glyphs (matches our
+  // navy header). title is what iOS shows under the icon.
+  appleWebApp: {
+    capable: true,
+    title: "AutoTradeIL",
+    statusBarStyle: "black-translucent",
+  },
   robots: {
     index: true,
     follow: true,
@@ -111,6 +121,11 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // viewportFit: "cover" lets the page extend beneath iOS notched
+  // status bar / home indicator. Without it iOS leaves brown-cream
+  // bands on iPhone X+ in standalone PWA mode. Components that
+  // need to dodge those areas use env(safe-area-inset-*).
+  viewportFit: "cover",
   themeColor: "#1a1a2e",
 };
 
@@ -133,6 +148,7 @@ export default function RootLayout({
         </a>
         <ImpersonationBanner />
         {children}
+        <PWAInstallPrompt />
       </body>
     </html>
   );

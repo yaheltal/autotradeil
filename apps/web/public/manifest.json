@@ -1,15 +1,42 @@
 {
+  "id": "/",
   "name": "AutoTradeIL — זירת המסחר של סוחרי הרכב",
   "short_name": "AutoTradeIL",
   "description": "פלטפורמה מקצועית למסחר ברכבים בין סוחרים מוסמכים — מלאי, הצעות, ועסקאות במקום אחד.",
-  "start_url": "/",
+  "start_url": "/dashboard?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "orientation": "portrait",
   "background_color": "#f8f8f6",
   "theme_color": "#1B2B4B",
   "lang": "he",
   "dir": "rtl",
   "categories": ["business", "productivity", "shopping"],
+  "prefer_related_applications": false,
+  "shortcuts": [
+    {
+      "name": "המלאי שלי",
+      "short_name": "מלאי",
+      "description": "ניהול הרכבים שלי",
+      "url": "/dashboard/inventory?source=pwa-shortcut",
+      "icons": [{ "src": "/logo-icon-512.png", "sizes": "512x512", "type": "image/png" }]
+    },
+    {
+      "name": "המרקטפלייס",
+      "short_name": "מרקטפלייס",
+      "description": "צפייה בכל הרכבים מסוחרים אחרים",
+      "url": "/dashboard/marketplace?source=pwa-shortcut",
+      "icons": [{ "src": "/logo-icon-512.png", "sizes": "512x512", "type": "image/png" }]
+    },
+    {
+      "name": "ההצעות שלי",
+      "short_name": "הצעות",
+      "description": "הצעות שקיבלתי ושנתתי",
+      "url": "/dashboard/offers?source=pwa-shortcut",
+      "icons": [{ "src": "/logo-icon-512.png", "sizes": "512x512", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/favicon-16x16.png",
