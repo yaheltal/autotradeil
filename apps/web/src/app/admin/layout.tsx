@@ -84,7 +84,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="bg-brand-cream text-brand-ink min-h-screen">
-      <header className="border-brand-navy/10 border-b bg-white">
+      <header className="border-brand-navy/10 safe-top border-b bg-white">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <button

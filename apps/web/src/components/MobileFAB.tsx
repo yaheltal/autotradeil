@@ -41,7 +41,8 @@ export function MobileFAB({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="bg-brand-navy text-brand-cream focus-visible:outline-brand-navy shadow-brand-navy/35 ring-brand-gold/55 fixed bottom-6 end-6 z-40 inline-flex h-[60px] w-[60px] items-center justify-center rounded-full shadow-lg ring-1 ring-inset transition-transform duration-150 hover:-translate-y-0.5 hover:scale-[1.04] focus-visible:outline-2 focus-visible:outline-offset-2 active:translate-y-0 active:scale-[0.96] md:hidden"
+      style={{ bottom: "max(1.5rem, calc(env(safe-area-inset-bottom) + 1rem))" }}
+      className="bg-brand-navy text-brand-cream focus-visible:outline-brand-navy shadow-brand-navy/35 ring-brand-gold/55 fixed end-6 z-40 inline-flex h-[60px] w-[60px] items-center justify-center rounded-full shadow-lg ring-1 ring-inset transition-transform duration-150 hover:-translate-y-0.5 hover:scale-[1.04] focus-visible:outline-2 focus-visible:outline-offset-2 active:translate-y-0 active:scale-[0.96] md:hidden"
     >
       {icon ?? <DefaultPlusIcon />}
     </button>

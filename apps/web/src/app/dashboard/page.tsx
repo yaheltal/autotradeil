@@ -7,7 +7,6 @@ import { BrandMark } from "@/components/BrandMark";
 import { CommandCenter } from "@/components/dashboard/CommandCenter";
 import { DashboardSmartBar } from "@/components/dashboard/DashboardSmartBar";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
-import { DealerStatsCards } from "@/components/DealerStatsCards";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ProfileEditor } from "@/components/ProfileEditor";
 import { ProfileHeader } from "@/components/ProfileHeader";
@@ -200,7 +199,7 @@ function DashboardPageInner() {
   return (
     <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
       <SuspensionBanner token={token} />
-      <header className="border-brand-navy/10 border-b bg-white">
+      <header className="border-brand-navy/10 safe-top border-b bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
           <BrandMark />
           <div className="flex items-center gap-2 sm:gap-3">
@@ -250,19 +249,6 @@ function DashboardPageInner() {
         {token ? <DashboardSmartBar token={token} /> : null}
 
         {token ? <CommandCenter token={token} /> : null}
-
-        {/* ============================================================
-            DETAILED ANALYTICS (period switcher + bigger trends)
-            ============================================================ */}
-        <section aria-labelledby="analytics-heading" className="mt-12">
-          <h2
-            id="analytics-heading"
-            className="text-brand-navy font-serif text-xl font-bold tracking-tight sm:text-2xl"
-          >
-            ניתוח מפורט
-          </h2>
-          <div className="mt-4">{token ? <DealerStatsCards token={token} /> : null}</div>
-        </section>
 
         {/* Profile header — circular logo, business name, tier badge.
             Sits ABOVE the read-only stats so the dealer's brand is the

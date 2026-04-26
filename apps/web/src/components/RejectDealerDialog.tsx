@@ -62,11 +62,11 @@ export function RejectDealerDialog({ open, onOpenChange, onSubmit, businessName 
           aria-describedby="reject-desc"
           className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
-          <div className="max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
-            <div className="flex items-start justify-between gap-3">
-              <Dialog.Title className="text-brand-navy text-lg font-bold">דחיית סוחר</Dialog.Title>
-              <DialogCloseButton className="-me-1 -mt-1" />
-            </div>
+          <div className="relative max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
+            <DialogCloseButton />
+            <Dialog.Title className="text-brand-navy pe-12 text-lg font-bold">
+              דחיית סוחר
+            </Dialog.Title>
             <Dialog.Description id="reject-desc" className="text-brand-ink/70 mt-1 text-sm">
               נדחה את הבקשה של <span className="text-brand-navy font-semibold">{businessName}</span>
               . הזן סיבה, לפחות 10 תווים. הסיבה תישלח במייל לסוחר.

@@ -35,6 +35,36 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Safe-area insets — utility classes for iPhone X+ / iPad notch +
+   * home-indicator bands. Use these on any element that pins to a
+   * viewport edge: app headers, sticky bottom bars, FABs, modal cards.
+   * Each class fills in `max(default, env(...))` so non-notched devices
+   * still get the desired baseline padding. */
+  .safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+  .safe-bottom {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+  .safe-x {
+    padding-inline-start: max(1rem, env(safe-area-inset-left));
+    padding-inline-end: max(1rem, env(safe-area-inset-right));
+  }
+}
+
+/* Landscape side-band protection — Whether or not a child uses the
+ * .safe-x utility, every <body>'s direct main+header descendant gets
+ * a tiny safe-x baseline so iPad-in-landscape doesn't crop content
+ * under the notch on the long edge. The `body > *` scope keeps it
+ * from clobbering nested grids that already manage their own padding. */
+@supports (padding: max(0px)) {
+  body > header,
+  body > footer,
+  body > main {
+    padding-inline-start: max(0px, env(safe-area-inset-left));
+    padding-inline-end: max(0px, env(safe-area-inset-right));
+  }
 }
 
 /* Landing-page anchor offset — the sticky LandingNav covers the top of
