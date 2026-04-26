@@ -79,26 +79,22 @@ export function LandingNav() {
     <header className="border-brand-navy/10 bg-brand-cream/85 supports-[backdrop-filter]:bg-brand-cream/70 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="flex items-center justify-between gap-3 py-3 sm:gap-6 sm:py-4">
-          {/* Logo — original full PNG (logo-full.png) WITHOUT the
-              tagline strip. We crop the visible region to ~71% of
-              the natural height (361px → ~256px) so the bottom
-              tagline strip is hidden. The image keeps its natural
-              ratio inside an overflow-hidden box. */}
+          {/* Logo — original full PNG with the legacy tagline shown
+              exactly as on every other page (per dealer instruction
+              to bring it back as it was). */}
           <Link
             href="/"
             aria-label="AutoTradeIL — דף הבית"
-            className="focus-visible:outline-brand-navy group flex min-w-0 shrink-0 items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
+            className="focus-visible:outline-brand-navy group flex shrink-0 items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
           >
-            <span className="block h-10 w-[7.5rem] overflow-hidden sm:h-12 sm:w-[9rem]">
-              <Image
-                src="/logo-full.png"
-                alt="AutoTradeIL"
-                width={1095}
-                height={361}
-                priority
-                className="block h-[140%] w-auto max-w-none transition-transform group-hover:scale-[1.03]"
-              />
-            </span>
+            <Image
+              src="/logo-full.png"
+              alt="AutoTradeIL"
+              width={1095}
+              height={361}
+              priority
+              className="h-10 w-auto transition-transform group-hover:scale-[1.03] sm:h-14"
+            />
           </Link>
 
           {/* Desktop section nav with scroll-spy */}

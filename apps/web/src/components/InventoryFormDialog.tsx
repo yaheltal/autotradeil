@@ -119,6 +119,96 @@ const ENGINE_OPTIONS: { value: string; label: string }[] = [
   { value: "0.0", label: "חשמלי (ללא מנוע)" },
 ];
 
+// Per-model engine availability for the most common Israeli market
+// vehicles. Keys are lowercased "{make}|{model}" — see modelEngineKey().
+// When a key is absent we fall back to the FULL list (current behavior).
+// Coverage is intentionally narrow — better to show ALL options than
+// to wrongly hide the right one.
+const MODEL_ENGINE_MAP: Record<string, string[]> = {
+  // Toyota
+  "toyota|corolla": ["1.6", "1.8", "2.0"],
+  "טויוטה|קורולה": ["1.6", "1.8", "2.0"],
+  "toyota|yaris": ["1.0", "1.2", "1.5"],
+  "טויוטה|יאריס": ["1.0", "1.2", "1.5"],
+  "toyota|rav4": ["2.0", "2.5"],
+  "טויוטה|rav4": ["2.0", "2.5"],
+  "toyota|chr": ["1.2", "1.8", "2.0"],
+  "טויוטה|chr": ["1.2", "1.8", "2.0"],
+  "toyota|camry": ["2.0", "2.5"],
+  "טויוטה|קאמרי": ["2.0", "2.5"],
+  // Hyundai
+  "hyundai|i20": ["1.0", "1.2", "1.4"],
+  "יונדאי|i20": ["1.0", "1.2", "1.4"],
+  "hyundai|i30": ["1.4", "1.6", "2.0"],
+  "יונדאי|i30": ["1.4", "1.6", "2.0"],
+  "hyundai|tucson": ["1.6", "2.0", "2.5"],
+  "יונדאי|טוסון": ["1.6", "2.0", "2.5"],
+  "hyundai|kona": ["1.0", "1.6"],
+  "יונדאי|קונה": ["1.0", "1.6"],
+  // Kia
+  "kia|picanto": ["1.0", "1.2"],
+  "קיה|פיקנטו": ["1.0", "1.2"],
+  "kia|rio": ["1.2", "1.4"],
+  "קיה|ריו": ["1.2", "1.4"],
+  "kia|sportage": ["1.6", "2.0", "2.5"],
+  "קיה|ספורטאז'": ["1.6", "2.0", "2.5"],
+  "kia|niro": ["1.6"],
+  "קיה|נירו": ["1.6"],
+  // Mazda
+  "mazda|3": ["1.5", "2.0", "2.5"],
+  "מאזדה|3": ["1.5", "2.0", "2.5"],
+  "mazda|cx-5": ["2.0", "2.5"],
+  "מאזדה|cx-5": ["2.0", "2.5"],
+  // Skoda
+  "skoda|octavia": ["1.0", "1.4", "1.5", "2.0"],
+  "סקודה|אוקטביה": ["1.0", "1.4", "1.5", "2.0"],
+  "skoda|kodiaq": ["1.5", "2.0"],
+  "סקודה|קודיאק": ["1.5", "2.0"],
+  // BMW
+  "bmw|3 series": ["2.0", "3.0"],
+  "ב.מ.וו|סדרה 3": ["2.0", "3.0"],
+  "ב.מ.וו|3": ["2.0", "3.0"],
+  "bmw|5 series": ["2.0", "3.0"],
+  "ב.מ.וו|5": ["2.0", "3.0"],
+  "bmw|x1": ["1.5", "2.0"],
+  "ב.מ.וו|x1": ["1.5", "2.0"],
+  "bmw|x3": ["2.0", "3.0"],
+  "ב.מ.וו|x3": ["2.0", "3.0"],
+  "bmw|x5": ["3.0", "4.0"],
+  "ב.מ.וו|x5": ["3.0", "4.0"],
+  // Mercedes
+  "mercedes|c class": ["1.5", "2.0", "3.0"],
+  "מרצדס|c class": ["1.5", "2.0", "3.0"],
+  // Audi
+  "audi|a3": ["1.4", "1.5", "2.0"],
+  "אודי|a3": ["1.4", "1.5", "2.0"],
+  "audi|a4": ["2.0", "3.0"],
+  "אודי|a4": ["2.0", "3.0"],
+  "audi|q3": ["1.5", "2.0"],
+  "אודי|q3": ["1.5", "2.0"],
+  // Volkswagen
+  "volkswagen|polo": ["1.0", "1.2"],
+  "פולקסווגן|פולו": ["1.0", "1.2"],
+  "volkswagen|golf": ["1.0", "1.4", "1.5", "2.0"],
+  "פולקסווגן|גולף": ["1.0", "1.4", "1.5", "2.0"],
+  "volkswagen|tiguan": ["1.5", "2.0"],
+  "פולקסווגן|טיגואן": ["1.5", "2.0"],
+  // Nissan
+  "nissan|x-trail": ["1.6", "2.0", "2.5"],
+  "ניסאן|x-trail": ["1.6", "2.0", "2.5"],
+  "nissan|qashqai": ["1.3", "1.6", "2.0"].filter((v) => v !== "1.3"),
+  "ניסאן|קשקאי": ["1.6", "2.0"],
+  "nissan|juke": ["1.0", "1.6"],
+  "ניסאן|ג'וק": ["1.0", "1.6"],
+  // Mitsubishi
+  "mitsubishi|outlander": ["2.0", "2.4"].filter((v) => v !== "2.4"),
+  "מיצובישי|אאוטלנדר": ["2.0", "2.5"],
+};
+
+function modelEngineKey(make: string, model: string): string {
+  return `${make.trim().toLowerCase()}|${model.trim().toLowerCase()}`;
+}
+
 const schema = z.object({
   // `make` / `model` validated via the combobox component; zod still
   // enforces non-empty so the form can flag them on submit.
@@ -1320,13 +1410,40 @@ export function InventoryFormDialog({
                   ]}
                 />
 
-                <SelectField
-                  id="inv-engine"
-                  label="נפח מנוע (ליטרים)"
-                  error={errors.engine_volume?.message}
-                  registration={register("engine_volume")}
-                  options={ENGINE_OPTIONS}
-                />
+                {watch("fuel_type") === "electric" ? (
+                  // Electric vehicles have no engine displacement —
+                  // show a static read-only line instead of the
+                  // dropdown so dealers can't accidentally pick a
+                  // value that the backend would then reject.
+                  <div>
+                    <span className="text-brand-navy block text-sm font-medium">נפח מנוע</span>
+                    <p className="border-brand-navy/15 bg-brand-navy/5 text-brand-ink/70 mt-1 inline-flex h-11 w-full items-center rounded-md border px-3 text-sm">
+                      חשמלי (ללא מנוע)
+                    </p>
+                  </div>
+                ) : (
+                  <SelectField
+                    id="inv-engine"
+                    label="נפח מנוע (ליטרים)"
+                    error={errors.engine_volume?.message}
+                    registration={register("engine_volume")}
+                    // When the chosen make+model has a known engine list
+                    // we narrow the options to just those — easier for
+                    // dealers, fewer accidental picks. Unknown models fall
+                    // back to the full ENGINE_OPTIONS list.
+                    options={(() => {
+                      const m = String(watch("make") ?? "");
+                      const mo = String(watch("model") ?? "");
+                      if (!m || !mo) return ENGINE_OPTIONS;
+                      const allowed = MODEL_ENGINE_MAP[modelEngineKey(m, mo)];
+                      if (!allowed) return ENGINE_OPTIONS;
+                      const allowedSet = new Set(allowed);
+                      return ENGINE_OPTIONS.filter(
+                        (o) => o.value === "" || allowedSet.has(o.value),
+                      );
+                    })()}
+                  />
+                )}
               </div>
 
               <div>
