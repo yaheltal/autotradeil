@@ -78,6 +78,16 @@ class Settings(BaseSettings):
     sentry_dsn: str = Field(default="")
     sentry_traces_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
 
+    # Web Push — VAPID keypair for the Push API. Empty values mean
+    # the /api/v1/notifications/push/vapid-key endpoint returns ""
+    # and the frontend hides the toggle. Generate via:
+    #   npx web-push generate-vapid-keys
+    # Then expose the public key to the frontend via the endpoint
+    # and keep the private key on the server only.
+    vapid_public_key: str = Field(default="")
+    vapid_private_key: str = Field(default="")
+    vapid_subject: str = Field(default="mailto:support@autotradeil.com")
+
     @field_validator("database_url", mode="after")
     @classmethod
     def _ensure_asyncpg_driver(cls, v: str) -> str:

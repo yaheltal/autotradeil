@@ -33,13 +33,19 @@ from __future__ import annotations
 
 import math
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_marketplace_viewer, require_verified_dealer
+from app.core.auth import (
+    get_current_user,
+    require_marketplace_viewer,
+    require_verified_dealer,
+)
+from app.core.config import settings
 from app.core.email import (
     send_counter_offer,
     send_deal_completed_buyer,
@@ -1471,6 +1477,94 @@ async def dealer_analytics(
         "tier": dealer.tier,
         "top_vehicles": top_vehicles,
     }
+
+
+@notifications_router.post("/push/subscribe", status_code=status.HTTP_201_CREATED)
+async def subscribe_push(
+    payload: dict,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Persist a Web Push browser subscription for the calling user.
+
+    Body shape mirrors the JSON returned by `pushManager.subscribe()`:
+        { endpoint, keys: { p256dh, auth }, user_agent? }
+
+    Idempotent — re-subscribing from the same browser updates the keys
+    in place via the (user_id, endpoint) unique index.
+    """
+    from app.models.push_subscription import PushSubscription
+
+    endpoint = (payload or {}).get("endpoint")
+    keys = (payload or {}).get("keys") or {}
+    p256dh = keys.get("p256dh")
+    auth = keys.get("auth")
+    user_agent = (payload or {}).get("user_agent")
+    if not endpoint or not p256dh or not auth:
+        raise HTTPException(
+            status_code=400, detail="endpoint + keys.p256dh + keys.auth required"
+        )
+
+    existing = (
+        await db.execute(
+            select(PushSubscription).where(
+                PushSubscription.user_id == user.id,
+                PushSubscription.endpoint == endpoint,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        existing.p256dh = p256dh
+        existing.auth = auth
+        existing.user_agent = user_agent
+        existing.last_seen_at = datetime.now(tz=timezone.utc)
+    else:
+        db.add(
+            PushSubscription(
+                user_id=user.id,
+                endpoint=endpoint,
+                p256dh=p256dh,
+                auth=auth,
+                user_agent=user_agent,
+            )
+        )
+    await db.commit()
+    return {"ok": True}
+
+
+@notifications_router.post("/push/unsubscribe")
+async def unsubscribe_push(
+    payload: dict,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Remove the calling user's subscription matching the given endpoint."""
+    from sqlalchemy import delete
+
+    from app.models.push_subscription import PushSubscription
+
+    endpoint = (payload or {}).get("endpoint")
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="endpoint required")
+
+    await db.execute(
+        delete(PushSubscription).where(
+            PushSubscription.user_id == user.id,
+            PushSubscription.endpoint == endpoint,
+        )
+    )
+    await db.commit()
+    return {"ok": True}
+
+
+@notifications_router.get("/push/vapid-key")
+async def get_vapid_public_key() -> dict[str, str]:
+    """Returns the VAPID public key used by the browser to call
+    pushManager.subscribe(). Empty string when not yet configured —
+    the frontend treats that as "push not available" and hides the
+    toggle so dealers don't see a non-functional control."""
+    return {"key": settings.vapid_public_key or ""}
 
 
 @notifications_router.post("/read-all")

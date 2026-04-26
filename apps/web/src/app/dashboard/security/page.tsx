@@ -8,6 +8,7 @@ import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { NotificationPrefs } from "@/components/NotificationPrefs";
+import { PushNotificationsToggle } from "@/components/PushNotificationsToggle";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 
@@ -554,6 +555,22 @@ export default function SecurityPage() {
 
             {/* 4) Notification preferences (Phase 4.4 Step 7) */}
             <NotificationPrefsLoader token={token} />
+
+            {/* 5) Web Push opt-in (this section) */}
+            <section
+              aria-labelledby="push-heading"
+              className="border-brand-navy/10 mt-8 rounded-lg border bg-white p-6"
+            >
+              <h2 id="push-heading" className="text-brand-navy text-lg font-semibold">
+                התראות דחיפה
+              </h2>
+              <p className="text-brand-ink/70 mt-1 text-sm">
+                התראות מערכת ישירות לדפדפן או לטלפון, גם כשהאתר סגור.
+              </p>
+              <div className="mt-4">
+                <PushNotificationsToggle token={token} />
+              </div>
+            </section>
           </div>
         </div>
       </main>
