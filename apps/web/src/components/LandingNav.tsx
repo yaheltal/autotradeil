@@ -79,11 +79,13 @@ export function LandingNav() {
     <header className="border-brand-navy/10 bg-brand-cream/85 supports-[backdrop-filter]:bg-brand-cream/70 sticky top-0 z-30 border-b backdrop-blur">
       <div className="mx-auto max-w-6xl px-4 sm:px-6">
         <div className="flex items-center justify-between gap-3 py-3 sm:gap-6 sm:py-4">
-          {/* Logo + tagline (HTML, not baked into the PNG) */}
+          {/* Logo — icon + wordmark only. Tagline lives in the Hero
+              eyebrow chip now (per dealer feedback the small Hebrew
+              line under the wordmark felt cluttered at this size). */}
           <Link
             href="/"
-            aria-label="AutoTradeIL — זירת מסחר הרכב של ישראל"
-            className="focus-visible:outline-brand-navy group flex min-w-0 items-center gap-3 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
+            aria-label="AutoTradeIL — דף הבית"
+            className="focus-visible:outline-brand-navy group flex min-w-0 items-center gap-2.5 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4"
           >
             <Image
               src="/logo-icon.png"
@@ -91,19 +93,14 @@ export function LandingNav() {
               width={455}
               height={455}
               priority
-              className="h-10 w-10 shrink-0 transition-transform group-hover:scale-[1.05] sm:h-12 sm:w-12"
+              className="h-10 w-10 shrink-0 transition-transform group-hover:scale-[1.05] sm:h-11 sm:w-11"
             />
-            <div className="min-w-0 leading-tight">
-              <p className="text-brand-navy font-serif text-lg font-bold tracking-tight sm:text-xl">
-                <span lang="en">autotrade</span>
-                <span className="text-brand-gold" lang="en">
-                  IL
-                </span>
-              </p>
-              <p className="text-brand-ink/65 truncate text-[11px] font-medium sm:text-xs">
-                זירת מסחר הרכב של ישראל
-              </p>
-            </div>
+            <p className="text-brand-navy font-serif text-xl font-bold tracking-tight sm:text-2xl">
+              <span lang="en">autotrade</span>
+              <span className="text-brand-gold" lang="en">
+                IL
+              </span>
+            </p>
           </Link>
 
           {/* Desktop section nav with scroll-spy */}

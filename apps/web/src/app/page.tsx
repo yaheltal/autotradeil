@@ -485,15 +485,16 @@ export default function Home() {
           </div>
 
           <div className="relative mx-auto max-w-4xl px-4 pb-14 pt-14 text-center sm:px-6 sm:pb-24 sm:pt-24 lg:pt-32">
-            {/* Eyebrow chip — gives the headline somewhere to land on
-                small screens and frames it as "platform announcement"
-                rather than a generic landing-page hero. */}
-            <span className="border-brand-navy/15 bg-brand-cream/70 text-brand-navy/80 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] backdrop-blur sm:text-xs">
+            {/* Brand tagline chip — surfaces "זירת מסחר הרכב של ישראל"
+                prominently above the H1. Tracking widened so the
+                Hebrew line breathes; pulse dot keeps the "live" feel
+                from the previous chip. */}
+            <span className="border-brand-navy/15 bg-brand-cream/70 text-brand-navy inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold tracking-wide backdrop-blur sm:text-sm">
               <span
                 aria-hidden="true"
-                className="bg-brand-gold inline-flex h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
+                className="bg-brand-gold inline-flex h-2 w-2 shrink-0 rounded-full motion-safe:animate-pulse"
               />
-              <span>פלטפורמה B2B · ישראל</span>
+              <span>זירת מסחר הרכב של ישראל</span>
             </span>
 
             <h1
