@@ -44,6 +44,11 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
   const [aligned, setAligned] = useState(false);
   const [alignAnnounce, setAlignAnnounce] = useState<string>("");
   const [permissionError, setPermissionError] = useState<string | null>(null);
+  // Torch (flash) toggle — supported on most Android Chrome devices via
+  // MediaStreamTrack.applyConstraints({advanced:[{torch:true}]}). iOS
+  // Safari does not expose the API, so we hide the button when unsupported.
+  const [torchSupported, setTorchSupported] = useState(false);
+  const [torchOn, setTorchOn] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -155,7 +160,14 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
+        video: {
+          facingMode: { ideal: "environment" },
+          // Higher resolution gives the OCR pipeline a much better
+          // shot at reading IL ID + license fields. The browser
+          // downgrades automatically when not available.
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
         audio: false,
       });
       streamRef.current = stream;
@@ -164,6 +176,19 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
         video.srcObject = stream;
         await video.play().catch(() => {});
       }
+
+      // Probe torch capability on the active video track. On
+      // unsupported devices `getCapabilities()` may not exist or
+      // simply omit `torch`.
+      const track = stream.getVideoTracks()[0];
+      if (track && typeof track.getCapabilities === "function") {
+        const caps = track.getCapabilities() as MediaTrackCapabilities & { torch?: boolean };
+        setTorchSupported(Boolean(caps.torch));
+      } else {
+        setTorchSupported(false);
+      }
+      setTorchOn(false);
+
       runEdgeLoop();
     } catch (err) {
       stopStream();
@@ -172,6 +197,25 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
       );
     }
   }, [runEdgeLoop, stopStream]);
+
+  // --- Torch toggle -------------------------------------------------
+  const toggleTorch = useCallback(async () => {
+    const stream = streamRef.current;
+    if (!stream) return;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return;
+    try {
+      const next = !torchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: next } as MediaTrackConstraintSet & { torch: boolean }],
+      });
+      setTorchOn(next);
+    } catch {
+      // Torch failed mid-session — disable button so we don't keep
+      // showing a control that won't work.
+      setTorchSupported(false);
+    }
+  }, [torchOn]);
 
   // --- Capture current frame ----------------------------------------
   const capture = useCallback(() => {
@@ -363,6 +407,22 @@ export function SmartCameraCapture({ open, onOpenChange, label, onCapture }: Pro
                   >
                     ← חזרה
                   </button>
+                  {torchSupported ? (
+                    <button
+                      type="button"
+                      onClick={() => void toggleTorch()}
+                      aria-pressed={torchOn}
+                      aria-label={torchOn ? "כיבוי פלאש" : "הפעלת פלאש"}
+                      className={[
+                        "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2",
+                        torchOn
+                          ? "bg-brand-gold text-brand-navy border-brand-gold focus-visible:outline-brand-navy"
+                          : "border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy bg-white",
+                      ].join(" ")}
+                    >
+                      <span aria-hidden="true">⚡</span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={capture}
