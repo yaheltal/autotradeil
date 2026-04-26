@@ -132,8 +132,20 @@ function DashboardPageInner() {
     setSigningOut(true);
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/login?signedOut=1");
-  }, [router]);
+    // Belt-and-suspenders against cross-tenant cache leaks: drop any
+    // browser-side state that could be replayed to the next user on
+    // this device (sessionStorage holds in-flight form drafts; the
+    // stale-while-revalidate browser cache is wiped on hard reload).
+    try {
+      sessionStorage.clear();
+    } catch {
+      /* private browsing — ignore */
+    }
+    // Hard-redirect (not router.push) so the SPA bundle re-mounts
+    // fresh — defeats any in-memory React state still holding the
+    // previous dealer's data.
+    window.location.href = "/login?signedOut=1";
+  }, []);
 
   if (loading) {
     return (

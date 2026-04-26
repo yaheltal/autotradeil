@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { ApiStatus } from "@/components/ApiStatus";
 import { WatermarkOverlay } from "@/components/WatermarkOverlay";
 import { createClient } from "@/lib/supabase";
 
@@ -37,7 +38,6 @@ function isActive(pathname: string, item: (typeof NAV_ITEMS)[number]): boolean {
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const drawerToggleRef = useRef<HTMLButtonElement>(null);
@@ -73,7 +73,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setSigningOut(true);
     const supabase = createClient();
     await supabase.auth.signOut();
-    router.push("/login?signedOut=1");
+    try {
+      sessionStorage.clear();
+    } catch {
+      /* private browsing — ignore */
+    }
+    // Hard-redirect so the SPA bundle re-mounts fresh — defeats any
+    // in-memory React state still holding the previous admin's data.
+    window.location.href = "/login?signedOut=1";
   };
 
   return (
@@ -121,15 +128,18 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </span>
             </Link>
           </div>
-          <button
-            type="button"
-            onClick={handleLogout}
-            disabled={signingOut}
-            aria-busy={signingOut || undefined}
-            className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-          >
-            {signingOut ? "מתנתק…" : "התנתקות"}
-          </button>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <ApiStatus />
+            <button
+              type="button"
+              onClick={handleLogout}
+              disabled={signingOut}
+              aria-busy={signingOut || undefined}
+              className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
+            >
+              {signingOut ? "מתנתק…" : "התנתקות"}
+            </button>
+          </div>
         </div>
       </header>
 

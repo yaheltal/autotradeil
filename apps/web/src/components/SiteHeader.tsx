@@ -1,8 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { ApiStatus } from "@/components/ApiStatus";
-
 /**
  * Public-site sticky header. Used on the marketing landing page and
  * the legal pages (/terms, /privacy, /contact). The dashboard + admin
@@ -61,7 +59,6 @@ export function SiteHeader({ showAnchorNav = false }: { showAnchorNav?: boolean 
           ) : null}
         </nav>
         <div className="flex items-center gap-2 sm:gap-3">
-          <ApiStatus />
           <Link
             href="/login"
             className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"

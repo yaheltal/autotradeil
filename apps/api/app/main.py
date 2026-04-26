@@ -126,12 +126,22 @@ async def request_context(request: Request, call_next):  # type: ignore[no-untyp
             # balancer + uptime pings don't all hit Postgres.
             response.headers["Cache-Control"] = "public, max-age=30"
         elif path.startswith("/api/v1/"):
-            # Authenticated API responses are user-specific — keep them
-            # private; allow short fresh-cache + 5min stale-while-revalidate
-            # so the browser can re-render instantly while the next fetch
-            # refreshes in the background.
-            response.headers["Cache-Control"] = (
-                "private, max-age=0, stale-while-revalidate=300"
+            # CRITICAL: every authenticated response must be `no-store`,
+            # NOT `private + stale-while-revalidate`. With s-w-r the
+            # browser would serve dealer A's cached /api/v1/inventory
+            # list to dealer B for up to 5 minutes after a sign-out +
+            # sign-in cycle on the same device — cross-tenant data leak.
+            # The few sub-second perf wins are not worth the risk; if
+            # an endpoint genuinely needs caching it must opt in
+            # explicitly with its own Cache-Control header.
+            response.headers["Cache-Control"] = "private, no-store, no-cache"
+            response.headers["Pragma"] = "no-cache"
+            # Belt-and-suspenders: tells any intermediate proxy that
+            # the response varies by Authorization, so even a
+            # mis-configured cache wouldn't share across users.
+            existing_vary = response.headers.get("Vary", "")
+            response.headers["Vary"] = (
+                f"{existing_vary}, Authorization".lstrip(", ") if existing_vary else "Authorization"
             )
 
     log_request(

@@ -1,7 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { ApiStatus } from "@/components/ApiStatus";
 import { RenderKeepAlive } from "@/components/RenderKeepAlive";
 
 /*
@@ -494,7 +493,6 @@ export default function Home() {
             </ul>
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
-            <ApiStatus />
             <Link
               href="/login"
               className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
@@ -529,27 +527,37 @@ export default function Home() {
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/60 to-transparent motion-safe:animate-[shine_3.5s_ease-in-out_infinite]" />
           </div>
 
-          <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-16 text-center sm:px-6 sm:pb-24 sm:pt-24 lg:pt-32">
+          <div className="relative mx-auto max-w-4xl px-4 pb-14 pt-14 text-center sm:px-6 sm:pb-24 sm:pt-24 lg:pt-32">
+            {/* Eyebrow chip — gives the headline somewhere to land on
+                small screens and frames it as "platform announcement"
+                rather than a generic landing-page hero. */}
+            <span className="border-brand-navy/15 bg-brand-cream/70 text-brand-navy/80 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] backdrop-blur sm:text-xs">
+              <span
+                aria-hidden="true"
+                className="bg-brand-gold inline-flex h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
+              />
+              <span>פלטפורמה B2B · ישראל</span>
+            </span>
+
             <h1
               id="hero-heading"
-              className="text-brand-navy font-serif text-[2.25rem] font-bold leading-[1.1] tracking-tight sm:text-6xl lg:text-7xl"
+              className="text-brand-navy mt-5 text-balance font-serif text-[2.5rem] font-bold leading-[1.05] tracking-tight sm:mt-7 sm:text-6xl lg:text-7xl"
             >
-              זירת המסחר
-              <br />
-              <span className="text-brand-navy/90">של סוחרי</span>
-              <span className="text-brand-gold"> · </span>
-              <span className="text-brand-navy/90">הרכב.</span>
+              <span className="block">זירת המסחר</span>
+              <span className="text-brand-navy/90 block">
+                של סוחרי<span className="text-brand-gold"> · </span>הרכב.
+              </span>
             </h1>
 
-            <p className="text-brand-ink/80 mx-auto mt-6 max-w-2xl text-base leading-relaxed sm:mt-7 sm:text-xl">
+            <p className="text-brand-ink/80 mx-auto mt-5 max-w-2xl text-balance text-[15px] leading-relaxed sm:mt-7 sm:text-xl">
               פלטפורמה מקצועית למסחר ברכבים בין סוחרים מוסמכים — מלאי משותף, הצעות מתועדות, וזירה
               אחת לכל מחזור החיים של העסקה.
             </p>
 
-            <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:mt-10 sm:flex-row">
+            <div className="mt-7 flex flex-col items-stretch justify-center gap-3 sm:mt-10 sm:flex-row">
               <Link
                 href="/signup/dealer"
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/10 group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-md px-5 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto sm:px-7 sm:text-lg"
+                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/15 group inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-lg px-5 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto sm:px-7 sm:text-lg"
               >
                 <span>אני סוחר — הצטרפות</span>
                 <span
@@ -565,7 +573,7 @@ export default function Home() {
                 disabled
                 title="ממש ממש עוד מעט, סבלנות"
                 aria-describedby="buyer-cta-hint"
-                className="bg-brand-navy/5 text-brand-navy/60 border-brand-navy/10 inline-flex min-h-[52px] w-full cursor-not-allowed items-center justify-center gap-3 rounded-md border px-5 py-3.5 text-base font-semibold sm:w-auto sm:px-7 sm:text-lg"
+                className="bg-brand-navy/5 text-brand-navy/60 border-brand-navy/10 inline-flex min-h-[56px] w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-lg border px-5 py-3.5 text-base font-semibold sm:w-auto sm:px-7 sm:text-lg"
               >
                 <span>אני קונה</span>
                 <span
@@ -580,9 +588,31 @@ export default function Home() {
               </span>
             </div>
 
-            <p className="text-brand-ink/65 mt-6 text-sm">
-              הצטרפות ללא עלות · אישור סוחר תוך 24 שעות · אימות KYC חכם בעזרת AI
-            </p>
+            {/* Trust strip — three small badges with check glyphs. On
+                mobile they wrap into a tight 3-column grid with very
+                little vertical noise; on sm+ they line up horizontally
+                under the CTAs. */}
+            <ul
+              aria-label="הבטחות הפלטפורמה"
+              className="text-brand-ink/70 mx-auto mt-7 grid max-w-md grid-cols-3 items-start gap-2 text-[11px] font-medium sm:mt-9 sm:flex sm:max-w-none sm:flex-wrap sm:justify-center sm:gap-x-5 sm:gap-y-2 sm:text-sm"
+            >
+              {["ללא עמלת רישום", "אישור סוחר תוך 24 שעות", "אימות KYC חכם בעזרת AI"].map(
+                (line) => (
+                  <li
+                    key={line}
+                    className="inline-flex items-start justify-center gap-1.5 leading-snug"
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="bg-brand-gold/15 text-brand-gold inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
+                    >
+                      ✓
+                    </span>
+                    <span>{line}</span>
+                  </li>
+                ),
+              )}
+            </ul>
           </div>
         </section>
 
