@@ -67,11 +67,15 @@ export default function DealsPage() {
 
   const load = useCallback(async () => {
     if (!token) return;
+    setError(null);
     try {
       // Fetch own dealer id + deals in parallel. /dealers/me is the
       // source of truth for "which side of each deal am I" — the old
       // first-deal inference broke when the dealer had zero deals or
       // when both sides of every deal happened to share an id.
+      // Backend `/marketplace/deals` filters by buyer_dealer_id == me
+      // OR seller_dealer_id == me — strict tenant isolation, no
+      // dealer ever sees another dealer's deal history.
       const [me, res] = await Promise.all([
         apiFetch<{ id: string }>("/api/v1/dealers/me", { token }).catch(() => null),
         apiFetch<Resp>("/api/v1/marketplace/deals", { token }),
@@ -79,7 +83,14 @@ export default function DealsPage() {
       setData(res);
       if (me?.id) setMyDealerId(me.id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת היסטוריית העסקאות");
+      // Translate "Failed to fetch" / TypeError into Hebrew. Network
+      // errors and 5xx both end up here; the empty-state UI below
+      // is reserved for the success-with-zero-deals case.
+      const raw = e instanceof Error ? e.message : "";
+      const friendly = raw.toLowerCase().includes("failed to fetch")
+        ? "אין חיבור לשרת — בדוק את החיבור ונסה שוב"
+        : raw || "שגיאה בטעינת היסטוריית העסקאות";
+      setError(friendly);
     }
   }, [token]);
 
@@ -134,20 +145,41 @@ export default function DealsPage() {
           <p className="text-brand-ink/70 mt-2">כל העסקאות שנסגרו משני הצדדים — מכירות וקניות.</p>
 
           {error ? (
-            <p role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
-              {error}
-            </p>
+            <div role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
+              <p className="font-semibold">{error}</p>
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="text-danger-text mt-2 inline-flex min-h-9 items-center rounded-md bg-white px-3 py-1.5 text-xs font-bold underline"
+              >
+                נסה שוב
+              </button>
+            </div>
           ) : null}
 
-          {data === null ? (
-            <p role="status" className="text-brand-ink/60 p-8">
-              טוען…
-            </p>
-          ) : data.items.length === 0 ? (
-            <p className="border-brand-navy/10 text-brand-ink/60 mt-6 rounded-lg border bg-white p-10 text-center">
-              טרם בוצעו עסקאות
-            </p>
-          ) : (
+          {data === null && !error ? (
+            // Skeleton loader — three placeholder cards so the page
+            // doesn't collapse and the user sees activity.
+            <ul className="mt-6 space-y-4" aria-busy="true" aria-label="טוען עסקאות">
+              {[0, 1, 2].map((i) => (
+                <li key={i} className="border-brand-navy/10 rounded-lg border bg-white p-5">
+                  <div className="bg-brand-navy/10 h-5 w-1/2 rounded motion-safe:animate-pulse" />
+                  <div className="bg-brand-navy/10 mt-3 h-4 w-1/3 rounded motion-safe:animate-pulse" />
+                  <div className="bg-brand-navy/10 mt-4 h-4 w-2/3 rounded motion-safe:animate-pulse" />
+                </li>
+              ))}
+            </ul>
+          ) : data && data.items.length === 0 ? (
+            <div className="border-brand-navy/15 mt-6 rounded-lg border bg-white p-10 text-center">
+              <p aria-hidden="true" className="text-brand-ink/30 mx-auto text-5xl">
+                ✓
+              </p>
+              <p className="text-brand-navy mt-3 font-bold">אין עסקאות עדיין</p>
+              <p className="text-brand-ink/65 mt-2 text-sm">
+                עסקאות יופיעו כאן לאחר סגירת הצעות בהצלחה.
+              </p>
+            </div>
+          ) : data ? (
             <ul className="mt-6 space-y-4">
               {data.items.map((d) => {
                 const iAmBuyer = myDealerId === d.buyer_dealer_id;
@@ -212,7 +244,7 @@ export default function DealsPage() {
                 );
               })}
             </ul>
-          )}
+          ) : null}
         </div>
       </main>
     </div>
