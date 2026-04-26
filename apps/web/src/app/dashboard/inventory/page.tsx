@@ -15,6 +15,7 @@ import { NotificationBell } from "@/components/NotificationBell";
 import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { PauseDialog } from "@/components/PauseDialog";
 import { StatusBadge, type InventoryStatus } from "@/components/StatusBadge";
+import { VehicleFullDetailsDialog } from "@/components/VehicleFullDetailsDialog";
 
 /*
  * Lazy-loaded heavy dialogs — these are click-triggered and bring in
@@ -147,6 +148,9 @@ function InventoryPageInner() {
 
   const [imagesOpen, setImagesOpen] = useState(false);
   const [imagesVehicle, setImagesVehicle] = useState<Item | null>(null);
+  // Vehicle full-details dialog (read-only registration card)
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsVehicleId, setDetailsVehicleId] = useState<string | null>(null);
 
   // Phase 4.3: pause dialog state
   const [pauseOpen, setPauseOpen] = useState(false);
@@ -765,6 +769,18 @@ function InventoryPageInner() {
                           >
                             ניהול תמונות
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailsVehicleId(item.id);
+                              setDetailsOpen(true);
+                            }}
+                            aria-label={`פרטים מלאים על ${fullLabel}`}
+                            className="border-brand-gold/40 text-brand-navy hover:bg-brand-gold/10 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center gap-1.5 rounded-md border-2 bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                          >
+                            <span aria-hidden="true">📋</span>
+                            פרטים מלאים
+                          </button>
                           <div className="flex gap-2">
                             <button
                               ref={(el) => {
@@ -886,6 +902,22 @@ function InventoryPageInner() {
             year: imagesVehicle.year,
           }}
           token={token}
+        />
+      ) : null}
+
+      {/* Read-only "registration card" view — opened from each card's
+          "📋 פרטים מלאים" button. Endpoint=own ⇒ /api/v1/inventory/{id}
+          which is dealer-scoped, so this never leaks across tenants. */}
+      {detailsOpen && detailsVehicleId && token ? (
+        <VehicleFullDetailsDialog
+          open={detailsOpen}
+          onOpenChange={(v) => {
+            setDetailsOpen(v);
+            if (!v) setDetailsVehicleId(null);
+          }}
+          token={token}
+          vehicleId={detailsVehicleId}
+          endpoint="own"
         />
       ) : null}
 

@@ -67,6 +67,23 @@ body {
   }
 }
 
+/* WebKit autofill overrides — Chrome / Safari / iOS apply a light
+ * yellow/green background to fields they auto-fill (saved passwords,
+ * email completions). The override below preserves our white field
+ * background by placing a 30px white inset shadow that masks the
+ * autofill tint, plus restores the brand-ink text color. The transition
+ * delay is the long-standing trick to keep the override sticky for
+ * multiple seconds (browsers re-apply autofill after focus events). */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px white inset !important;
+  -webkit-text-fill-color: #1c2330 !important;
+  caret-color: #1c2330 !important;
+  transition: background-color 9999s ease-out 0s;
+}
+
 /* Landing-page anchor offset — the sticky LandingNav covers the top of
  * any section a user jumps to via #anchor. scroll-margin-top tells the
  * browser "treat the top of this element as if it started N pixels

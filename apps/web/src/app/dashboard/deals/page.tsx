@@ -65,37 +65,56 @@ export default function DealsPage() {
   const [myDealerId, setMyDealerId] = useState<string | null>(null);
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    setError(null);
-    try {
-      // Fetch own dealer id + deals in parallel. /dealers/me is the
-      // source of truth for "which side of each deal am I" — the old
-      // first-deal inference broke when the dealer had zero deals or
-      // when both sides of every deal happened to share an id.
-      // Backend `/marketplace/deals` filters by buyer_dealer_id == me
-      // OR seller_dealer_id == me — strict tenant isolation, no
-      // dealer ever sees another dealer's deal history.
-      const [me, res] = await Promise.all([
-        apiFetch<{ id: string }>("/api/v1/dealers/me", { token }).catch(() => null),
-        apiFetch<Resp>("/api/v1/marketplace/deals", { token }),
-      ]);
-      setData(res);
-      if (me?.id) setMyDealerId(me.id);
-    } catch (e) {
-      // Translate "Failed to fetch" / TypeError into Hebrew. Network
-      // errors and 5xx both end up here; the empty-state UI below
-      // is reserved for the success-with-zero-deals case.
-      const raw = e instanceof Error ? e.message : "";
-      const friendly = raw.toLowerCase().includes("failed to fetch")
-        ? "אין חיבור לשרת — בדוק את החיבור ונסה שוב"
-        : raw || "שגיאה בטעינת היסטוריית העסקאות";
-      setError(friendly);
-    }
-  }, [token]);
+  // Render's free tier sleeps the API after 15 minutes of no traffic.
+  // First request after a sleep can take 15-60s. Auto-retry up to 3
+  // times with a short backoff so the dealer doesn't have to manually
+  // refresh during a cold start.
+  const [retryCount, setRetryCount] = useState(0);
+
+  const load = useCallback(
+    async (attempt = 1) => {
+      if (!token) return;
+      setError(null);
+      if (attempt > 1) setRetryCount(attempt);
+      try {
+        // Fetch own dealer id + deals in parallel. /dealers/me is the
+        // source of truth for "which side of each deal am I". Backend
+        // `/marketplace/deals` filters by buyer_dealer_id == me OR
+        // seller_dealer_id == me — strict tenant isolation, no dealer
+        // ever sees another dealer's deal history.
+        const [me, res] = await Promise.all([
+          apiFetch<{ id: string }>("/api/v1/dealers/me", { token }).catch(() => null),
+          apiFetch<Resp>("/api/v1/marketplace/deals", { token }),
+        ]);
+        setData(res);
+        setRetryCount(0);
+        if (me?.id) setMyDealerId(me.id);
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : "";
+        const isNetwork = raw.toLowerCase().includes("failed to fetch");
+        // Cold-start friendly: auto-retry up to 3 times on network errors
+        // before giving up and showing the manual retry UI.
+        if (isNetwork && attempt < 3) {
+          setError(
+            attempt === 1
+              ? "מתחבר לשרת… (השרת מתעורר משינה)"
+              : `מנסה להתחבר שוב — ניסיון ${attempt + 1} מתוך 3…`,
+          );
+          setTimeout(() => void load(attempt + 1), 3000);
+          return;
+        }
+        const friendly = isNetwork
+          ? "השרת לא זמין כרגע — נסה שוב בעוד רגע"
+          : raw || "שגיאה בטעינת היסטוריית העסקאות";
+        setError(friendly);
+        setRetryCount(0);
+      }
+    },
+    [token],
+  );
 
   useEffect(() => {
-    void load();
+    void load(1);
   }, [load]);
 
   useEffect(() => {
@@ -145,15 +164,34 @@ export default function DealsPage() {
           <p className="text-brand-ink/70 mt-2">כל העסקאות שנסגרו משני הצדדים — מכירות וקניות.</p>
 
           {error ? (
-            <div role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
-              <p className="font-semibold">{error}</p>
-              <button
-                type="button"
-                onClick={() => void load()}
-                className="text-danger-text mt-2 inline-flex min-h-9 items-center rounded-md bg-white px-3 py-1.5 text-xs font-bold underline"
-              >
-                נסה שוב
-              </button>
+            <div
+              role={retryCount > 0 ? "status" : "alert"}
+              aria-live={retryCount > 0 ? "polite" : "assertive"}
+              className={[
+                "mt-6 rounded-md px-4 py-3",
+                retryCount > 0
+                  ? "bg-brand-cream/80 text-brand-navy border-brand-gold/40 border"
+                  : "bg-danger-bg text-danger-text",
+              ].join(" ")}
+            >
+              <div className="flex items-center gap-2">
+                {retryCount > 0 ? (
+                  <span
+                    aria-hidden="true"
+                    className="border-brand-gold inline-block h-4 w-4 animate-spin rounded-full border-2 border-t-transparent motion-reduce:animate-none"
+                  />
+                ) : null}
+                <p className="font-semibold">{error}</p>
+              </div>
+              {retryCount === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => void load(1)}
+                  className="text-danger-text mt-2 inline-flex min-h-9 items-center rounded-md bg-white px-3 py-1.5 text-xs font-bold underline"
+                >
+                  נסה שוב
+                </button>
+              ) : null}
             </div>
           ) : null}
 

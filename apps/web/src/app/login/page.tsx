@@ -233,7 +233,7 @@ function LoginPageInner() {
       {/* Top-edge gold accent stripe */}
       <div aria-hidden="true" className="bg-brand-gold absolute inset-x-0 top-0 h-1" />
 
-      <div className="relative mx-auto flex min-h-[100dvh] max-w-md flex-col px-4 py-10 sm:px-6 sm:py-16">
+      <div className="relative mx-auto flex min-h-[100dvh] max-w-md flex-col items-stretch justify-center px-4 py-10 sm:px-6 sm:py-16">
         <div className="flex justify-center">
           <BrandMark />
         </div>
