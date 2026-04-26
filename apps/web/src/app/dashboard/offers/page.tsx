@@ -117,8 +117,9 @@ export default function OffersPage() {
       ]);
       setReceived(r);
       setSent(s);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת ההצעות");
+    } catch {
+      // Generic — never leak technical detail to dealers.
+      setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
     }
   }, [token]);
 

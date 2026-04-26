@@ -140,8 +140,9 @@ export default function MarketplacePage() {
             res.total === 0 ? "לא נמצאו רכבים תואמים" : `נמצאו ${res.total} רכבים`,
           );
         }, 150);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "שגיאה בטעינת השוק");
+      } catch {
+        // Generic message — never leak fetch / 5xx detail to dealers.
+        setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
       } finally {
         setLoading(false);
       }

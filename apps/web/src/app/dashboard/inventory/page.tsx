@@ -204,8 +204,11 @@ function InventoryPageInner() {
         { token },
       );
       setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת המלאי");
+    } catch {
+      // Dealer-facing — generic Hebrew, never the raw fetch error.
+      // Admins debug via DevTools console; the page never leaks
+      // "Failed to fetch" / 500 stack to a sales floor user.
+      setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
     }
   }, [
     token,
@@ -344,8 +347,8 @@ function InventoryPageInner() {
       });
       setToast("הרכב חודש");
       await refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בחידוש הרכב");
+    } catch {
+      setError("אירעה שגיאה בחידוש הרכב, אנא נסה שוב");
     }
   };
 

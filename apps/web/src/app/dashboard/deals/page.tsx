@@ -65,49 +65,46 @@ export default function DealsPage() {
   const [myDealerId, setMyDealerId] = useState<string | null>(null);
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
-  // Render's free tier sleeps the API after 15 minutes of no traffic.
-  // First request after a sleep can take 15-60s. Auto-retry up to 3
-  // times with a short backoff so the dealer doesn't have to manually
-  // refresh during a cold start.
-  const [retryCount, setRetryCount] = useState(0);
+  // Dealer-facing error policy: NEVER show technical messages
+  // ("Failed to fetch", "השרת מתעורר משינה", etc.). Only two states
+  // are user-visible:
+  //   · `loadingMode === "retrying"` — silent spinner, no text
+  //   · `loadingMode === "failed"` — generic Hebrew message after
+  //     ~30s of attempts; admins debugging the API see the technical
+  //     reason in DevTools, not on the page.
+  // Total retry budget is ~30s (3s + 6s + 9s + 12s back-off) before
+  // the failed UI takes over.
+  type LoadingMode = "idle" | "retrying" | "failed";
+  const [loadingMode, setLoadingMode] = useState<LoadingMode>("idle");
 
   const load = useCallback(
     async (attempt = 1) => {
       if (!token) return;
       setError(null);
-      if (attempt > 1) setRetryCount(attempt);
       try {
-        // Fetch own dealer id + deals in parallel. /dealers/me is the
-        // source of truth for "which side of each deal am I". Backend
-        // `/marketplace/deals` filters by buyer_dealer_id == me OR
-        // seller_dealer_id == me — strict tenant isolation, no dealer
-        // ever sees another dealer's deal history.
+        // Backend `/marketplace/deals` filters by buyer_dealer_id ==
+        // me OR seller_dealer_id == me — strict tenant isolation,
+        // no dealer ever sees another dealer's deal history.
         const [me, res] = await Promise.all([
           apiFetch<{ id: string }>("/api/v1/dealers/me", { token }).catch(() => null),
           apiFetch<Resp>("/api/v1/marketplace/deals", { token }),
         ]);
         setData(res);
-        setRetryCount(0);
+        setLoadingMode("idle");
         if (me?.id) setMyDealerId(me.id);
-      } catch (e) {
-        const raw = e instanceof Error ? e.message : "";
-        const isNetwork = raw.toLowerCase().includes("failed to fetch");
-        // Cold-start friendly: auto-retry up to 3 times on network errors
-        // before giving up and showing the manual retry UI.
-        if (isNetwork && attempt < 3) {
-          setError(
-            attempt === 1
-              ? "מתחבר לשרת… (השרת מתעורר משינה)"
-              : `מנסה להתחבר שוב — ניסיון ${attempt + 1} מתוך 3…`,
-          );
-          setTimeout(() => void load(attempt + 1), 3000);
+      } catch {
+        // Treat ALL failures the same from the dealer's POV — there
+        // is no actionable difference between "network down" and
+        // "5xx" for them. Keep retrying silently up to 4 attempts
+        // (cumulative ~30s back-off), then show the generic failed
+        // state with a manual retry button.
+        if (attempt < 4) {
+          setLoadingMode("retrying");
+          setTimeout(() => void load(attempt + 1), 3000 * attempt);
           return;
         }
-        const friendly = isNetwork
-          ? "השרת לא זמין כרגע — נסה שוב בעוד רגע"
-          : raw || "שגיאה בטעינת היסטוריית העסקאות";
-        setError(friendly);
-        setRetryCount(0);
+        setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
+        setLoadingMode("failed");
       }
     },
     [token],
@@ -163,39 +160,39 @@ export default function DealsPage() {
           </h1>
           <p className="text-brand-ink/70 mt-2">כל העסקאות שנסגרו משני הצדדים — מכירות וקניות.</p>
 
-          {error ? (
+          {/* Silent retry indicator — spinner only, no error text.
+              Dealers don't need (or want) to know the API is sleeping. */}
+          {loadingMode === "retrying" ? (
             <div
-              role={retryCount > 0 ? "status" : "alert"}
-              aria-live={retryCount > 0 ? "polite" : "assertive"}
-              className={[
-                "mt-6 rounded-md px-4 py-3",
-                retryCount > 0
-                  ? "bg-brand-cream/80 text-brand-navy border-brand-gold/40 border"
-                  : "bg-danger-bg text-danger-text",
-              ].join(" ")}
+              role="status"
+              aria-live="polite"
+              aria-label="טוען"
+              className="mt-6 flex items-center justify-center py-8"
             >
-              <div className="flex items-center gap-2">
-                {retryCount > 0 ? (
-                  <span
-                    aria-hidden="true"
-                    className="border-brand-gold inline-block h-4 w-4 animate-spin rounded-full border-2 border-t-transparent motion-reduce:animate-none"
-                  />
-                ) : null}
-                <p className="font-semibold">{error}</p>
-              </div>
-              {retryCount === 0 ? (
-                <button
-                  type="button"
-                  onClick={() => void load(1)}
-                  className="text-danger-text mt-2 inline-flex min-h-9 items-center rounded-md bg-white px-3 py-1.5 text-xs font-bold underline"
-                >
-                  נסה שוב
-                </button>
-              ) : null}
+              <span
+                aria-hidden="true"
+                className="border-brand-gold inline-block h-8 w-8 animate-spin rounded-full border-2 border-t-transparent motion-reduce:animate-none"
+              />
+              <span className="sr-only">טוען</span>
             </div>
           ) : null}
 
-          {data === null && !error ? (
+          {/* Generic failed state — only after the silent retries
+              are exhausted. No technical detail leaks to the dealer. */}
+          {loadingMode === "failed" && error ? (
+            <div role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
+              <p className="font-semibold">{error}</p>
+              <button
+                type="button"
+                onClick={() => void load(1)}
+                className="text-danger-text mt-2 inline-flex min-h-9 items-center rounded-md bg-white px-3 py-1.5 text-xs font-bold underline"
+              >
+                נסה שוב
+              </button>
+            </div>
+          ) : null}
+
+          {data === null && loadingMode === "idle" ? (
             // Skeleton loader — three placeholder cards so the page
             // doesn't collapse and the user sees activity.
             <ul className="mt-6 space-y-4" aria-busy="true" aria-label="טוען עסקאות">
