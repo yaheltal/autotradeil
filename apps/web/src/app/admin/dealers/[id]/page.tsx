@@ -74,11 +74,10 @@ export default function DealerDetailPage() {
   const [suspendWithReasonOpen, setSuspendWithReasonOpen] = useState(false);
   const [silentSuspendOpen, setSilentSuspendOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  // Phase 4.4 — tabs + suspend dialog
+  // Phase 4.4 — tabs
   const [tab, setTab] = useState<TabId>("details");
-  const [suspendOpen, setSuspendOpen] = useState(false);
-  const [suspendReason, setSuspendReason] = useState("");
-  const [suspendBusy, setSuspendBusy] = useState(false);
+  // Trigger ref for the suspend button — used so focus returns to the
+  // trigger after a SuspendWithReasonDialog / SilentSuspendDialog close.
   const suspendTriggerRef = useRef<HTMLButtonElement>(null);
 
   const load = useCallback(async () => {
@@ -147,28 +146,6 @@ export default function DealerDetailPage() {
       setActionError(e instanceof Error ? e.message : "שגיאה");
     } finally {
       setActionBusy(false);
-    }
-  };
-
-  const submitSuspend = async () => {
-    if (!token || !dealer) return;
-    if (!suspendReason.trim()) return;
-    setSuspendBusy(true);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealer.id}/suspend`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ reason: suspendReason.trim() }),
-      });
-      setToast(`${dealer.business_name} הושעה`);
-      setSuspendOpen(false);
-      setSuspendReason("");
-      await load();
-      queueMicrotask(() => suspendTriggerRef.current?.focus());
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה בהשעיה");
-    } finally {
-      setSuspendBusy(false);
     }
   };
 
@@ -559,41 +536,6 @@ export default function DealerDetailPage() {
             void load();
           }}
         />
-
-        {/* Legacy suspend dialog — kept temporarily so the orphan submitSuspend
-         *  reference doesn't error. Hidden (open={false}) and unreachable
-         *  from any trigger. Will be removed in a follow-up cleanup commit. */}
-        <Dialog.Root open={false} onOpenChange={setSuspendOpen}>
-          <Dialog.Portal>
-            <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/40 fixed inset-0 z-40" />
-            <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="bg-brand-cream w-full max-w-md rounded-xl p-6 shadow-xl">
-                <Dialog.Title className="text-brand-navy text-lg font-bold">
-                  השעיית סוחר
-                </Dialog.Title>
-                <textarea
-                  value={suspendReason}
-                  onChange={(e) => setSuspendReason(e.target.value)}
-                  className="hidden"
-                />
-                <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <Dialog.Close asChild>
-                    <button type="button">ביטול</button>
-                  </Dialog.Close>
-                  <button
-                    type="button"
-                    onClick={() => void submitSuspend()}
-                    disabled={suspendBusy || !suspendReason.trim()}
-                    aria-busy={suspendBusy || undefined}
-                    className="bg-danger hover:bg-danger/90 focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-                  >
-                    {suspendBusy ? "משעה…" : "השעה סוחר"}
-                  </button>
-                </div>
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
       </div>
     </main>
   );
