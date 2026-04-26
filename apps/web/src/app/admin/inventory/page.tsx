@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { apiFetch } from "@/lib/api";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { useSmartFilters } from "@/hooks/useSmartFilters";
+import { apiFetch } from "@/lib/api";
 
 /*
  * Admin all-inventory page (Phase 4.3).
@@ -59,7 +60,10 @@ export default function AdminInventoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [f, setF] = useState({ visibility: "", status: "", make: "", model: "" });
+  const [smartQuery, setSmartQuery] = useState("");
   const [pageAnnounce, setPageAnnounce] = useState("");
+
+  const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
 
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
@@ -123,75 +127,120 @@ export default function AdminInventoryPage() {
         <form
           role="search"
           aria-label="סינון רכבים"
-          onSubmit={(e) => {
+          onSubmit={async (e) => {
             e.preventDefault();
             setPage(1);
+            // Smart-search: parse the free-text query and merge make/
+            // model into the explicit filters before reload. Explicit
+            // dropdowns win — Claude only fills gaps.
+            const q = smartQuery.trim();
+            if (q) {
+              const parsed = await parseSmart(q);
+              if (parsed) {
+                setF((prev) => ({
+                  ...prev,
+                  make: prev.make || parsed.filters.make || "",
+                  model: prev.model || parsed.filters.model || "",
+                }));
+              }
+            }
             void load();
           }}
-          className="border-brand-navy/10 mt-6 grid gap-3 rounded-lg border bg-white p-4 sm:grid-cols-2 lg:grid-cols-4"
+          className="border-brand-navy/10 mt-6 rounded-lg border bg-white p-4"
         >
-          <div>
-            <label htmlFor="f-vis" className="text-brand-navy block text-xs font-semibold">
-              חשיפה
-            </label>
-            <select
-              id="f-vis"
-              dir="rtl"
-              value={f.visibility}
-              onChange={(e) => setF({ ...f, visibility: e.target.value })}
-              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              <option value="">הכל</option>
-              <option value="private">פרטי</option>
-              <option value="b2b">B2B</option>
-              <option value="b2c">B2C</option>
-              <option value="both">שניהם</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="f-status" className="text-brand-navy block text-xs font-semibold">
-              סטטוס
-            </label>
-            <select
-              id="f-status"
-              dir="rtl"
-              value={f.status}
-              onChange={(e) => setF({ ...f, status: e.target.value })}
-              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              <option value="">הכל</option>
-              <option value="active">פעיל</option>
-              <option value="sold">נמכר</option>
-              <option value="hidden">מוסתר</option>
-            </select>
-          </div>
-          <div>
-            <label htmlFor="f-make" className="text-brand-navy block text-xs font-semibold">
-              יצרן
+          {/* Smart search row */}
+          <div className="mb-3">
+            <label htmlFor="f-smart" className="text-brand-navy block text-xs font-semibold">
+              חיפוש חכם
+              <span
+                aria-hidden="true"
+                title="חיפוש חופשי בעברית — Claude יזהה אוטומטית יצרן/דגם"
+                className="text-brand-gold ms-1.5 text-xs"
+              >
+                ✦
+              </span>
             </label>
             <input
-              id="f-make"
-              type="text"
-              value={f.make}
-              onChange={(e) => setF({ ...f, make: e.target.value })}
+              id="f-smart"
+              type="search"
+              autoComplete="off"
+              value={smartQuery}
+              onChange={(e) => setSmartQuery(e.target.value)}
+              placeholder='למשל: "BMW X3" או "טויוטה היברידית"'
+              aria-describedby="f-smart-hint"
               className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
             />
+            <p id="f-smart-hint" className="text-brand-ink/55 mt-1 text-xs">
+              ניתן להזין משפט בעברית — המערכת תחלץ אוטומטית יצרן + דגם
+            </p>
           </div>
-          <div>
-            <label htmlFor="f-model" className="text-brand-navy block text-xs font-semibold">
-              דגם
-            </label>
-            <input
-              id="f-model"
-              type="text"
-              value={f.model}
-              onChange={(e) => setF({ ...f, model: e.target.value })}
-              className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-            />
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label htmlFor="f-vis" className="text-brand-navy block text-xs font-semibold">
+                חשיפה
+              </label>
+              <select
+                id="f-vis"
+                dir="rtl"
+                value={f.visibility}
+                onChange={(e) => setF({ ...f, visibility: e.target.value })}
+                className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                <option value="">הכל</option>
+                <option value="private">פרטי</option>
+                <option value="b2b">B2B</option>
+                <option value="b2c">B2C</option>
+                <option value="both">שניהם</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="f-status" className="text-brand-navy block text-xs font-semibold">
+                סטטוס
+              </label>
+              <select
+                id="f-status"
+                dir="rtl"
+                value={f.status}
+                onChange={(e) => setF({ ...f, status: e.target.value })}
+                className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                <option value="">הכל</option>
+                <option value="active">פעיל</option>
+                <option value="sold">נמכר</option>
+                <option value="hidden">מוסתר</option>
+              </select>
+            </div>
+            <div>
+              <label htmlFor="f-make" className="text-brand-navy block text-xs font-semibold">
+                יצרן
+              </label>
+              <input
+                id="f-make"
+                type="text"
+                value={f.make}
+                onChange={(e) => setF({ ...f, make: e.target.value })}
+                className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
+            </div>
+            <div>
+              <label htmlFor="f-model" className="text-brand-navy block text-xs font-semibold">
+                דגם
+              </label>
+              <input
+                id="f-model"
+                type="text"
+                value={f.model}
+                onChange={(e) => setF({ ...f, model: e.target.value })}
+                className="border-brand-navy/20 focus-visible:outline-brand-navy mt-1 block w-full rounded-md border bg-white px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
+            </div>
           </div>
-          <div className="flex justify-end sm:col-span-2 lg:col-span-4">
+          <div className="mt-4 flex justify-end">
             <button
               type="submit"
+              disabled={parsingSmart}
+              aria-busy={parsingSmart || undefined}
               className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
             >
               חפש
