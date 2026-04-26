@@ -1,8 +1,8 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 Environment = Literal["development", "staging", "production"]
 
@@ -33,8 +33,16 @@ class Settings(BaseSettings):
     # Expected `aud` claim on Supabase JWTs.
     supabase_jwt_audience: str = Field(default="authenticated")
 
-    # CORS — strict allowlist (JSON list or comma-separated string).
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    # CORS — strict allowlist. Annotated[..., NoDecode] tells
+    # pydantic-settings 2.x NOT to try its built-in JSON decoder on this
+    # env value — that decoder runs BEFORE field_validator(mode='before')
+    # and rejects the bracket-but-no-quotes string that bash leaves after
+    # `source .env` (CORS_ORIGINS=["a","b"] → [a,b] in os.environ).
+    # With NoDecode the raw string flows through to _parse_cors which
+    # accepts any of: JSON list, comma-separated, or bracket-stripped.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
 
     # Resend — transactional email
     resend_api_key: str = Field(default="")
@@ -77,7 +85,8 @@ class Settings(BaseSettings):
     def _parse_cors(cls, v: object) -> object:
         if isinstance(v, str):
             s = v.strip()
-            # Accept JSON list string
+            # Accept JSON list string when the quotes survived (file
+            # sources hit this; shell sources usually don't).
             if s.startswith("["):
                 import json
 
@@ -86,7 +95,10 @@ class Settings(BaseSettings):
                     if isinstance(parsed, list):
                         return [str(x).strip() for x in parsed]
                 except json.JSONDecodeError:
-                    pass
+                    # Bash-source case: brackets present but quotes
+                    # stripped → strip the brackets and fall through to
+                    # the comma-split branch below.
+                    s = s.lstrip("[").rstrip("]")
             return [o.strip() for o in s.split(",") if o.strip()]
         return v
 
