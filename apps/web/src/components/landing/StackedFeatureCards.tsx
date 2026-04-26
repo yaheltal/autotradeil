@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react";
+import { useCallback, useRef, useState, type TouchEvent } from "react";
 
 /*
  * StackedFeatureCards — Apple Wallet / Tinder-style card stack.
@@ -28,9 +28,107 @@ import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react
  *     CSS layer (transitions get clamped to ~0).
  */
 
+// Icon registry lives in client space so we can pass plain string
+// keys (`iconKey`) across the server→client component boundary.
+// Functions can't be serialized into client component props in
+// Next.js 14 App Router.
+
+export type StackedIconKey = "ai" | "inventory" | "market" | "clipboard" | "bell" | "award";
+
+const STACKED_ICONS: Record<StackedIconKey, (p: { className?: string }) => JSX.Element> = {
+  ai: (p) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={p.className}
+    >
+      <path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
+      <circle cx="12" cy="12" r="3.5" />
+    </svg>
+  ),
+  inventory: (p) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={p.className}
+    >
+      <path d="M3 7l9-4 9 4-9 4-9-4z" />
+      <path d="M3 7v10l9 4 9-4V7" />
+      <path d="M12 11v10" />
+    </svg>
+  ),
+  market: (p) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={p.className}
+    >
+      <path d="M3 9l1.5-5h15L21 9" />
+      <path d="M3 9v11h18V9" />
+      <path d="M3 9h18" />
+      <path d="M9 14h6v6H9z" />
+    </svg>
+  ),
+  clipboard: (p) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={p.className}
+    >
+      <rect x="6" y="4" width="12" height="17" rx="2" />
+      <path d="M9 4v-1a1 1 0 011-1h4a1 1 0 011 1v1" />
+      <path d="M9 11h6M9 15h6M9 19h4" />
+    </svg>
+  ),
+  bell: (p) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={p.className}
+    >
+      <path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9z" />
+      <path d="M10.3 21a1.94 1.94 0 003.4 0" />
+    </svg>
+  ),
+  award: (p) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={p.className}
+    >
+      <circle cx="12" cy="9" r="6" />
+      <path d="M8.21 13.89L7 22l5-3 5 3-1.21-8.12" />
+    </svg>
+  ),
+};
+
 export type StackedCard = {
   key: string;
-  icon: (p: { className?: string }) => JSX.Element;
+  iconKey: StackedIconKey;
   title: string;
   body: string;
 };
@@ -43,23 +141,16 @@ export function StackedFeatureCards({
   ariaLabel: string;
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
-  // Direction is set just before the index changes so the leaving
-  // card animates off in the right direction (RTL: prev = swipe to
-  // the start = right; next = swipe to the end = left).
-  const [direction, setDirection] = useState<"next" | "prev">("next");
   // Touch tracking for swipe gestures
   const touchStartXRef = useRef<number | null>(null);
-  const liveRegionRef = useRef<HTMLParagraphElement>(null);
 
   const total = cards.length;
 
   const goNext = useCallback(() => {
-    setDirection("next");
     setActiveIndex((i) => (i + 1) % total);
   }, [total]);
 
   const goPrev = useCallback(() => {
-    setDirection("prev");
     setActiveIndex((i) => (i - 1 + total) % total);
   }, [total]);
 
@@ -110,7 +201,7 @@ export function StackedFeatureCards({
       {/* Live region announces the position change to SR users.
           Keyed on activeIndex so it re-renders + re-announces
           on every change. Sr-only — visual users see the dots. */}
-      <p ref={liveRegionRef} role="status" aria-live="polite" className="sr-only" key={activeIndex}>
+      <p role="status" aria-live="polite" className="sr-only" key={activeIndex}>
         {`כרטיס ${activeIndex + 1} מתוך ${total}: ${cards[activeIndex]?.title ?? ""}`}
       </p>
 
@@ -163,7 +254,7 @@ export function StackedFeatureCards({
           // the card briefly fly off the back-stack edge, which reads
           // visually as "swiped away".
 
-          const Icon = card.icon;
+          const Icon = STACKED_ICONS[card.iconKey];
 
           return (
             <article
@@ -223,10 +314,7 @@ export function StackedFeatureCards({
               <li key={c.key}>
                 <button
                   type="button"
-                  onClick={() => {
-                    setDirection(i > activeIndex ? "next" : "prev");
-                    setActiveIndex(i);
-                  }}
+                  onClick={() => setActiveIndex(i)}
                   aria-label={`עבור לכרטיס ${i + 1} מתוך ${total}: ${c.title}`}
                   aria-current={isActive ? "true" : undefined}
                   className={[

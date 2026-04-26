@@ -48,94 +48,12 @@ import { RenderKeepAlive } from "@/components/RenderKeepAlive";
 // itself doesn't need it.
 // ============================================================================
 
-function IconAI(props: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={props.className}
-    >
-      <path d="M12 3v3M12 18v3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M3 12h3M18 12h3M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1" />
-      <circle cx="12" cy="12" r="3.5" />
-    </svg>
-  );
-}
-
-function IconInventory(props: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={props.className}
-    >
-      <path d="M3 7l9-4 9 4-9 4-9-4z" />
-      <path d="M3 7v10l9 4 9-4V7" />
-      <path d="M12 11v10" />
-    </svg>
-  );
-}
-
-function IconMarket(props: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={props.className}
-    >
-      <path d="M3 9l1.5-5h15L21 9" />
-      <path d="M3 9v11h18V9" />
-      <path d="M3 9h18" />
-      <path d="M9 14h6v6H9z" />
-    </svg>
-  );
-}
-
-function IconClipboard(props: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={props.className}
-    >
-      <rect x="6" y="4" width="12" height="17" rx="2" />
-      <path d="M9 4v-1a1 1 0 011-1h4a1 1 0 011 1v1" />
-      <path d="M9 11h6M9 15h6M9 19h4" />
-    </svg>
-  );
-}
-
-function IconBell(props: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.6"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={props.className}
-    >
-      <path d="M6 8a6 6 0 1112 0c0 7 3 9 3 9H3s3-2 3-9z" />
-      <path d="M10.3 21a1.94 1.94 0 003.4 0" />
-    </svg>
-  );
-}
+// Icons used by the dealer-features carousel (IconAI, IconInventory,
+// IconMarket, IconClipboard, IconBell) live INSIDE
+// StackedFeatureCards client component now — Next 14 forbids passing
+// function props across the server→client boundary, so the icon
+// registry was moved there. IconAward is still rendered server-side
+// in the Trust Tiers section, kept here.
 
 function IconAward(props: { className?: string }) {
   return (
@@ -316,15 +234,10 @@ function IconChart(props: { className?: string }) {
 // Data — sections content
 // ============================================================================
 
+// Icon keys for the dealer-features stack — actual SVG icons live
+// inside StackedFeatureCards (it's a client component; functions
+// can't be passed across the server→client boundary in Next 14).
 type FeatureKey = "ai" | "inventory" | "market" | "clipboard" | "bell" | "award";
-const FEATURE_ICON: Record<FeatureKey, (p: { className?: string }) => JSX.Element> = {
-  ai: IconAI,
-  inventory: IconInventory,
-  market: IconMarket,
-  clipboard: IconClipboard,
-  bell: IconBell,
-  award: IconAward,
-};
 
 const dealerFeatures: Array<{ icon: FeatureKey; title: string; body: string }> = [
   {
@@ -649,7 +562,11 @@ export default function Home() {
                 ariaLabel="כרטיסי יתרונות לסוחרים"
                 cards={dealerFeatures.map((f) => ({
                   key: f.title,
-                  icon: FEATURE_ICON[f.icon],
+                  // Pass the icon KEY (string) — the StackedFeatureCards
+                  // client component looks up the actual SVG inside its
+                  // own scope. Functions can't cross the server→client
+                  // component boundary in Next 14 App Router.
+                  iconKey: f.icon,
                   title: f.title,
                   body: f.body,
                 }))}

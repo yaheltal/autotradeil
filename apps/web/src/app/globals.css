@@ -18,6 +18,14 @@ html,
 body {
   overflow-x: clip;
   max-width: 100vw;
+  /* Pin horizontal scrolling. overscroll-behavior-x kills the iOS
+   * rubber-band that lets the user drag the page sideways past the
+   * edge. touch-action: pan-y tells the browser "this surface only
+   * scrolls vertically — horizontal touches are gestures". Children
+   * that need horizontal scroll (data tables, the stacked-cards
+   * carousel) opt back in with touch-pan-x / touch-action: none. */
+  overscroll-behavior-x: none;
+  touch-action: pan-y;
 }
 
 @media (prefers-reduced-motion: reduce) {
