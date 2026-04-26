@@ -14,6 +14,7 @@ import {
 } from "@/components/InventoryFormDialog";
 import { MobileFAB } from "@/components/MobileFAB";
 import { NotificationBell } from "@/components/NotificationBell";
+import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { PauseDialog } from "@/components/PauseDialog";
 import { SellVehicleDialog } from "@/components/SellVehicleDialog";
 import { StatusBadge, type InventoryStatus } from "@/components/StatusBadge";
@@ -144,11 +145,27 @@ function InventoryPageInner() {
     })();
   }, [router]);
 
+  // Phase 6.10 — smart filters extracted from the search bar
+  const [smartQuery, setSmartQuery] = useState("");
+  const [smartMake, setSmartMake] = useState("");
+  const [smartModel, setSmartModel] = useState("");
+  const [smartYearMin, setSmartYearMin] = useState<number | null>(null);
+  const [smartYearMax, setSmartYearMax] = useState<number | null>(null);
+  const [smartPriceMax, setSmartPriceMax] = useState<number | null>(null);
+  const [smartFallbackQ, setSmartFallbackQ] = useState("");
+  const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
+
   const refresh = useCallback(async () => {
     if (!token) return;
     try {
       const qs = new URLSearchParams();
       if (statusParam) qs.set("status", statusParam);
+      if (smartMake) qs.set("make", smartMake);
+      if (smartModel) qs.set("model", smartModel);
+      if (smartYearMin !== null) qs.set("year_min", String(smartYearMin));
+      if (smartYearMax !== null) qs.set("year_max", String(smartYearMax));
+      if (smartPriceMax !== null) qs.set("price_max", String(smartPriceMax));
+      if (smartFallbackQ) qs.set("q", smartFallbackQ);
       qs.set("per_page", "20");
       const res = await apiFetch<ListResponse>(
         `/api/v1/inventory${qs.toString() ? `?${qs.toString()}` : ""}`,
@@ -158,7 +175,58 @@ function InventoryPageInner() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "שגיאה בטעינת המלאי");
     }
-  }, [token, statusParam]);
+  }, [
+    token,
+    statusParam,
+    smartMake,
+    smartModel,
+    smartYearMin,
+    smartYearMax,
+    smartPriceMax,
+    smartFallbackQ,
+  ]);
+
+  const onSmartSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = smartQuery.trim();
+    if (!q) {
+      setSmartMake("");
+      setSmartModel("");
+      setSmartYearMin(null);
+      setSmartYearMax(null);
+      setSmartPriceMax(null);
+      setSmartFallbackQ("");
+      return;
+    }
+    const parsed = await parseSmart(q);
+    if (parsed) {
+      setSmartMake(parsed.filters.make ?? "");
+      setSmartModel(parsed.filters.model ?? "");
+      setSmartYearMin(parsed.filters.year_min);
+      setSmartYearMax(parsed.filters.year_max);
+      setSmartPriceMax(parsed.filters.price_max);
+      setSmartFallbackQ(parsed.fallback_q ?? "");
+    }
+  };
+
+  const clearSmartSearch = () => {
+    setSmartQuery("");
+    setSmartMake("");
+    setSmartModel("");
+    setSmartYearMin(null);
+    setSmartYearMax(null);
+    setSmartPriceMax(null);
+    setSmartFallbackQ("");
+  };
+
+  const hasActiveSmartFilter = !!(
+    smartMake ||
+    smartModel ||
+    smartYearMin ||
+    smartYearMax ||
+    smartPriceMax ||
+    smartFallbackQ
+  );
 
   useEffect(() => {
     void refresh();
@@ -323,7 +391,75 @@ function InventoryPageInner() {
             </p>
           ) : null}
 
-          <section aria-labelledby="filter-heading" className="mt-8">
+          {/* Smart search bar — Phase 6.10. Submit on Enter parses
+              the Hebrew query through Claude → make/model/year/price
+              filters that the backend now accepts. Status pills below
+              still work as before; smart filters AND status filter
+              compose. */}
+          <form
+            role="search"
+            aria-label="חיפוש חכם במלאי"
+            onSubmit={onSmartSearch}
+            className="mt-8"
+          >
+            <label htmlFor="inv-smart" className="text-brand-navy block text-sm font-medium">
+              חיפוש חכם
+              <span
+                aria-hidden="true"
+                title="ניתן להזין משפט בעברית — Claude יזהה יצרן, דגם, שנה, מחיר"
+                className="text-brand-gold ms-1.5 text-xs"
+              >
+                ✦
+              </span>
+            </label>
+            <p id="inv-smart-hint" className="text-brand-ink/55 mt-1 text-xs">
+              דוגמאות: ״BMW 2020״, ״רכבים מתחת ל-50 אלף״, ״סוזוקי״ — או חיפוש חופשי
+            </p>
+            <div className="mt-2 flex gap-2">
+              <input
+                id="inv-smart"
+                type="search"
+                autoComplete="off"
+                value={smartQuery}
+                onChange={(e) => setSmartQuery(e.target.value)}
+                aria-describedby="inv-smart-hint"
+                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block min-h-11 flex-1 rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+              />
+              <button
+                type="submit"
+                disabled={parsingSmart || !smartQuery.trim()}
+                aria-busy={parsingSmart || undefined}
+                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-60"
+              >
+                {parsingSmart ? "מנתח…" : "חפש"}
+              </button>
+              {hasActiveSmartFilter ? (
+                <button
+                  type="button"
+                  onClick={clearSmartSearch}
+                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  נקה
+                </button>
+              ) : null}
+            </div>
+            {hasActiveSmartFilter ? (
+              <p role="status" aria-live="polite" className="text-brand-navy/70 mt-2 text-xs">
+                מסונן לפי:
+                {smartMake ? ` יצרן=${smartMake}` : ""}
+                {smartModel ? ` · דגם=${smartModel}` : ""}
+                {smartYearMin && smartYearMax && smartYearMin === smartYearMax
+                  ? ` · שנה=${smartYearMin}`
+                  : smartYearMin || smartYearMax
+                    ? ` · שנים=${smartYearMin ?? "?"}-${smartYearMax ?? "?"}`
+                    : ""}
+                {smartPriceMax ? ` · מחיר עד ${smartPriceMax.toLocaleString("he-IL")}₪` : ""}
+                {smartFallbackQ ? ` · ״${smartFallbackQ}״` : ""}
+              </p>
+            ) : null}
+          </form>
+
+          <section aria-labelledby="filter-heading" className="mt-6">
             <h2 id="filter-heading" className="sr-only">
               סינון מלאי
             </h2>

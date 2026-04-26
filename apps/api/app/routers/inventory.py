@@ -95,6 +95,15 @@ async def list_inventory(
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
     db: Annotated[AsyncSession, Depends(get_db)],
     status_filter: str | None = Query(default=None, alias="status"),
+    # Phase 6.10 — smart-search filters parsed by /api/v1/ai/parse-filters.
+    # All optional; dealer-self filter on dealer_id is always applied.
+    make: str | None = Query(default=None, max_length=100),
+    model: str | None = Query(default=None, max_length=100),
+    year_min: int | None = Query(default=None, ge=1900, le=2030),
+    year_max: int | None = Query(default=None, ge=1900, le=2030),
+    price_min: int | None = Query(default=None, ge=0),
+    price_max: int | None = Query(default=None, ge=0),
+    q: str | None = Query(default=None, max_length=200),
     page: int = Query(default=1, ge=1),
     per_page: int = Query(default=20, ge=1, le=100),
 ) -> InventoryListResponse:
@@ -111,6 +120,43 @@ async def list_inventory(
     if status_filter in {"active", "sold", "hidden"}:
         base_q = base_q.where(Inventory.status == status_filter)
         count_q = count_q.where(Inventory.status == status_filter)
+
+    if make:
+        base_q = base_q.where(Inventory.make.ilike(f"%{make}%"))
+        count_q = count_q.where(Inventory.make.ilike(f"%{make}%"))
+    if model:
+        base_q = base_q.where(Inventory.model.ilike(f"%{model}%"))
+        count_q = count_q.where(Inventory.model.ilike(f"%{model}%"))
+    if year_min is not None:
+        base_q = base_q.where(Inventory.year >= year_min)
+        count_q = count_q.where(Inventory.year >= year_min)
+    if year_max is not None:
+        base_q = base_q.where(Inventory.year <= year_max)
+        count_q = count_q.where(Inventory.year <= year_max)
+    if price_min is not None:
+        base_q = base_q.where(Inventory.price >= price_min)
+        count_q = count_q.where(Inventory.price >= price_min)
+    if price_max is not None:
+        base_q = base_q.where(Inventory.price <= price_max)
+        count_q = count_q.where(Inventory.price <= price_max)
+    if q:
+        from sqlalchemy import or_
+
+        like = f"%{q}%"
+        base_q = base_q.where(
+            or_(
+                Inventory.make.ilike(like),
+                Inventory.model.ilike(like),
+                Inventory.notes.ilike(like),
+            )
+        )
+        count_q = count_q.where(
+            or_(
+                Inventory.make.ilike(like),
+                Inventory.model.ilike(like),
+                Inventory.notes.ilike(like),
+            )
+        )
 
     total = (await db.execute(count_q)).scalar_one()
 
