@@ -17,12 +17,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      - name: Hit /healthz
+      - name: Hit /health
         env:
           API_BASE_URL: ${{ vars.API_BASE_URL || 'https://autotradeil.onrender.com' }}
         run: |
           curl -fL --max-time 30 \
             -H "User-Agent: github-actions-keepalive/1.0" \
-            "$API_BASE_URL/healthz" || curl -fL --max-time 30 \
-            -H "User-Agent: github-actions-keepalive/1.0" \
-            "$API_BASE_URL/api/v1/health"
+            "$API_BASE_URL/health"
