@@ -1,9 +1,10 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { DialogCloseButton } from "@/components/DialogCloseButton";
+import { useDialogScrollReset } from "@/hooks/useDialogScrollReset";
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
 
@@ -124,6 +125,8 @@ export function VehicleFullDetailsDialog({
 }: Props) {
   const [data, setData] = useState<Vehicle | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  useDialogScrollReset(cardRef, open);
 
   useEffect(() => {
     if (!open) {
@@ -156,7 +159,10 @@ export function VehicleFullDetailsDialog({
           className="bg-brand-navy/40 fixed inset-0 z-40 motion-reduce:transition-none"
         />
         <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
-          <div className="bg-brand-cream relative max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6">
+          <div
+            ref={cardRef}
+            className="bg-brand-cream relative max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6"
+          >
             <DialogCloseButton />
             <Dialog.Title className="text-brand-navy pe-12 font-serif text-xl font-bold sm:text-2xl">
               {data ? `${data.make} ${data.model} · ${data.year}` : "פרטי רכב מלאים"}

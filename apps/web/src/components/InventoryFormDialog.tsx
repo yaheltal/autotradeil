@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { FormField } from "@/components/FormField";
+import { useDialogScrollReset } from "@/hooks/useDialogScrollReset";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake, matchMake, matchModel } from "@/lib/car-data";
@@ -417,6 +418,11 @@ export function InventoryFormDialog({
 
   // Vehicle-registration scan (Claude Vision)
   const regInputRef = useRef<HTMLInputElement>(null);
+  // Inner-card ref — paired with useDialogScrollReset so a dealer
+  // reopening the form mid-fill never lands at the warranty fields
+  // (or wherever they last scrolled). Always reopens at the title.
+  const cardRef = useRef<HTMLDivElement>(null);
+  useDialogScrollReset(cardRef, open);
   const [regBusy, setRegBusy] = useState(false);
   const [regStatus, setRegStatus] = useState<string>("");
   const [regError, setRegError] = useState<string>("");
@@ -940,7 +946,10 @@ export function InventoryFormDialog({
           dir="rtl"
           className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
         >
-          <div className="bg-brand-cream relative max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6">
+          <div
+            ref={cardRef}
+            className="bg-brand-cream relative max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6"
+          >
             <DialogCloseButton />
             <Dialog.Title className="text-brand-navy pe-12 text-lg font-bold">{title}</Dialog.Title>
             <Dialog.Description id="inventory-form-desc" className="text-brand-ink/70 mt-1 text-sm">
