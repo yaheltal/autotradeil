@@ -1241,3 +1241,183 @@ async def admin_reset_password(
     )
     await db.commit()
     return {"id": str(dealer.id), "email": user.email}
+
+
+
+# ==========================================================================
+# Transactions in progress (in_transaction state)
+# ==========================================================================
+#
+# When two dealers confirm a deal, the vehicle's inventory.status flips
+# to "in_transaction" instead of "sold". The deal sits in this admin
+# escort window until support team verifies payment + paperwork. Then
+# the admin POSTs /transactions/{deal_id}/complete and the vehicle
+# moves to "sold" + counters bump + trust scores recalculate.
+
+
+@router.get("/transactions-in-progress")
+async def admin_list_transactions_in_progress(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """List every deal whose vehicle is still in_transaction."""
+    from app.models import Deal
+
+    rows = (
+        await db.execute(
+            select(Deal, Inventory)
+            .join(Inventory, Inventory.id == Deal.inventory_id)
+            .where(Inventory.status == "in_transaction")
+            .order_by(Deal.confirmed_at.desc().nullslast())
+        )
+    ).all()
+
+    if not rows:
+        return {"items": [], "total": 0}
+
+    dealer_ids = list(
+        {d.buyer_dealer_id for d, _ in rows} | {d.seller_dealer_id for d, _ in rows}
+    )
+    dealers = {
+        d.id: d
+        for d in (
+            (await db.execute(select(Dealer).where(Dealer.id.in_(dealer_ids))))
+            .scalars()
+            .all()
+        )
+    }
+
+    items: list[dict[str, object]] = []
+    for deal, veh in rows:
+        buyer = dealers.get(deal.buyer_dealer_id)
+        seller = dealers.get(deal.seller_dealer_id)
+        if buyer is None or seller is None:
+            continue
+        items.append(
+            {
+                "deal_id": str(deal.id),
+                "offer_id": str(deal.offer_id),
+                "inventory_id": str(veh.id),
+                "final_price": deal.final_price,
+                "confirmed_at": deal.confirmed_at.isoformat() if deal.confirmed_at else None,
+                "vehicle": {
+                    "make": veh.make,
+                    "model": veh.model,
+                    "year": veh.year,
+                    "plate_number": getattr(veh, "plate_number", None),
+                },
+                "buyer": {
+                    "id": str(buyer.id),
+                    "business_name": buyer.business_name,
+                    "city": buyer.city,
+                    "tier": buyer.tier,
+                    "phone": buyer.phone,
+                },
+                "seller": {
+                    "id": str(seller.id),
+                    "business_name": seller.business_name,
+                    "city": seller.city,
+                    "tier": seller.tier,
+                    "phone": seller.phone,
+                },
+            }
+        )
+
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/transactions/{deal_id}/complete")
+async def admin_complete_transaction(
+    deal_id: uuid.UUID,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Mark an in-flight deal as fully closed.
+
+    - vehicle.status: in_transaction → sold
+    - both dealers' deals_completed += 1
+    - trust scores recalculated for both
+    - audit log entry written
+    - notifications fan out
+    """
+    from app.core.trust import recalculate_trust_score
+    from app.models import Deal, Notification
+
+    row = (
+        await db.execute(
+            select(Deal, Inventory)
+            .join(Inventory, Inventory.id == Deal.inventory_id)
+            .where(Deal.id == deal_id)
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="עסקה לא נמצאה")
+
+    deal, vehicle = row
+    if vehicle.status == "sold":
+        raise HTTPException(status_code=400, detail="העסקה כבר סומנה כסגורה")
+    if vehicle.status != "in_transaction":
+        raise HTTPException(
+            status_code=400,
+            detail=f"לא ניתן לסגור עסקה בסטטוס {vehicle.status}",
+        )
+
+    buyer = (
+        await db.execute(select(Dealer).where(Dealer.id == deal.buyer_dealer_id))
+    ).scalar_one_or_none()
+    seller = (
+        await db.execute(select(Dealer).where(Dealer.id == deal.seller_dealer_id))
+    ).scalar_one_or_none()
+    if buyer is None or seller is None:
+        raise HTTPException(status_code=500, detail="פרטי הסוחרים חסרים")
+
+    vehicle.status = "sold"
+    buyer.deals_completed = (buyer.deals_completed or 0) + 1
+    seller.deals_completed = (seller.deals_completed or 0) + 1
+    await db.flush()
+
+    await recalculate_trust_score(buyer.id, db)
+    await recalculate_trust_score(seller.id, db)
+
+    veh_line = f"{vehicle.make} {vehicle.model} {vehicle.year}"
+    db.add_all(
+        [
+            Notification(
+                dealer_id=buyer.id,
+                type="deal.completed",
+                title=f"עסקה הושלמה: {veh_line}",
+                body=f"מחיר סופי: {deal.final_price:,} ₪. תודה!",
+                data={"offer_id": str(deal.offer_id), "inventory_id": str(vehicle.id)},
+            ),
+            Notification(
+                dealer_id=seller.id,
+                type="deal.completed",
+                title=f"עסקה הושלמה: {veh_line}",
+                body=f"מחיר סופי: {deal.final_price:,} ₪. תודה!",
+                data={"offer_id": str(deal.offer_id), "inventory_id": str(vehicle.id)},
+            ),
+        ]
+    )
+
+    await emit_event(
+        db,
+        event_type="admin.transaction.completed",
+        aggregate_type="deal",
+        aggregate_id=deal.id,
+        payload={"final_price": deal.final_price},
+        actor_user_id=admin.id,
+    )
+    await log_admin_action(
+        db,
+        actor_user_id=admin.id,
+        action="transaction.complete",
+        target_type="deal",
+        target_id=deal.id,
+    )
+
+    await db.commit()
+    return {
+        "deal_id": str(deal.id),
+        "inventory_id": str(vehicle.id),
+        "status": "sold",
+    }

@@ -144,7 +144,7 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
             name="inventory_engine_volume_range",
         ),
         CheckConstraint(
-            "status IN ('active', 'sold', 'hidden')",
+            "status IN ('active', 'sold', 'hidden', 'in_transaction')",
             name="inventory_status_check",
         ),
         CheckConstraint(

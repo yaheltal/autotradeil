@@ -1164,36 +1164,34 @@ async def confirm_deal(
         )
         db.add(deal)
 
-        # Flip inventory to sold (admin in_transaction workflow is
-        # gated until the next backend deploy that ships the migration
-        # + admin completion endpoint).
-        vehicle.status = "sold"
-
-        # Bump completed counters on BOTH sides
-        buyer.deals_completed = (buyer.deals_completed or 0) + 1
-        seller.deals_completed = (seller.deals_completed or 0) + 1
+        # Vehicle enters the in_transaction state — admin escorts the
+        # deal through closure on /admin/transactions and flips it to
+        # "sold" via /api/v1/admin/transactions/{deal_id}/complete.
+        # Marketplace search filters status="active" so the vehicle
+        # disappears from public browse the moment both sides confirm.
+        # deals_completed + trust_score bumps are DEFERRED to the
+        # admin-completion path so a deal that gets stuck in transit
+        # doesn't reward either party prematurely.
+        vehicle.status = "in_transaction"
 
         await db.flush()
 
-        await recalculate_trust_score(buyer.id, db)
-        await recalculate_trust_score(seller.id, db)
-
-        # Notifications
+        # Notifications — both sides hear "in transit", not "closed".
         veh_line = f"{vehicle.make} {vehicle.model} {vehicle.year}"
         await _notify(
             db,
             buyer.id,
-            type_="deal.completed",
-            title=f"עסקה נסגרה: {veh_line}",
-            body=f"מחיר סופי: {final_price:,} ₪",
+            type_="deal.in_transaction",
+            title=f"עסקה אושרה — בתהליך: {veh_line}",
+            body=f"מחיר סופי: {final_price:,} ₪. צוות AutoTradeIL מלווה את הסגירה.",
             data={"offer_id": str(offer.id), "inventory_id": str(vehicle.id)},
         )
         await _notify(
             db,
             seller.id,
-            type_="deal.completed",
-            title=f"עסקה נסגרה: {veh_line}",
-            body=f"מחיר סופי: {final_price:,} ₪",
+            type_="deal.in_transaction",
+            title=f"עסקה אושרה — בתהליך: {veh_line}",
+            body=f"מחיר סופי: {final_price:,} ₪. צוות AutoTradeIL מלווה את הסגירה.",
             data={"offer_id": str(offer.id), "inventory_id": str(vehicle.id)},
         )
 
