@@ -58,6 +58,21 @@ class Offer(UUIDPrimaryKey, TimestampMixin, Base):
         Boolean, nullable=False, default=False, server_default="false"
     )
 
+    # Digital agreement timestamps + IP, captured per side at the
+    # moment the "אני מסכים לתנאי השימוש" checkbox is ticked.
+    # Required by /confirm-deal (the endpoint refuses without
+    # `agreed: true` in the body) and copied into the Deal row when
+    # both sides have signed. Nullable because legacy offers from
+    # before A.3 don't have it.
+    buyer_agreement_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    buyer_agreement_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    seller_agreement_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    seller_agreement_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+
     __table_args__ = (
         CheckConstraint("offered_price > 0", name="offers_offered_price_pos"),
         CheckConstraint(

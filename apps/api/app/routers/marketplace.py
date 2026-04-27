@@ -36,7 +36,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1102,22 +1103,42 @@ async def mark_notification_read(
 # =============================================================================
 
 
+class _ConfirmDealBody(BaseModel):
+    # A.3 — admin/legal asks both sides to tick a checkbox before the
+    # deal closes. We refuse to commit if `agreed` is missing/false.
+    agreed: bool = Field(default=False)
+
+
 @marketplace_router.post("/offers/{offer_id}/confirm-deal", response_model=OfferResponse)
 async def confirm_deal(
     offer_id: uuid.UUID,
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
     db: Annotated[AsyncSession, Depends(get_db)],
+    request: Request,
+    payload: _ConfirmDealBody | None = None,
 ) -> OfferResponse:
     """Called by the buyer OR seller after an offer has been accepted.
 
     Both sides must confirm. When the second confirmation arrives we:
       - mark the offer closed (closed_at = now)
       - create a `deals` row
-      - flip the inventory status to 'sold'
-      - increment deals_completed on BOTH dealers
-      - recalculate trust scores
-      - fan out notifications + emails to both sides
+      - flip the inventory status to 'in_transaction' (admin escort)
+      - fan out "in transit" notifications to both sides
+
+    Admin completion (/admin/transactions/{id}/complete) bumps
+    deals_completed + recalculates trust + flips status to 'sold'.
+
+    A.3 — body MUST carry `{"agreed": true}` so each side has a
+    timestamped digital signature on the agreement. We stamp
+    {role}_agreement_at + {role}_agreement_ip on the Offer; if both
+    signed by the time we create the Deal we copy them across.
     """
+    if payload is None or not payload.agreed:
+        raise HTTPException(
+            status_code=400,
+            detail="חובה לסמן את אישור התקנון לפני סגירת העסקה",
+        )
+
     user, dealer = ud
     loaded = await _load_offer_context(offer_id, db)
     if loaded is None:
@@ -1133,14 +1154,28 @@ async def confirm_deal(
     if offer.closed_at is not None:
         raise HTTPException(status_code=400, detail="העסקה כבר נסגרה")
 
+    # Capture the IP that submitted this request for the signature
+    # record. X-Forwarded-For wins on Render (reverse-proxy chain);
+    # fall back to client.host for direct connections.
+    sig_at = datetime.now(tz=timezone.utc)
+    sig_ip = (
+        (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        or (request.client.host if request.client else None)
+    )
+    sig_ip = (sig_ip or "")[:45]  # column size cap
+
     if role == "buyer":
         if offer.deal_confirmed_buyer:
             raise HTTPException(status_code=400, detail="כבר אישרת את העסקה")
         offer.deal_confirmed_buyer = True
+        offer.buyer_agreement_at = sig_at
+        offer.buyer_agreement_ip = sig_ip or None
     else:
         if offer.deal_confirmed_seller:
             raise HTTPException(status_code=400, detail="כבר אישרת את העסקה")
         offer.deal_confirmed_seller = True
+        offer.seller_agreement_at = sig_at
+        offer.seller_agreement_ip = sig_ip or None
 
     await db.flush()
 
@@ -1153,7 +1188,9 @@ async def confirm_deal(
         now = datetime.now(tz=_tz.utc)
         offer.closed_at = now
 
-        # Create deal row
+        # Create deal row — also copies both digital-agreement
+        # signatures forward from the Offer so the Deal record is
+        # self-contained for legal/audit lookups.
         deal = Deal(
             offer_id=offer.id,
             inventory_id=vehicle.id,
@@ -1161,6 +1198,10 @@ async def confirm_deal(
             seller_dealer_id=seller.id,
             final_price=final_price,
             confirmed_at=now,
+            buyer_agreement_at=offer.buyer_agreement_at,
+            buyer_agreement_ip=offer.buyer_agreement_ip,
+            seller_agreement_at=offer.seller_agreement_at,
+            seller_agreement_ip=offer.seller_agreement_ip,
         )
         db.add(deal)
 

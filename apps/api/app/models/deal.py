@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    String,
     func,
     text,
 )
@@ -51,6 +52,22 @@ class Deal(UUIDPrimaryKey, Base):
     confirmed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    # Digital agreement signatures — captured when each side ticks
+    # the "אני מסכים לתנאי השימוש" checkbox in the confirm-deal
+    # dialog. Stored alongside the IP that submitted the request as
+    # weak proof-of-consent. Both sides MUST sign before the deal
+    # row is created (enforced in /confirm-deal). Pre-A.3 deals will
+    # have NULL here, hence nullable.
+    buyer_agreement_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    buyer_agreement_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    seller_agreement_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    seller_agreement_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

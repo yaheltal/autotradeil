@@ -1320,6 +1320,19 @@ async def admin_list_transactions_in_progress(
                     "tier": seller.tier,
                     "phone": seller.phone,
                 },
+                # Digital agreement signatures (A.3) — surfaced so the
+                # admin escort screen can show "buyer signed at X, seller
+                # signed at Y" without an extra fetch.
+                "agreements": {
+                    "buyer_signed_at": deal.buyer_agreement_at.isoformat()
+                    if deal.buyer_agreement_at
+                    else None,
+                    "buyer_signed_ip": deal.buyer_agreement_ip,
+                    "seller_signed_at": deal.seller_agreement_at.isoformat()
+                    if deal.seller_agreement_at
+                    else None,
+                    "seller_signed_ip": deal.seller_agreement_ip,
+                },
             }
         )
 

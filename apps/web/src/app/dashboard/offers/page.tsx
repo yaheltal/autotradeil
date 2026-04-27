@@ -182,11 +182,21 @@ export default function OffersPage() {
   };
   const doConfirmDeal = async (id: string) => {
     if (!token) return;
+    // The body's `agreed: true` is the digital signature on the
+    // platform's terms — backend stamps timestamp + IP per side.
     const res = await apiFetch<{ closed_at: string | null }>(
       `/api/v1/marketplace/offers/${id}/confirm-deal`,
-      { method: "POST", token },
+      {
+        method: "POST",
+        token,
+        body: JSON.stringify({ agreed: true }),
+      },
     );
-    setToast(res.closed_at ? "העסקה נסגרה — שני הצדדים אישרו" : "אישורך נשמר — ממתין לצד השני");
+    setToast(
+      res.closed_at
+        ? "העסקה אושרה — בתהליך, צוות AutoTradeIL מלווה את הסגירה"
+        : "אישורך נשמר — ממתין לצד השני",
+    );
     await refresh();
   };
 
@@ -370,7 +380,9 @@ export default function OffersPage() {
                 ? `האם לדחות את ההצעה על ${offerVehicleLabel(confirm.offer)}? פעולה לא ניתנת לביטול.`
                 : confirm.action === "cancel"
                   ? `האם לבטל את ההצעה שלך על ${offerVehicleLabel(confirm.offer)}? פעולה לא ניתנת לביטול.`
-                  : `לאחר אישור שני הצדדים הרכב ${offerVehicleLabel(confirm.offer)} יסומן כנמכר. פעולה לא ניתנת לביטול.`
+                  : `בלחיצה על "אשר עסקה" אני מסכים לתנאי השימוש של AutoTradeIL ומאשר את העסקה על ${offerVehicleLabel(confirm.offer)}. ` +
+                    `שני הצדדים חייבים לאשר; לאחר אישור שני הצדדים הרכב ייכנס למצב "בתהליך" וצוות AutoTradeIL ילווה את הסגירה. ` +
+                    `הסכמתך, חותמת זמן וכתובת ה-IP נשמרות לצורכי תיעוד.`
           }
           confirmLabel={
             confirm.action === "accept"

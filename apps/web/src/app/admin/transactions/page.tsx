@@ -43,6 +43,13 @@ type VehicleInfo = {
   plate_number: string | null;
 };
 
+type Agreements = {
+  buyer_signed_at: string | null;
+  buyer_signed_ip: string | null;
+  seller_signed_at: string | null;
+  seller_signed_ip: string | null;
+};
+
 type Transaction = {
   deal_id: string;
   offer_id: string;
@@ -52,6 +59,7 @@ type Transaction = {
   vehicle: VehicleInfo;
   buyer: DealerInfo;
   seller: DealerInfo;
+  agreements: Agreements;
 };
 
 type Resp = { items: Transaction[]; total: number };
@@ -224,6 +232,49 @@ export default function AdminTransactionsPage() {
                           {new Date(t.confirmed_at).toLocaleString("he-IL")}
                         </time>
                       </p>
+                    ) : null}
+
+                    {/* Digital agreement audit (A.3) — both signatures
+                        with timestamp + IP. Mono font + dir=ltr on the
+                        IP keeps the dotted-octet readable in RTL. */}
+                    {t.agreements.buyer_signed_at || t.agreements.seller_signed_at ? (
+                      <details className="border-brand-navy/10 mt-3 rounded-md border bg-white p-3 text-xs">
+                        <summary className="text-brand-navy cursor-pointer font-semibold">
+                          חתימות דיגיטליות
+                        </summary>
+                        <dl className="text-brand-ink/70 mt-2 grid gap-1.5">
+                          {t.agreements.buyer_signed_at ? (
+                            <div>
+                              <dt className="inline">קונה חתם:</dt>{" "}
+                              <dd className="inline">
+                                <time dateTime={t.agreements.buyer_signed_at}>
+                                  {new Date(t.agreements.buyer_signed_at).toLocaleString("he-IL")}
+                                </time>
+                                {t.agreements.buyer_signed_ip ? (
+                                  <span className="ms-2 font-mono" dir="ltr">
+                                    ({t.agreements.buyer_signed_ip})
+                                  </span>
+                                ) : null}
+                              </dd>
+                            </div>
+                          ) : null}
+                          {t.agreements.seller_signed_at ? (
+                            <div>
+                              <dt className="inline">מוכר חתם:</dt>{" "}
+                              <dd className="inline">
+                                <time dateTime={t.agreements.seller_signed_at}>
+                                  {new Date(t.agreements.seller_signed_at).toLocaleString("he-IL")}
+                                </time>
+                                {t.agreements.seller_signed_ip ? (
+                                  <span className="ms-2 font-mono" dir="ltr">
+                                    ({t.agreements.seller_signed_ip})
+                                  </span>
+                                ) : null}
+                              </dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                      </details>
                     ) : null}
 
                     <div className="mt-5 flex flex-wrap gap-2">
