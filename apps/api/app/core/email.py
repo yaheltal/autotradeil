@@ -762,6 +762,10 @@ async def _send(
             "subject": subject,
             "html": html,
         }
+        if settings.reply_to_email:
+            # Reply-To overrides Resend's default; customer replies
+            # land in support@ even though the visible FROM is info@.
+            params["reply_to"] = settings.reply_to_email  # type: ignore[typeddict-item]
         if text:
             params["text"] = text  # type: ignore[typeddict-item]
         response = resend.Emails.send(params)

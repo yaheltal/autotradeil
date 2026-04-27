@@ -44,9 +44,17 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000"]
     )
 
-    # Resend — transactional email
+    # Resend — transactional email (PRIMARY sender). Production uses
+    # the verified autotradeil.com domain; the default below is a
+    # safe placeholder for fresh dev environments. Render env var
+    # RESEND_FROM_EMAIL overrides at runtime.
     resend_api_key: str = Field(default="")
-    resend_from_email: str = Field(default="onboarding@resend.dev")
+    resend_from_email: str = Field(
+        default='"AutoTradeIL" <info@autotradeil.com>'
+    )
+    # Reply-To for every outgoing message — keeps customer replies
+    # routed to the support inbox even though the FROM is info@.
+    reply_to_email: str = Field(default="support@autotradeil.com")
 
     # Impersonation — HS256 secret for short-lived admin-as-dealer tokens.
     # Generate with:  python3 -c 'import secrets; print(secrets.token_hex(32))'
@@ -66,10 +74,13 @@ class Settings(BaseSettings):
     twilio_auth_token: str = Field(default="")
     twilio_phone_number: str = Field(default="")
 
-    # Gmail SMTP — fallback email sender for dev environments where
-    # the Resend domain isn't verified yet (Phase 4.4 addendum).
+    # Gmail SMTP — FALLBACK only. Resend is the primary sender; Gmail
+    # kicks in only when Resend errors or the API key is unset.
+    # Production points GMAIL_FROM at the same info@autotradeil.com
+    # address so customers see one consistent sender across both
+    # delivery paths.
     gmail_app_password: str = Field(default="")
-    gmail_from: str = Field(default="")
+    gmail_from: str = Field(default="info@autotradeil.com")
 
     # Sentry — error + performance monitoring. Empty DSN disables the
     # SDK entirely (init becomes a no-op). Sample rates are conservative

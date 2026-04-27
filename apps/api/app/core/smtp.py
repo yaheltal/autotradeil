@@ -41,6 +41,10 @@ async def send_via_gmail(
         msg["Subject"] = subject
         msg["From"] = f"AutoTradeIL <{settings.gmail_from}>"
         msg["To"] = to
+        # Mirror the Resend Reply-To behavior — customer replies route
+        # to support@ even though FROM is info@.
+        if settings.reply_to_email:
+            msg["Reply-To"] = settings.reply_to_email
         # Plain-text part FIRST (RFC 2046 — most preferred last; for
         # multipart/alternative the LAST part is the most preferred, so
         # html should be attached last).
