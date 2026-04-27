@@ -25,6 +25,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "בית", exact: true },
   { href: "/admin/dealers", label: "סוחרים", exact: false },
   { href: "/admin/inventory", label: "מלאי", exact: false },
+  { href: "/admin/transactions", label: "עסקאות בתהליך", exact: false },
   { href: "/admin/kyc", label: "אימות זהות", exact: false },
   { href: "/admin/settings", label: "הגדרות", exact: false },
   { href: "/admin/audit-log", label: "לוג פעולות", exact: true },
