@@ -378,7 +378,10 @@ export default function Home() {
         {/* ===================================================================
             1. HERO
             =================================================================== */}
-        <section aria-labelledby="hero-heading" className="relative overflow-hidden">
+        <section
+          aria-labelledby="hero-heading"
+          className="relative flex min-h-[100dvh] flex-col justify-center overflow-hidden"
+        >
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 opacity-[0.08]"
@@ -537,7 +540,11 @@ export default function Home() {
         {/* ===================================================================
             3. WHAT DEALERS GET — 6 features
             =================================================================== */}
-        <section id="dealers" aria-labelledby="dealers-heading" className="relative">
+        <section
+          id="dealers"
+          aria-labelledby="dealers-heading"
+          className="relative flex min-h-[100dvh] flex-col justify-center"
+        >
           <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
             <div className="text-center">
               <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
@@ -581,7 +588,7 @@ export default function Home() {
         <section
           id="ai"
           aria-labelledby="ai-heading"
-          className="bg-brand-navy text-brand-cream relative overflow-hidden"
+          className="bg-brand-navy text-brand-cream relative flex min-h-[100dvh] flex-col justify-center overflow-hidden"
         >
           <div
             aria-hidden="true"
@@ -666,7 +673,7 @@ export default function Home() {
         <section
           id="security"
           aria-labelledby="security-heading"
-          className="bg-brand-ink text-brand-cream relative"
+          className="bg-brand-ink text-brand-cream relative flex min-h-[100dvh] flex-col justify-center"
           style={{ backgroundColor: "#0d1224" }}
         >
           {/* Subtle grid background — reads as "infrastructure" not "marketing" */}
@@ -727,7 +734,11 @@ export default function Home() {
         {/* ===================================================================
             6. TRUST TIERS — 4 cards
             =================================================================== */}
-        <section id="tiers" aria-labelledby="tiers-heading" className="relative">
+        <section
+          id="tiers"
+          aria-labelledby="tiers-heading"
+          className="relative flex min-h-[100dvh] flex-col justify-center"
+        >
           <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
             <div className="text-center">
               <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
@@ -798,7 +809,7 @@ export default function Home() {
             =================================================================== */}
         <section
           aria-labelledby="future-heading"
-          className="bg-brand-navy/[0.04] border-brand-navy/10 relative border-y"
+          className="bg-brand-navy/[0.04] border-brand-navy/10 relative flex min-h-[100dvh] flex-col justify-center border-y"
         >
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
             <p
@@ -879,7 +890,10 @@ export default function Home() {
         {/* ===================================================================
             8. FINAL CTA — beta seat scarcity
             =================================================================== */}
-        <section aria-labelledby="cta-heading" className="relative">
+        <section
+          aria-labelledby="cta-heading"
+          className="relative flex min-h-[100dvh] flex-col justify-center"
+        >
           <div className="mx-auto max-w-5xl px-4 pb-24 pt-20 sm:px-6">
             <div className="border-brand-navy/15 from-brand-cream to-brand-cream/40 relative overflow-hidden rounded-2xl border bg-gradient-to-br p-6 sm:p-12 lg:p-16">
               <div
