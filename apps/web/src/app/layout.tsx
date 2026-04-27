@@ -136,6 +136,33 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="he" dir="rtl">
+      <head>
+        {/* Preconnect to origins we hit on every cold visit. Saves
+            ~100-300ms LCP because TLS+DNS happens in parallel with
+            HTML parsing instead of being serialized after the first
+            <img>/api call. Cloudinary serves vehicle photos +
+            inventory thumbs; Supabase serves auth + KYC signed
+            URLs. crossOrigin="anonymous" is required for fonts +
+            images that need credentials-free CORS. */}
+        <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href="https://res.cloudinary.com" />
+        {process.env.NEXT_PUBLIC_SUPABASE_URL ? (
+          <>
+            <link
+              rel="preconnect"
+              href={process.env.NEXT_PUBLIC_SUPABASE_URL}
+              crossOrigin="anonymous"
+            />
+            <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_SUPABASE_URL} />
+          </>
+        ) : null}
+        {process.env.NEXT_PUBLIC_API_URL ? (
+          <>
+            <link rel="preconnect" href={process.env.NEXT_PUBLIC_API_URL} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={process.env.NEXT_PUBLIC_API_URL} />
+          </>
+        ) : null}
+      </head>
       <body
         className={`${heebo.variable} ${frankRuhl.variable} bg-brand-cream text-brand-ink font-sans antialiased`}
       >
