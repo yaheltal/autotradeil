@@ -1,7 +1,10 @@
 "use client";
 
-import { OTPInput, type SlotProps } from "input-otp";
-import { forwardRef } from "react";
+import { OTPInput, REGEXP_ONLY_DIGITS, type SlotProps } from "input-otp";
+import { motion, useAnimationControls } from "framer-motion";
+import { forwardRef, useEffect } from "react";
+
+export type OtpState = "idle" | "error" | "success";
 
 /**
  * OtpInput — premium 6-slot one-time code field.
@@ -10,14 +13,13 @@ import { forwardRef } from "react";
  * autocomplete=one-time-code field that screen readers announce as
  * one entity) but renders 6 visual slots with auto-advance.
  *
- * Brand styling:
- *   - 48×56 navy-bordered cream slots
- *   - Active slot: gold ring + slight scale-up
- *   - Filled slot: navy text on cream
- *   - dir=ltr (digits read left-to-right even in RTL pages)
- *
  * iOS Safari + Android Chrome auto-fill SMS OTPs into this field
- * when paired with autoComplete="one-time-code".
+ * when paired with autoComplete="one-time-code". Do NOT replace
+ * input-otp with manual <input> boxes — auto-fill breaks.
+ *
+ * Visual: large rounded brand-bordered slots with framer-motion
+ * staggered entrance, active slot lifts, and an error-shake driven
+ * by the parent via the `state` prop.
  */
 export const OtpInput = forwardRef<
   HTMLInputElement,
@@ -26,11 +28,28 @@ export const OtpInput = forwardRef<
     onChange: (v: string) => void;
     onComplete?: (v: string) => void;
     disabled?: boolean;
+    state?: OtpState;
     "aria-label"?: string;
     "aria-describedby"?: string;
     autoFocus?: boolean;
   }
->(function OtpInputImpl({ value, onChange, onComplete, disabled, autoFocus, ...aria }, ref) {
+>(function OtpInputImpl(
+  { value, onChange, onComplete, disabled, state = "idle", autoFocus, ...aria },
+  ref,
+) {
+  const controls = useAnimationControls();
+
+  useEffect(() => {
+    if (state === "error") {
+      void controls.start({
+        x: [0, 8, -8, 6, -6, 4, -4, 0],
+        transition: { duration: 0.45 },
+      });
+    } else {
+      controls.set({ x: 0 });
+    }
+  }, [state, controls]);
+
   return (
     <OTPInput
       ref={ref}
@@ -38,49 +57,72 @@ export const OtpInput = forwardRef<
       onChange={onChange}
       onComplete={onComplete}
       maxLength={6}
-      disabled={disabled}
+      disabled={disabled || state === "success"}
       autoFocus={autoFocus}
       aria-label={aria["aria-label"] ?? "קוד אימות חד פעמי"}
       aria-describedby={aria["aria-describedby"]}
       autoComplete="one-time-code"
       inputMode="numeric"
-      pattern="^\d{6}$"
-      // Outer container is RTL-neutral; the digits themselves render LTR
-      // so a 6-digit code reads naturally from left to right.
-      containerClassName="flex items-center justify-center gap-2 sm:gap-2.5 has-[:disabled]:opacity-50"
+      pattern={REGEXP_ONLY_DIGITS}
+      containerClassName="flex items-center justify-center has-[:disabled]:opacity-60"
       render={({ slots }) => (
-        <div dir="ltr" className="flex items-center gap-2 sm:gap-2.5">
+        <motion.div
+          dir="ltr"
+          animate={controls}
+          className="flex items-center justify-center gap-2 sm:gap-2.5"
+        >
           {slots.map((slot, idx) => (
-            <Slot key={idx} {...slot} />
+            <Slot key={idx} index={idx} state={state} {...slot} />
           ))}
-        </div>
+        </motion.div>
       )}
     />
   );
 });
 
-function Slot({ char, isActive }: SlotProps) {
+function Slot({
+  char,
+  isActive,
+  index,
+  state,
+}: SlotProps & { index: number; state: OtpState }) {
   return (
-    <div
+    <motion.div
       aria-hidden="true"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{
+        opacity: 1,
+        y: isActive && state === "idle" ? -3 : 0,
+        scale: isActive && state === "idle" ? 1.04 : 1,
+      }}
+      transition={{
+        type: "spring",
+        stiffness: 700,
+        damping: 22,
+        delay: index * 0.04,
+      }}
       className={[
-        "relative flex h-14 w-12 items-center justify-center rounded-xl",
-        "border-2 bg-white transition-all duration-150",
-        "font-serif text-2xl font-bold tabular-nums",
-        isActive
-          ? "border-brand-gold text-brand-navy ring-brand-gold/30 z-10 scale-[1.04] ring-4"
-          : char
-            ? "border-brand-navy/30 text-brand-navy"
-            : "border-brand-navy/15 text-brand-navy/40",
+        "relative flex h-16 w-14 items-center justify-center rounded-2xl",
+        "border-2 bg-white transition-colors duration-200",
+        "font-serif text-3xl font-bold tabular-nums",
+        state === "error"
+          ? "border-danger text-danger ring-danger/25 ring-4"
+          : state === "success"
+            ? "border-ok text-ok ring-ok/25 ring-4"
+            : isActive
+              ? "border-brand-gold text-brand-navy ring-brand-gold/30 z-10 shadow-md ring-4"
+              : char
+                ? "border-brand-navy/40 text-brand-navy shadow-sm"
+                : "border-brand-navy/15 text-brand-navy/40",
       ].join(" ")}
     >
       {char ?? ""}
-      {isActive && !char ? (
+      {isActive && !char && state === "idle" ? (
         <span
           aria-hidden="true"
-          className="bg-brand-navy/55 absolute h-6 w-px motion-safe:animate-pulse"
+          className="bg-brand-navy/60 absolute h-7 w-px motion-safe:animate-pulse"
         />
       ) : null}
-    </div>
+    </motion.div>
   );
 }
