@@ -54,7 +54,10 @@ export function DashboardSubNav() {
   }, [pathname]);
 
   return (
-    <nav aria-label="ניווט לוח בקרה" className="border-brand-navy/10 border-b bg-white">
+    <nav
+      aria-label="ניווט לוח בקרה"
+      className="border-brand-navy/10 hidden border-b bg-white md:block"
+    >
       <div className="mx-auto max-w-5xl px-2 sm:px-6">
         <ul
           ref={listRef}

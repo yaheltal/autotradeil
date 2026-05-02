@@ -1,7 +1,6 @@
 "use client";
 
-import { Bell, Menu } from "lucide-react";
-import { useState } from "react";
+import { Bell } from "lucide-react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { BottomNav } from "@/components/dashboard/BottomNav";
@@ -27,8 +26,6 @@ import { TopBar } from "@/components/dashboard/TopBar";
  *     to the right edge in RTL.
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-
   return (
     <div className="bg-brand-cream dark:bg-brand-night flex min-h-[100dvh]">
       <Sidebar />
@@ -46,16 +43,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
           aria-label="סרגל ניווט מובייל"
         >
-          <button
-            type="button"
-            onClick={() => setMobileMenuOpen((v) => !v)}
-            aria-label="פתיחת תפריט"
-            aria-expanded={mobileMenuOpen}
-            className="text-brand-navy hover:bg-brand-navy/5 dark:text-brand-cream inline-flex h-10 w-10 items-center justify-center rounded-lg transition-colors dark:hover:bg-white/5"
-          >
-            <Menu className="h-5 w-5" aria-hidden />
-          </button>
-          <div className="flex-1">
+          <ThemeToggle />
+          <div className="flex flex-1 justify-center">
             <BrandMark />
           </div>
           <button
@@ -65,11 +54,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           >
             <Bell className="h-5 w-5" aria-hidden />
           </button>
-          <ThemeToggle />
         </header>
-
-        {/* Mobile slide-down menu (collapsible) */}
-        {mobileMenuOpen ? <MobileMenu onClose={() => setMobileMenuOpen(false)} /> : null}
 
         {/* Page content. Bottom padding leaves room for BottomNav on
             mobile so the last list item / FAB isn't hidden behind it. */}
@@ -77,38 +62,6 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
         <BottomNav />
       </div>
-    </div>
-  );
-}
-
-function MobileMenu({ onClose }: { onClose: () => void }) {
-  return (
-    <div
-      className="border-brand-navy/10 dark:bg-brand-slate border-b bg-white md:hidden dark:border-white/10"
-      role="menu"
-      aria-label="תפריט מובייל"
-    >
-      <ul className="flex flex-col p-2">
-        {[
-          { href: "/dashboard", label: "פרופיל" },
-          { href: "/dashboard/inventory", label: "מלאי" },
-          { href: "/dashboard/marketplace", label: "שוק B2B" },
-          { href: "/dashboard/offers", label: "הצעות" },
-          { href: "/dashboard/deals", label: "עסקאות" },
-          { href: "/dashboard/analytics", label: "סטטיסטיקות" },
-          { href: "/dashboard/security", label: "אבטחה" },
-        ].map((item) => (
-          <li key={item.href}>
-            <a
-              href={item.href}
-              onClick={onClose}
-              className="text-brand-navy hover:bg-brand-navy/5 dark:text-brand-cream block rounded-lg px-3 py-3 text-sm font-semibold transition-colors dark:hover:bg-white/5"
-            >
-              {item.label}
-            </a>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }
