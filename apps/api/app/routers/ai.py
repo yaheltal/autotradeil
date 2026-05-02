@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ai_usage import check_and_increment_ai_usage
 from app.core.auth import require_admin, require_verified_dealer
+from app.core.cache import redis_client
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.database import get_db
@@ -525,6 +526,17 @@ async def price_estimate(
     """
     _, dealer = _ud
     await check_and_increment_ai_usage(dealer, db)
+
+    # Try cache first
+    if redis_client:
+        cache_key = f"price:{payload.make}:{payload.model}:{payload.year}:{payload.mileage}"
+        try:
+            cached = await redis_client.get(cache_key)
+            if cached:
+                return PriceEstimateResponse(**json.loads(cached))
+        except Exception:
+            pass  # Cache miss, continue
+
     client = _anthropic_client()
 
     # ---- Deterministic fallback (used when Claude is unreachable) ----
@@ -629,12 +641,21 @@ async def price_estimate(
     except (TypeError, ValueError):
         new_car_price = None
 
-    return PriceEstimateResponse(
+    result = PriceEstimateResponse(
         estimated_price=max(5_000, price),
         confidence=confidence,
         breakdown=breakdown,
         new_car_price=new_car_price,
     )
+
+    # Cache the result
+    if redis_client:
+        try:
+            await redis_client.setex(cache_key, 3600, result.model_dump_json())
+        except Exception:
+            pass  # Cache write failed, ignore
+
+    return result
 
 
 @router.post("/parse-dealer-filters", response_model=ParseDealerFiltersResponse)

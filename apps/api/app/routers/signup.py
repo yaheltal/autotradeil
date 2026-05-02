@@ -563,6 +563,7 @@ class OtpRequestBody(BaseModel):
     phone: str | None = Field(default=None, max_length=30)
     # 'email' or 'sms'. Server will downgrade to 'email' if SMS delivery
     # fails or the dealer has no phone on file.
+    # Dealers use email OTP to reduce SMS costs
     delivery: str = Field(default="email", pattern="^(email|sms)$")
 
 
