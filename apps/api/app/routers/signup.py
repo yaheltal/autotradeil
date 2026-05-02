@@ -653,10 +653,10 @@ async def public_otp_request(
 
     delivered_via = body.delivery
 
-    if body.delivery == "sms" and phone_to_use:
-        # Domain-bound OTP format so iOS Safari auto-suggests the code into
-        # the input. The trailing `@domain #code` line ties the code to the
-        # origin per Apple's spec.
+    if body.delivery == "sms":
+        if not phone_to_use:
+            logger.info("otp sms requested but user %s has no phone on file", user.id)
+            return {"message": generic, "delivery": "sms"}
         sms_msg = (
             f"AutoTradeIL: קוד הכניסה שלך הוא {code}. "
             f"תקף ל-{OTP_TTL_MINUTES} דקות.\n\n"
@@ -664,33 +664,17 @@ async def public_otp_request(
         )
         sent = await send_sms(to_phone=phone_to_use, message=sms_msg)
         if not sent:
-            # SMS failed — fall back to email so the user isn't locked out.
-            logger.warning(
-                "otp sms delivery failed for user=%s; falling back to email",
-                user.id,
-            )
-            delivered_via = "email"
-            try:
-                await send_otp_email(
-                    to_email=user.email, business_name=display_name, code=code
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("public otp email fallback failed: %s", exc)
-    else:
-        if body.delivery == "sms":
-            logger.info(
-                "otp delivery=sms requested but user %s has no phone — using email",
-                user.id,
-            )
-            delivered_via = "email"
-        try:
-            await send_otp_email(
-                to_email=user.email, business_name=display_name, code=code
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("public otp email send failed: %s", exc)
+            logger.warning("otp sms delivery failed for user=%s", user.id)
+        return {"message": generic, "delivery": "sms"}
 
-    return {"message": generic, "delivery": delivered_via}
+    try:
+        await send_otp_email(
+            to_email=user.email, business_name=display_name, code=code
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("public otp email send failed: %s", exc)
+
+    return {"message": generic, "delivery": "email"}
 
 
 class OtpVerifyBody(BaseModel):

@@ -183,6 +183,13 @@ class Dealer(UUIDPrimaryKey, TimestampMixin, Base):
         Boolean, nullable=False, default=True, server_default=text("true")
     )
 
+    ai_calls_this_month: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    ai_usage_reset_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     __table_args__ = (
         UniqueConstraint("business_id", name="uq_dealers_business_id"),
         CheckConstraint(

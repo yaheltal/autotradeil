@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai_usage import check_and_increment_ai_usage
 from app.core.auth import require_admin, require_verified_dealer
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -512,6 +513,7 @@ async def ai_parse_filters(
 async def price_estimate(
     payload: PriceEstimateRequest,
     _ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PriceEstimateResponse:
     """AI-driven market-price estimate for a specific (make, model, year,
     mileage, hand, ownership_type) combination.
@@ -521,6 +523,8 @@ async def price_estimate(
     Hebrew. Empty / failed responses degrade gracefully to a deterministic
     formula so the form always shows SOMETHING under the price field.
     """
+    _, dealer = _ud
+    await check_and_increment_ai_usage(dealer, db)
     client = _anthropic_client()
 
     # ---- Deterministic fallback (used when Claude is unreachable) ----
@@ -801,6 +805,9 @@ async def price_analysis(
     now = time.time()
     if cached and (now - cached[0]) < _PRICE_CACHE_TTL_SECONDS:
         return PriceAnalysisResponse(**cached[1])
+
+    _, dealer = ud
+    await check_and_increment_ai_usage(dealer, db)
 
     vehicle = (
         await db.execute(select(Inventory).where(Inventory.id == payload.inventory_id))

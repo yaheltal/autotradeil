@@ -58,6 +58,7 @@ from app.core.email import (
 from app.core.trust import recalculate_trust_score
 from app.core.events import emit_event
 from app.core.logging import get_logger
+from app.core.rate_limit import rate_limit
 from app.database import get_db
 from app.models import (
     Deal,
@@ -88,6 +89,10 @@ from app.schemas.marketplace import (
 )
 
 logger = get_logger(__name__)
+
+marketplace_search_rate_limit = rate_limit("100/hour", scope="marketplace_search")
+offer_create_rate_limit = rate_limit("30/hour", scope="offer_create")
+offer_action_rate_limit = rate_limit("50/hour", scope="offer_action")
 
 marketplace_router = APIRouter(prefix="/api/v1/marketplace", tags=["marketplace"])
 notifications_router = APIRouter(
@@ -248,7 +253,11 @@ def _offer_response(
 # =============================================================================
 
 
-@marketplace_router.get("/search", response_model=VehicleSearchResponse)
+@marketplace_router.get(
+    "/search",
+    response_model=VehicleSearchResponse,
+    dependencies=[Depends(marketplace_search_rate_limit)],
+)
 async def search_vehicles(
     ud: Annotated[tuple[User, Dealer | None], Depends(require_marketplace_viewer)],
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -494,6 +503,7 @@ async def get_vehicle_detail(
     "/vehicles/{inventory_id}/offers",
     response_model=OfferResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(offer_create_rate_limit)],
 )
 async def make_offer(
     inventory_id: uuid.UUID,
@@ -782,7 +792,11 @@ def _action_allowed(
     return False
 
 
-@marketplace_router.post("/offers/{offer_id}/accept", response_model=OfferResponse)
+@marketplace_router.post(
+    "/offers/{offer_id}/accept",
+    response_model=OfferResponse,
+    dependencies=[Depends(offer_action_rate_limit)],
+)
 async def accept_offer(
     offer_id: uuid.UUID,
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
@@ -852,7 +866,11 @@ async def accept_offer(
     return _offer_response(offer, vehicle, buyer, seller, primary)
 
 
-@marketplace_router.post("/offers/{offer_id}/reject", response_model=OfferResponse)
+@marketplace_router.post(
+    "/offers/{offer_id}/reject",
+    response_model=OfferResponse,
+    dependencies=[Depends(offer_action_rate_limit)],
+)
 async def reject_offer(
     offer_id: uuid.UUID,
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
@@ -913,7 +931,11 @@ async def reject_offer(
     return _offer_response(offer, vehicle, buyer, seller, primary)
 
 
-@marketplace_router.post("/offers/{offer_id}/counter", response_model=OfferResponse)
+@marketplace_router.post(
+    "/offers/{offer_id}/counter",
+    response_model=OfferResponse,
+    dependencies=[Depends(offer_action_rate_limit)],
+)
 async def counter_offer(
     offer_id: uuid.UUID,
     payload: CounterOfferCreate,

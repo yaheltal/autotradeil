@@ -135,8 +135,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="he" dir="rtl">
+    <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
+        {/* Theme init — runs before first paint, reads localStorage
+            and applies the `dark` class to <html> so dark-mode
+            users don't see a white flash before hydration. The
+            suppressHydrationWarning above silences the diff that
+            results from this server/client mismatch on <html>. */}
+        <script
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}`,
+          }}
+        />
         {/* Preconnect to origins we hit on every cold visit. Saves
             ~100-300ms LCP because TLS+DNS happens in parallel with
             HTML parsing instead of being serialized after the first
@@ -164,7 +175,7 @@ export default function RootLayout({
         ) : null}
       </head>
       <body
-        className={`${heebo.variable} ${frankRuhl.variable} bg-brand-cream text-brand-ink font-sans antialiased`}
+        className={`${heebo.variable} ${frankRuhl.variable} bg-brand-cream text-brand-ink dark:bg-brand-night dark:text-brand-cream font-sans antialiased transition-colors`}
       >
         {/* Skip link — always first focusable. Navy background + cream text ≥ 15:1 contrast. */}
         <a

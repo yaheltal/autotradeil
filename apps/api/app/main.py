@@ -51,6 +51,7 @@ from app.core.logging import configure_logging, get_logger, log_request
 from app.routers import (
     admin,
     ai,
+    auth,
     auth_test,
     dealers,
     health,
@@ -156,6 +157,7 @@ async def request_context(request: Request, call_next):  # type: ignore[no-untyp
 
 
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(auth_test.router)
 app.include_router(signup.router)
 app.include_router(dealers.router)

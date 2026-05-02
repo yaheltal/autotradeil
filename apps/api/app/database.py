@@ -19,8 +19,9 @@ engine = create_async_engine(
     settings.database_url,
     echo=False,
     pool_pre_ping=True,
-    pool_size=5,
-    max_overflow=10,
+    # Increased from 5 to support 30+ concurrent dealers
+    pool_size=20,
+    max_overflow=30,
 )
 
 SessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(

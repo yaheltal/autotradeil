@@ -74,6 +74,14 @@ class Settings(BaseSettings):
     twilio_auth_token: str = Field(default="")
     twilio_phone_number: str = Field(default="")
 
+    # Google OAuth — these are configured in Supabase Dashboard
+    # (Authentication → Providers → Google) NOT used directly by the
+    # backend, but tracked here so the env-var inventory in render.yaml
+    # stays in sync. Supabase handles the OAuth handshake; the backend
+    # only verifies the resulting JWT and looks up the user.
+    supabase_google_client_id: str = Field(default="")
+    supabase_google_client_secret: str = Field(default="")
+
     # Gmail SMTP — FALLBACK only. Resend is the primary sender; Gmail
     # kicks in only when Resend errors or the API key is unset.
     # Production points GMAIL_FROM at the same info@autotradeil.com

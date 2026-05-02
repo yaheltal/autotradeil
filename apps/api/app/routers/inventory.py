@@ -19,6 +19,7 @@ from app.core.auth import require_verified_dealer
 from app.core.cloudinary_client import delete_vehicle_image, upload_vehicle_image
 from app.core.events import emit_event
 from app.core.logging import get_logger
+from app.core.rate_limit import rate_limit
 from app.database import get_db
 from app.models import Dealer, Inventory, InventoryImage, User
 from app.schemas.inventory import (
@@ -41,6 +42,9 @@ ALLOWED_IMAGE_MIME = frozenset(
 )
 
 logger = get_logger(__name__)
+
+inventory_create_rate_limit = rate_limit("50/hour", scope="inventory_create")
+inventory_image_upload_rate_limit = rate_limit("100/hour", scope="inventory_image_upload")
 
 router = APIRouter(prefix="/api/v1/inventory", tags=["inventory"])
 
@@ -194,6 +198,7 @@ async def list_inventory(
     "",
     response_model=InventoryItemResponse,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(inventory_create_rate_limit)],
 )
 async def create_inventory_item(
     payload: InventoryItemCreate,
@@ -455,6 +460,7 @@ async def list_images(
 @router.post(
     "/{inventory_id}/images",
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(inventory_image_upload_rate_limit)],
 )
 async def upload_image(
     inventory_id: uuid.UUID,
