@@ -44,6 +44,10 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000"]
     )
 
+    # Frontend base URL — used for password-reset and other email
+    # links. Render sets this to https://autotradeil.com in prod.
+    frontend_url: str = Field(default="https://autotradeil.com")
+
     # Resend — transactional email (PRIMARY sender). Production uses
     # the verified autotradeil.com domain; the default below is a
     # safe placeholder for fresh dev environments. Render env var
