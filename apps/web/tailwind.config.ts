@@ -1,50 +1,199 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * AutoTradeIL design system — locked per CLAUDE.md §4.
+ *
+ * Two surfaces (ink / paper) + one editorial accent. No dark mode.
+ * Spacing scale removes 4px so the wrong number is unreachable. Fonts
+ * come from layout.tsx via CSS variables (Fraunces for editorial
+ * headings, Inter for body, Frank Ruhl Libre as the Hebrew heading
+ * fallback inside the same font-serif stack).
+ */
 const config: Config = {
-  // Class-based dark mode — toggled by adding/removing `class="dark"`
-  // on <html>. The init script in app/layout.tsx applies the class
-  // before first paint to avoid the white-flash-then-dark FOUC.
-  darkMode: "class",
+  // Light-only. No darkMode strategy → no `dark:` utility ever triggers.
+  darkMode: ["class", '[data-theme="never"]'],
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
+    // SPACING — override the defaults so 4px is unreachable. The escalation
+    // jumps `12 → 16 → 24` (not `12 → 14 → 16`) which forces editorial
+    // whitespace rather than the cramped 2px increments Tailwind ships by
+    // default. Aliases keep familiar names (`p-4` no longer exists; use
+    // `p-md`, `p-lg`, `p-xl` etc.).
+    spacing: {
+      0: "0",
+      px: "1px",
+      0.5: "2px",
+      // No 4 (deliberately). No 1 / 2 / 3 either.
+      xxs: "8px",
+      8: "8px",
+      sm: "12px",
+      12: "12px",
+      md: "16px",
+      16: "16px",
+      lg: "24px",
+      24: "24px",
+      xl: "32px",
+      32: "32px",
+      "2xl": "48px",
+      48: "48px",
+      "3xl": "64px",
+      64: "64px",
+      "4xl": "96px",
+      96: "96px",
+      "5xl": "128px",
+      128: "128px",
+    },
     extend: {
       fontFamily: {
-        sans: ["var(--font-heebo)", "ui-sans-serif", "system-ui", "sans-serif"],
-        serif: ["var(--font-frank-ruhl)", '"Frank Ruhl Libre"', "ui-serif", "Georgia", "serif"],
+        // Body — Inter (Latin + Hebrew unicode-range). System fallback for
+        // first-paint, then Inter swaps in.
+        sans: [
+          "var(--font-inter)",
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "sans-serif",
+        ],
+        // Editorial — Fraunces for Latin headings; Frank Ruhl Libre takes
+        // over for Hebrew code points (its native script) inside the same
+        // stack. The CSS-level unicode-range on Frank Ruhl Libre is set in
+        // layout.tsx so the swap is automatic per character.
+        serif: [
+          "var(--font-fraunces)",
+          "var(--font-frank-ruhl)",
+          '"Frank Ruhl Libre"',
+          "ui-serif",
+          "Georgia",
+          "serif",
+        ],
+        // Monospace — system stack only. Never a fourth web font (per CLAUDE.md §4).
+        mono: [
+          "ui-monospace",
+          "SFMono-Regular",
+          "Menlo",
+          "Consolas",
+          "Liberation Mono",
+          "monospace",
+        ],
       },
       colors: {
-        // ====================================================================
-        // AutoTradeIL brand (refined / editorial — navy + gold on off-white)
-        // Contrast audited at use-sites — see comments in page components.
-        // ====================================================================
-        brand: {
-          navy: "#1a1a2e", // primary surface / text on light  → 15.9:1 on #f8f8f6 (AAA)
-          gold: "#e8b84b", // accent only — NOT body text on light (fails)
-          cream: "#f8f8f6", // warm off-white background
-          ink: "#1a1a1a", // body text
-          // Dark-mode surfaces (used via `dark:bg-brand-night` etc).
-          // Audited to give brand-cream text 12.4:1 on `night` (AAA).
-          night: "#0F1623", // page background in dark mode
-          slate: "#1E2D3D", // card surfaces in dark mode
+        // Two locked surfaces.
+        ink: "#0A0A0A",
+        paper: "#FFFFFF",
+        // ONE editorial accent — oxidized bronze. Reserved for CTAs and
+        // one or two highlight moments per page. NOT a body text color.
+        accent: {
+          DEFAULT: "#A8723A",
+          ink: "#FFFFFF", // text-on-accent
+          subtle: "#F4ECDF", // accent-tinted surface for callouts
         },
-        // Status tones — darker variants for text to meet 4.5:1.
+        // Tonal variations of ink (NOT new colors per CLAUDE.md §4).
+        muted: "#6B6B6E", // secondary body text
+        subtle: "#9A9A9D", // tertiary / metadata
+        hairline: "rgba(10,10,10,0.08)", // borders, dividers
+        // Status — rendered as ink tints, not as additional brand colors.
+        // Foreground/background paired for AA contrast on body type.
         ok: {
-          DEFAULT: "#22c55e",
-          text: "#14532d",
-          bg: "#dcfce7",
+          DEFAULT: "#1F8F5C",
+          fg: "#0E3B26",
+          bg: "#E6F5EC",
+        },
+        warn: {
+          DEFAULT: "#9A6700",
+          fg: "#3F2A00",
+          bg: "#FFF7D6",
         },
         danger: {
-          DEFAULT: "#ef4444",
-          text: "#7f1d1d",
-          bg: "#fee2e2",
+          DEFAULT: "#B5302A",
+          fg: "#5A1815",
+          bg: "#FCE6E4",
         },
+
+        // shadcn/ui semantic surface — mapped to the locked palette so
+        // primitives scaffolded via `npx shadcn` inherit our system, not
+        // their gray defaults. Phase 6 installs the primitives.
+        background: "#FFFFFF",
+        foreground: "#0A0A0A",
+        card: { DEFAULT: "#FFFFFF", foreground: "#0A0A0A" },
+        popover: { DEFAULT: "#FFFFFF", foreground: "#0A0A0A" },
+        primary: { DEFAULT: "#0A0A0A", foreground: "#FFFFFF" }, // ink-on-paper buttons
+        secondary: { DEFAULT: "#F4F4F5", foreground: "#0A0A0A" },
+        destructive: { DEFAULT: "#B5302A", foreground: "#FFFFFF" },
+        border: "rgba(10,10,10,0.08)",
+        input: "rgba(10,10,10,0.12)",
+        ring: "#A8723A",
+
+        // ---- Legacy aliases (kept ONLY to prevent a 100-file rewrite in
+        // this commit; will be migrated away over Phases 6–8). Every
+        // legacy name maps to a NEW locked token so the visual outcome
+        // is the new system regardless of which class an old component
+        // still uses. New code MUST NOT reference these. ----
+        brand: {
+          cream: "#FFFFFF", // legacy bg → paper
+          ink: "#0A0A0A", // legacy text → ink
+          navy: "#0A0A0A", // legacy navy → ink (the navy/gold tradition retires)
+          gold: "#A8723A", // legacy gold → accent (oxidized bronze)
+          night: "#0A0A0A", // legacy dark surface — never triggers
+          slate: "#0A0A0A", // legacy dark card — never triggers
+        },
+      },
+      borderRadius: {
+        // 10px standard radius — matches mobile `radii.md` for visual parity.
+        DEFAULT: "10px",
+        sm: "6px",
+        md: "10px",
+        lg: "14px",
+        xl: "20px",
+        pill: "999px",
+      },
+      letterSpacing: {
+        tightest: "-0.04em",
+        editorial: "-0.025em", // Fraunces tightening for big display headings
+      },
+      // Custom hover transition timing — capped at 200ms per CLAUDE.md §4.
+      transitionDuration: {
+        DEFAULT: "150ms",
+        fast: "120ms",
+        base: "180ms",
+      },
+      // shadcn keyframes (added now so Phase 6 components animate correctly).
+      keyframes: {
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 180ms ease-out",
+        "accordion-up": "accordion-up 180ms ease-out",
       },
     },
   },
-  plugins: [],
+  plugins: [
+    // `font-tabular` utility — locks tabular-nums on prices/odometer/years
+    // per CLAUDE.md §4. Added inline (no plugin dep) to keep the surface
+    // small.
+    function ({
+      addUtilities,
+    }: {
+      addUtilities: (u: Record<string, Record<string, string>>) => void;
+    }) {
+      addUtilities({
+        ".font-tabular": {
+          "font-variant-numeric": "tabular-nums",
+          "font-feature-settings": '"tnum"',
+        },
+      });
+    },
+  ],
 };
 export default config;
