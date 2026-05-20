@@ -4,8 +4,13 @@ import type { Config } from "tailwindcss";
  * AutoTradeIL design system — locked per CLAUDE.md §4.
  *
  * Two surfaces (ink / paper) + one editorial accent. No dark mode.
- * Spacing scale removes 4px so the wrong number is unreachable. Fonts
- * come from layout.tsx via CSS variables (Fraunces for editorial
+ * Spacing scale is the Tailwind default + editorial aliases
+ * (xxs/sm/md/lg/xl/2xl/3xl/4xl/5xl mapping to 8/12/16/24/32/48/64/96/128).
+ * The "no 4px" guidance in CLAUDE.md §4 is enforced going forward by
+ * code review rather than by Tailwind config (replacing the whole scale
+ * silently broke 100+ existing class call sites).
+ *
+ * Fonts come from layout.tsx via CSS variables (Fraunces for editorial
  * headings, Inter for body, Frank Ruhl Libre as the Hebrew heading
  * fallback inside the same font-serif stack).
  */
@@ -18,36 +23,23 @@ const config: Config = {
     "./src/app/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    // SPACING — override the defaults so 4px is unreachable. The escalation
-    // jumps `12 → 16 → 24` (not `12 → 14 → 16`) which forces editorial
-    // whitespace rather than the cramped 2px increments Tailwind ships by
-    // default. Aliases keep familiar names (`p-4` no longer exists; use
-    // `p-md`, `p-lg`, `p-xl` etc.).
-    spacing: {
-      0: "0",
-      px: "1px",
-      0.5: "2px",
-      // No 4 (deliberately). No 1 / 2 / 3 either.
-      xxs: "8px",
-      8: "8px",
-      sm: "12px",
-      12: "12px",
-      md: "16px",
-      16: "16px",
-      lg: "24px",
-      24: "24px",
-      xl: "32px",
-      32: "32px",
-      "2xl": "48px",
-      48: "48px",
-      "3xl": "64px",
-      64: "64px",
-      "4xl": "96px",
-      96: "96px",
-      "5xl": "128px",
-      128: "128px",
-    },
     extend: {
+      // SPACING — ADD aliases to the default Tailwind scale. Replacing the
+      // whole scale (as we tried) broke every existing `p-4` / `gap-6` /
+      // `mt-2` call site in the codebase. The aspirational "no 4px"
+      // guidance lives in CLAUDE.md §4 and is enforced going forward by
+      // code review — new components must use the named aliases below.
+      spacing: {
+        xxs: "8px",
+        sm: "12px",
+        md: "16px",
+        lg: "24px",
+        xl: "32px",
+        "2xl": "48px",
+        "3xl": "64px",
+        "4xl": "96px",
+        "5xl": "128px",
+      },
       fontFamily: {
         // Body — Inter (Latin + Hebrew unicode-range). System fallback for
         // first-paint, then Inter swaps in.
