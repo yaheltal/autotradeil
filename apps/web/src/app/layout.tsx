@@ -23,19 +23,19 @@ const inter = Inter({
   subsets: ["latin", "latin-ext"],
   variable: "--font-inter",
   display: "swap",
-  axes: ["opsz"],
 });
 
 const fraunces = Fraunces({
-  subsets: ["latin", "latin-ext"],
+  subsets: ["latin"],
   variable: "--font-fraunces",
   display: "swap",
   weight: ["400", "500", "600", "700"],
-  // `opsz` axis pulls Fraunces' optical sizing — display weights at large
-  // sizes get the dramatic Fraunces serifs, smaller heading uses get a
-  // tighter cut. This is the difference between "set in Fraunces" and
-  // "designed in Fraunces".
-  axes: ["opsz", "SOFT", "WONK"],
+  // NOTE: We previously declared `axes: ["opsz", "SOFT", "WONK"]` to pull
+  // Fraunces' optical-sizing axis. next/font rejects that combo because the
+  // explicit `weight` array forces a static fetch, and `axes` is only honored
+  // when the font is loaded as a true variable. The discrete weights below
+  // still give us Fraunces' editorial feel; if we ever want the full
+  // variable axis playground we drop the `weight` array entirely.
 });
 
 const frankRuhl = Frank_Ruhl_Libre({
