@@ -1,32 +1,41 @@
 "use client";
 
+import {
+  ArrowLeft,
+  BarChart3,
+  Car,
+  Handshake,
+  Plus,
+  TrendingUp,
+  type LucideIcon,
+} from "lucide-react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
-import { BrandMark } from "@/components/BrandMark";
-import { CommandCenter } from "@/components/dashboard/CommandCenter";
-import { DashboardSmartBar } from "@/components/dashboard/DashboardSmartBar";
-import { DashboardSubNav } from "@/components/DashboardSubNav";
-import { NotificationBell } from "@/components/NotificationBell";
-import { ProfileEditor } from "@/components/ProfileEditor";
-import { ProfileHeader } from "@/components/ProfileHeader";
-import type { Tier } from "@/components/TrustBadge";
 import { SuspensionBanner } from "@/components/SuspensionBanner";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 
 /*
- * Dealer dashboard (protected by middleware.ts).
+ * Dealer dashboard — fintech-minimalist layout.
  *
- * A11y:
- *   - <h1> carries the greeting and is focused on mount.
- *   - Profile info rendered as <dl><dt><dd> (not a table).
- *   - Logout is a real <button>; no confirmation, but we redirect
- *     with ?signedOut=1 so the login page announces the result.
- *   - If /dealers/me returns 404 (admin hit the wrong page), render
- *     an explicit error region with role="alert".
- *   - English tier keywords wrapped in <span lang="en"> so Hebrew
- *     screen readers don't mangle them.
+ * Structure per the design system (CLAUDE.md §4):
+ *   1. Auth + admin gate (preserved — safety infrastructure, not UI)
+ *   2. SuspensionBanner (preserved)
+ *   3. Admin-route redirect notice (preserved)
+ *   4. Page header — "Dashboard" + dealer name + locale-formatted date
+ *   5. Hero card — bg-accent (oxidized bronze) + Total Inventory Value +
+ *      4 primary actions with subtle glassmorphism on hover
+ *   6. Two-column grid — Recent Vehicles + Recent Offers
+ *
+ * Chrome (sidebar / topbar / mobile bottom-nav / logout / notification
+ * bell) is provided by the parent dashboard/layout.tsx (DashboardShell).
+ * This page renders the content area only — no redundant per-page header.
+ *
+ * Data: dealer.business_name comes from the live API; the inventory value
+ * and recent activity panels are stubbed against MOCK data marked below.
+ * Wire to real endpoints in a follow-up commit.
  */
 
 type Dealer = {
@@ -43,6 +52,71 @@ type Dealer = {
   license_number?: string;
 };
 
+// ---- MOCK DATA --------------------------------------------------------
+// TODO(post-design): replace with real queries.
+//   inventory total      → GET /api/v1/inventory/stats   (sum of values)
+//   recent_vehicles      → GET /api/v1/inventory?limit=4&sort=-created_at
+//   recent_offers        → GET /api/v1/marketplace/offers/received?limit=4
+type RecentVehicle = {
+  id: number;
+  make: string;
+  model: string;
+  year: number;
+  price: number;
+  addedAt: string;
+};
+type RecentOffer = {
+  id: number;
+  vehicle: string;
+  amount: number;
+  status: "pending" | "accepted" | "rejected" | "countered";
+  time: string;
+};
+
+const MOCK_INVENTORY_VALUE = 1_247_500;
+const MOCK_INVENTORY_GROWTH = 12; // percent month-over-month
+
+const MOCK_RECENT_VEHICLES: RecentVehicle[] = [
+  { id: 1, make: "Toyota", model: "Camry", year: 2022, price: 145_000, addedAt: "לפני שעתיים" },
+  { id: 2, make: "Honda", model: "Civic", year: 2021, price: 98_000, addedAt: "לפני 5 שעות" },
+  { id: 3, make: "Mazda", model: "CX-5", year: 2023, price: 178_000, addedAt: "לפני יום" },
+  { id: 4, make: "Kia", model: "Sportage", year: 2020, price: 115_000, addedAt: "לפני יומיים" },
+];
+
+const MOCK_RECENT_OFFERS: RecentOffer[] = [
+  { id: 1, vehicle: "Toyota Camry 2022", amount: 140_000, status: "pending", time: "לפני שעה" },
+  { id: 2, vehicle: "Honda Civic 2021", amount: 95_000, status: "accepted", time: "לפני 3 שעות" },
+  { id: 3, vehicle: "Mazda CX-5 2023", amount: 175_000, status: "pending", time: "לפני 6 שעות" },
+  { id: 4, vehicle: "Kia Sportage 2020", amount: 110_000, status: "countered", time: "אתמול" },
+];
+
+// ---- Helpers ----------------------------------------------------------
+
+const ILS = new Intl.NumberFormat("he-IL", {
+  style: "currency",
+  currency: "ILS",
+  maximumFractionDigits: 0,
+});
+
+const formatDate = (d: Date) =>
+  d.toLocaleDateString("he-IL", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+const OFFER_STATUS_COPY: Record<RecentOffer["status"], string> = {
+  pending: "ממתינה",
+  accepted: "התקבלה",
+  rejected: "נדחתה",
+  countered: "הצעה נגדית",
+};
+
+// ============================================================================
+// Page wrapper — Suspense around useSearchParams (Next 14 / app router).
+// ============================================================================
+
 export default function DashboardPage() {
   return (
     <Suspense fallback={null}>
@@ -54,13 +128,12 @@ export default function DashboardPage() {
 function DashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  // ?error=admin_required arrives when a non-admin tries to open /admin/*
-  // (useAdminAuth.ts redirects them here). Surface the cause once, then
-  // strip the query param so a refresh doesn't re-announce.
-  const errorCode = searchParams.get("error");
-  const headingRef = useRef<HTMLHeadingElement>(null);
-  const [adminGateMsg, setAdminGateMsg] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
 
+  // ?error=admin_required arrives when a non-admin tries to open /admin/*.
+  // Surface once, then strip so a refresh doesn't re-announce.
+  const errorCode = searchParams.get("error");
+  const [adminGateMsg, setAdminGateMsg] = useState<string | null>(null);
   useEffect(() => {
     if (errorCode !== "admin_required" || typeof window === "undefined") return;
     setAdminGateMsg("הדף שניסית לפתוח זמין רק למנהלי מערכת. הוחזרת ללוח שלך.");
@@ -69,11 +142,11 @@ function DashboardPageInner() {
     window.history.replaceState({}, "", url.toString());
   }, [errorCode]);
 
+  // -- Auth + dealer profile load ------------------------------------------
   const [dealer, setDealer] = useState<Dealer | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [signingOut, setSigningOut] = useState(false);
-  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,8 +159,6 @@ function DashboardPageInner() {
         router.push("/login");
         return;
       }
-      // Admins shouldn't be on /dashboard — redirect to /admin so the page
-      // doesn't 404 trying to load a non-existent dealer profile.
       try {
         const who = await apiFetch<{ user_type: string }>("/api/v1/auth/whoami", {
           token: session.access_token,
@@ -97,8 +168,7 @@ function DashboardPageInner() {
           return;
         }
       } catch {
-        // whoami failed — fall through; the dealer fetch will surface its
-        // own error.
+        /* fall through; the dealer fetch will surface its own error */
       }
       try {
         const me = await apiFetch<Dealer>("/api/v1/dealers/me", {
@@ -111,8 +181,7 @@ function DashboardPageInner() {
         }
       } catch (err) {
         if (!cancelled) {
-          const message = err instanceof Error ? err.message : "שגיאה בטעינת הפרופיל";
-          setError(message);
+          setError(err instanceof Error ? err.message : "שגיאה בטעינת הפרופיל");
           setLoading(false);
         }
       }
@@ -124,197 +193,259 @@ function DashboardPageInner() {
   }, [router]);
 
   useEffect(() => {
-    if (!loading) {
-      headingRef.current?.focus();
-    }
+    if (!loading) headingRef.current?.focus();
   }, [loading]);
 
+  // Hard sign-out kept available even though the global topbar owns the
+  // primary logout — surfaced only inside the error fallback below.
   const handleLogout = useCallback(async () => {
-    setSigningOut(true);
     const supabase = createClient();
     await supabase.auth.signOut();
-    // Belt-and-suspenders against cross-tenant cache leaks: drop any
-    // browser-side state that could be replayed to the next user on
-    // this device (sessionStorage holds in-flight form drafts; the
-    // stale-while-revalidate browser cache is wiped on hard reload).
     try {
       sessionStorage.clear();
     } catch {
       /* private browsing — ignore */
     }
-    // Hard-redirect (not router.push) so the SPA bundle re-mounts
-    // fresh — defeats any in-memory React state still holding the
-    // previous dealer's data.
     window.location.href = "/login?signedOut=1";
   }, []);
 
+  // -- Loading / error states ----------------------------------------------
   if (loading) {
     return (
-      <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
-        <div
-          className="mx-auto flex min-h-screen max-w-4xl items-center justify-center px-6 py-16"
-          role="status"
-          aria-live="polite"
-        >
-          <p className="text-brand-ink/70">טוען…</p>
-        </div>
-      </main>
+      <div
+        className="px-lg py-2xl mx-auto flex min-h-[60vh] max-w-5xl items-center justify-center"
+        role="status"
+        aria-live="polite"
+      >
+        <p className="text-muted text-sm">טוען…</p>
+      </div>
     );
   }
 
   if (error) {
     return (
-      <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
-        <div className="mx-auto max-w-xl px-6 py-16">
-          <BrandMark />
-          <div role="alert" className="bg-danger-bg text-danger-text mt-10 rounded-md px-4 py-4">
-            <p className="font-semibold">לא ניתן לטעון את הפרופיל</p>
-            <p className="mt-1 text-sm">{error}</p>
-          </div>
+      <div className="px-lg py-2xl mx-auto max-w-xl">
+        <div role="alert" className="border-hairline bg-paper p-xl rounded-xl border">
+          <p className="text-ink font-serif text-xl font-medium">לא ניתן לטעון את הפרופיל</p>
+          <p className="text-muted mt-sm text-sm">{error}</p>
           <button
             type="button"
             onClick={handleLogout}
-            className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy mt-6 inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-5 py-3 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="mt-lg border-hairline bg-paper px-md text-ink duration-fast hover:bg-ink hover:text-paper focus-visible:outline-accent inline-flex h-11 items-center justify-center rounded-md border text-sm font-medium transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             התנתקות
           </button>
         </div>
-      </main>
+      </div>
     );
   }
 
   if (!dealer) return null;
 
-  // Phase 6.8.1 — show business name + license number on the cards.
-  // tier + trust_score are in the combined card below.
-  const stats = [
-    { key: "business_name", label: "שם העסק", value: dealer.business_name },
-    {
-      key: "license_number",
-      label: "מספר רישיון סוחר",
-      value: dealer.license_number ?? "—",
-    },
-  ];
-
+  // ========================================================================
+  // CONTENT
+  // ========================================================================
   return (
-    <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
+    <main
+      id="main"
+      tabIndex={-1}
+      className="px-lg pb-3xl pt-2xl sm:px-2xl mx-auto max-w-5xl focus:outline-none"
+    >
       <SuspensionBanner token={token} />
-      <header className="border-brand-navy/10 safe-top border-b bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3 sm:gap-4 sm:px-6 sm:py-4">
-          <BrandMark />
-          <div className="flex items-center gap-2 sm:gap-3">
-            {token ? <NotificationBell token={token} /> : null}
-            <button
-              type="button"
-              onClick={handleLogout}
-              disabled={signingOut}
-              aria-busy={signingOut || undefined}
-              className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-            >
-              {signingOut ? "מתנתק…" : "התנתקות"}
-            </button>
-          </div>
+
+      {adminGateMsg ? (
+        <div
+          role="alert"
+          className="mb-xl border-warn-fg/20 bg-warn-bg px-lg py-md text-warn-fg rounded-xl border text-sm"
+        >
+          {adminGateMsg}
         </div>
+      ) : null}
+
+      {/* ── PAGE HEADER ────────────────────────────────────────────────── */}
+      <header className="mb-2xl">
+        <h1
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-ink tracking-editorial font-serif text-3xl font-medium focus:outline-none sm:text-4xl"
+        >
+          Dashboard
+        </h1>
+        <p className="text-muted mt-sm text-sm">
+          <span className="text-ink font-medium">{dealer.business_name}</span>
+          <span aria-hidden="true" className="mx-md text-muted">
+            ·
+          </span>
+          <time dateTime={new Date().toISOString()}>{formatDate(new Date())}</time>
+        </p>
       </header>
 
-      <DashboardSubNav />
-
-      <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
-        {adminGateMsg ? (
-          <div
-            role="alert"
-            className="mb-6 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      {/* ── HERO — TOTAL INVENTORY VALUE + 4 ACTIONS ────────────────────── */}
+      <section
+        aria-labelledby="inventory-value-label"
+        className="mb-xl bg-accent px-xl py-2xl text-paper sm:px-3xl sm:py-3xl rounded-2xl"
+      >
+        <div className="mb-xl">
+          <p
+            id="inventory-value-label"
+            className="text-paper/75 mb-sm text-sm font-medium uppercase tracking-wide"
           >
-            {adminGateMsg}
-          </div>
-        ) : null}
-
-        {/* ============================================================
-            COMMAND CENTER — greeting + AI bar + KPI tiles + recent inv
-            ============================================================ */}
-        <header>
-          <p className="text-brand-navy/65 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-            <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-            לוח הפיקוד שלך
+            סך שווי המלאי
           </p>
-          <h1
-            ref={headingRef}
-            tabIndex={-1}
-            className="text-brand-navy mt-3 font-serif text-3xl font-bold tracking-tight focus:outline-none sm:text-4xl"
-          >
-            שלום, {dealer.business_name}.
-          </h1>
-        </header>
+          <p className="font-tabular text-5xl font-semibold leading-none sm:text-6xl">
+            {ILS.format(MOCK_INVENTORY_VALUE)}
+          </p>
+          <p className="text-paper/80 mt-md gap-xxs inline-flex items-center text-sm">
+            <TrendingUp aria-hidden="true" className="h-4 w-4" />
+            <span className="font-tabular font-medium">+{MOCK_INVENTORY_GROWTH}%</span>
+            <span className="text-paper/70">החודש</span>
+          </p>
+        </div>
 
-        {token ? <DashboardSmartBar token={token} /> : null}
+        <div className="gap-md sm:gap-lg grid grid-cols-2 sm:grid-cols-4">
+          <HeroAction icon={Plus} label="הוסף רכב" href="/dashboard/inventory" />
+          <HeroAction icon={Handshake} label="הצעות" href="/dashboard/offers" />
+          <HeroAction icon={Car} label="עסקאות" href="/dashboard/deals" />
+          <HeroAction icon={BarChart3} label="סטטיסטיקות" href="/dashboard/analytics" />
+        </div>
+      </section>
 
-        {token ? <CommandCenter token={token} /> : null}
-
-        {/* Profile header — circular logo, business name, tier badge.
-            Sits ABOVE the read-only stats so the dealer's brand is the
-            first thing they see in the profile area. */}
-        {token ? (
-          <div className="mt-12">
-            <ProfileHeader
-              token={token}
-              businessName={dealer.business_name}
-              city={dealer.city}
-              tier={dealer.tier as Tier}
-              trustScore={Number(dealer.trust_score) || 0}
-              logoUrl={dealer.logo_url}
-              onLogoChanged={(url) => setDealer((d) => (d ? { ...d, logo_url: url } : d))}
-            />
-          </div>
-        ) : null}
-
-        <section aria-labelledby="profile-heading" className="mt-8">
-          <h2 id="profile-heading" className="text-brand-navy text-lg font-semibold">
-            פרטי העסק
-          </h2>
-          <dl className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {stats.map((s) => (
-              <div key={s.key} className="border-brand-navy/10 rounded-lg border bg-white p-5">
-                <dt className="text-brand-ink/60 text-sm">{s.label}</dt>
-                <dd className="text-brand-navy mt-1 text-xl font-semibold">{s.value}</dd>
-              </div>
-            ))}
-            {/* Combined tier + trust_score card.
-             *  Two <dt>/<dd> pairs inside one card preserves label-value
-             *  semantics for screen readers (per a11y review). */}
-            <div className="border-brand-navy/10 rounded-lg border bg-white p-5">
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                <dt className="text-brand-ink/60 text-sm">דרגה</dt>
-                <dd className="text-brand-navy text-xl font-semibold">
-                  <span lang="en">{dealer.tier}</span>
-                </dd>
-                <span aria-hidden="true" className="text-brand-ink/40 mx-1">
-                  ·
-                </span>
-                <dt className="text-brand-ink/60 text-sm">ציון אמון</dt>
-                <dd className="text-brand-navy text-xl font-semibold tabular-nums">
-                  {dealer.trust_score}
-                </dd>
-              </div>
-            </div>
-          </dl>
-        </section>
-
-        {token ? (
-          <div className="mt-10">
-            <ProfileEditor
-              token={token}
-              initial={{
-                business_name: dealer.business_name,
-                city: dealer.city,
-                phone: dealer.phone,
-                description: dealer.description,
-                logo_url: dealer.logo_url,
-              }}
-              onSaved={(next) => setDealer((d) => (d ? { ...d, ...next } : d))}
-            />
-          </div>
-        ) : null}
+      {/* ── TWO-COLUMN — RECENT VEHICLES + RECENT OFFERS ────────────────── */}
+      <div className="gap-xl grid grid-cols-1 sm:grid-cols-2">
+        <RecentVehiclesCard items={MOCK_RECENT_VEHICLES} />
+        <RecentOffersCard items={MOCK_RECENT_OFFERS} />
       </div>
     </main>
   );
+}
+
+// ============================================================================
+// HERO ACTION — glassmorphism pill over the accent surface.
+// Custom hover (bg-tone shift) — never the default Tailwind ring (CLAUDE.md §4).
+// ============================================================================
+
+function HeroAction({
+  icon: Icon,
+  label,
+  href,
+}: {
+  icon: LucideIcon;
+  label: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="gap-sm border-paper/15 bg-paper/10 px-md py-lg text-paper duration-fast hover:border-paper/30 hover:bg-paper/20 focus-visible:outline-paper group flex flex-col items-center justify-center rounded-xl border backdrop-blur-sm transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+    >
+      <Icon aria-hidden="true" className="h-6 w-6 stroke-[1.5]" />
+      <span className="text-sm font-medium">{label}</span>
+    </Link>
+  );
+}
+
+// ============================================================================
+// SECONDARY CARDS — Recent Vehicles & Recent Offers
+// ============================================================================
+
+function RecentVehiclesCard({ items }: { items: RecentVehicle[] }) {
+  return (
+    <section
+      aria-labelledby="recent-vehicles-heading"
+      className="border-hairline bg-paper p-xl rounded-xl border"
+    >
+      <header className="mb-lg gap-md flex items-baseline justify-between">
+        <h2 id="recent-vehicles-heading" className="text-ink font-serif text-xl font-medium">
+          מלאי אחרון
+        </h2>
+        <Link
+          href="/dashboard/inventory"
+          className="gap-xxs text-muted duration-fast hover:text-ink focus-visible:outline-accent group inline-flex items-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          הצג הכל
+          <ArrowLeft
+            aria-hidden="true"
+            className="duration-fast h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5"
+          />
+        </Link>
+      </header>
+
+      {items.length === 0 ? (
+        <EmptyCardMessage>אין רכבים להצגה.</EmptyCardMessage>
+      ) : (
+        <ul className="space-y-lg">
+          {items.map((v) => (
+            <li key={v.id} className="gap-md flex items-center">
+              <div
+                aria-hidden="true"
+                className="border-hairline bg-paper h-12 w-12 shrink-0 rounded-lg border"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-ink truncate text-sm font-medium">
+                  {v.make} {v.model} {v.year}
+                </p>
+                <p className="text-muted mt-0.5 text-xs">{v.addedAt}</p>
+              </div>
+              <p className="text-ink font-tabular text-sm font-semibold">{ILS.format(v.price)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function RecentOffersCard({ items }: { items: RecentOffer[] }) {
+  return (
+    <section
+      aria-labelledby="recent-offers-heading"
+      className="border-hairline bg-paper p-xl rounded-xl border"
+    >
+      <header className="mb-lg gap-md flex items-baseline justify-between">
+        <h2 id="recent-offers-heading" className="text-ink font-serif text-xl font-medium">
+          הצעות אחרונות
+        </h2>
+        <Link
+          href="/dashboard/offers"
+          className="gap-xxs text-muted duration-fast hover:text-ink focus-visible:outline-accent group inline-flex items-center text-sm font-medium transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          הצג הכל
+          <ArrowLeft
+            aria-hidden="true"
+            className="duration-fast h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5"
+          />
+        </Link>
+      </header>
+
+      {items.length === 0 ? (
+        <EmptyCardMessage>אין הצעות חדשות.</EmptyCardMessage>
+      ) : (
+        <ul className="space-y-lg">
+          {items.map((o) => (
+            <li key={o.id} className="gap-md flex items-center">
+              <div
+                aria-hidden="true"
+                className="border-hairline bg-paper h-12 w-12 shrink-0 rounded-lg border"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-ink truncate text-sm font-medium">{o.vehicle}</p>
+                <p className="text-muted mt-0.5 text-xs">
+                  {OFFER_STATUS_COPY[o.status]}
+                  <span aria-hidden="true" className="mx-xxs">
+                    ·
+                  </span>
+                  {o.time}
+                </p>
+              </div>
+              <p className="text-ink font-tabular text-sm font-semibold">{ILS.format(o.amount)}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+function EmptyCardMessage({ children }: { children: React.ReactNode }) {
+  return <p className="text-muted py-lg text-sm">{children}</p>;
 }
