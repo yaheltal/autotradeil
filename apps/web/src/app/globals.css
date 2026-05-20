@@ -2,6 +2,80 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+ * Design system CSS variables — mirror the Tailwind tokens in
+ * tailwind.config.ts. shadcn/ui primitives (scaffolded in Phase 6)
+ * read these directly; component code reads via Tailwind classes.
+ * Two sources of truth are intentional — Tailwind owns utility
+ * classes, CSS variables own component internals.
+ * ============================================================ */
+@layer base {
+  :root {
+    /* Surfaces */
+    --background: 0 0% 100%; /* #FFFFFF — paper */
+    --foreground: 0 0% 4%; /* #0A0A0A — ink */
+
+    /* Components */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 4%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 4%;
+
+    /* Primary CTA (ink on paper) */
+    --primary: 0 0% 4%;
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary surface (faint ink wash) */
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 0 0% 4%;
+
+    /* Muted (tonal ink) */
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 2% 42%; /* #6B6B6E */
+
+    /* Accent — oxidized bronze. Reserved for highlights, NOT body text. */
+    --accent: 28 50% 44%; /* #A8723A */
+    --accent-foreground: 0 0% 100%;
+
+    /* Status — destructive only; ok/warn use Tailwind tokens directly */
+    --destructive: 3 62% 44%; /* #B5302A */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Hairlines */
+    --border: 0 0% 4% / 0.08;
+    --input: 0 0% 4% / 0.12;
+    --ring: 28 50% 44%; /* accent ring on focus */
+
+    /* Radius — 10px standard (matches mobile radii.md for parity) */
+    --radius: 0.625rem;
+  }
+
+  /* Editorial typography defaults — applied globally so any text inherits
+   * the locked feature set even before component-level styling. */
+  body {
+    /* Inter — enable contextual alternates (cv11 = single-storey 'a' in
+     * some sizes), stylistic set ss01 (open digits), and tabular nums
+     * across price-heavy surfaces. Subtle but unmistakable difference
+     * vs. default Inter. */
+    font-feature-settings: "cv11", "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Headings inherit the serif stack (Fraunces + Frank Ruhl Libre) by
+   * default. Component code can still override with `font-sans` when an
+   * editorial heading would feel wrong (e.g., inside a chip). */
+  h1,
+  h2,
+  h3 {
+    font-family:
+      var(--font-fraunces), var(--font-frank-ruhl), "Frank Ruhl Libre", ui-serif, Georgia, serif;
+    letter-spacing: -0.025em;
+    font-feature-settings: "ss01", "ss02"; /* Fraunces editorial alternates */
+  }
+}
+
 /* Prevent the document from becoming horizontally scrollable on mobile.
  * Without this, any element wider than the viewport (an overflowing card
  * title, an image, an unwrapped row of badges) makes the whole page scroll
@@ -91,19 +165,17 @@ header {
 }
 
 /* WebKit autofill overrides — Chrome / Safari / iOS apply a light
- * yellow/green background to fields they auto-fill (saved passwords,
- * email completions). The override below preserves our white field
- * background by placing a 30px white inset shadow that masks the
- * autofill tint, plus restores the brand-ink text color. The transition
- * delay is the long-standing trick to keep the override sticky for
- * multiple seconds (browsers re-apply autofill after focus events). */
+ * yellow/green tint to fields they auto-fill (saved passwords, email
+ * completions). The override masks that tint with the locked paper
+ * background + ink text. The 9999s transition is the long-standing
+ * trick to keep the override sticky across focus events. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px white inset !important;
-  -webkit-text-fill-color: #1c2330 !important;
-  caret-color: #1c2330 !important;
+  -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
+  -webkit-text-fill-color: #0a0a0a !important;
+  caret-color: #0a0a0a !important;
   transition: background-color 9999s ease-out 0s;
 }
 
