@@ -307,7 +307,7 @@ const PasswordStep = forwardRef<
     onSubmit: (e: FormEvent<HTMLFormElement>) => void;
     busy: boolean;
     error: string | null;
-    errorRef: React.RefObject<HTMLDivElement>;
+    errorRef: React.RefObject<HTMLDivElement | null>;
     signedOut: boolean;
     resetToast: boolean;
   }
@@ -378,11 +378,11 @@ const PasswordStep = forwardRef<
         <SocialSignInButtons />
 
         <div className="my-6 flex items-center gap-3">
-          <span className="bg-brand-navy/15 dark:bg-white/15 h-px flex-1" aria-hidden />
+          <span className="bg-brand-navy/15 h-px flex-1 dark:bg-white/15" aria-hidden />
           <span className="text-brand-ink/55 dark:text-brand-cream/55 text-xs font-medium uppercase">
             או
           </span>
-          <span className="bg-brand-navy/15 dark:bg-white/15 h-px flex-1" aria-hidden />
+          <span className="bg-brand-navy/15 h-px flex-1 dark:bg-white/15" aria-hidden />
         </div>
 
         <form onSubmit={onSubmit} noValidate className="space-y-5">
@@ -491,7 +491,7 @@ const TotpStep = forwardRef<
     onCancel: () => void;
     busy: boolean;
     error: string | null;
-    errorRef: React.RefObject<HTMLDivElement>;
+    errorRef: React.RefObject<HTMLDivElement | null>;
   }
 >(function TotpStepImpl({ code, onCodeChange, onSubmit, onCancel, busy, error, errorRef }, ref) {
   return (
@@ -707,7 +707,7 @@ function SocialSignInButtons() {
         onClick={() => void start("google")}
         disabled={busy !== null}
         aria-busy={busy === "google" || undefined}
-        className="border-brand-navy/15 text-brand-navy hover:bg-brand-cream focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center gap-3 rounded-lg border bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="border-brand-navy/15 text-brand-navy hover:bg-brand-cream focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center gap-3 rounded-lg border bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
       >
         <GoogleIcon />
         <span>{busy === "google" ? "מתחבר עם Google…" : "המשך עם Google"}</span>
@@ -717,7 +717,7 @@ function SocialSignInButtons() {
         onClick={() => void start("apple")}
         disabled={busy !== null}
         aria-busy={busy === "apple" || undefined}
-        className="bg-black text-white hover:bg-black/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center gap-3 rounded-lg px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center gap-3 rounded-lg bg-black px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-black/90 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
       >
         <AppleIcon />
         <span>{busy === "apple" ? "מתחבר עם Apple…" : "המשך עם Apple"}</span>
@@ -795,7 +795,7 @@ function OtpLoginSection({
   router: ReturnType<typeof useRouter>;
   next: string;
   onError: (s: string | null) => void;
-  errorRef: React.RefObject<HTMLDivElement>;
+  errorRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"identifier" | "code">("identifier");
@@ -973,190 +973,190 @@ function OtpLoginSection({
             transition={{ duration: 0.25, ease: "easeOut" }}
             className="border-brand-navy/15 mt-3 overflow-hidden rounded-3xl border bg-white p-6 shadow-md sm:p-7"
           >
-          <div className="flex items-center justify-between gap-3">
-            <h3
-              id="otp-heading"
-              ref={panelHeadingRef}
-              tabIndex={-1}
-              className="text-brand-navy font-serif text-xl font-bold tracking-tight focus:outline-none"
-            >
-              כניסה עם קוד חד פעמי
-            </h3>
-            <span
-              aria-hidden="true"
-              className="bg-brand-gold/15 text-brand-navy inline-flex h-8 w-8 items-center justify-center rounded-full text-base"
-            >
-              🔐
-            </span>
-          </div>
-
-          {stepAnnounce ? (
-            <p role="status" aria-live="polite" className="sr-only" key={stepAnnounce}>
-              {stepAnnounce}
-            </p>
-          ) : null}
-
-          {err ? (
-            <p
-              role="alert"
-              className="bg-danger-bg text-danger-text mt-4 rounded-md px-3 py-2 text-sm"
-            >
-              {err}
-            </p>
-          ) : null}
-          {info && step === "code" ? (
-            <p className="bg-ok-bg text-ok-text mt-4 rounded-md px-3 py-2 text-sm">{info}</p>
-          ) : null}
-
-          {step === "identifier" ? (
-            <form onSubmit={requestCode} noValidate className="mt-5 space-y-4">
-              <fieldset>
-                <legend className="text-brand-navy mb-2 block text-sm font-semibold">
-                  באיזה ערוץ לקבל את הקוד?
-                </legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      ["sms", "📱", "SMS"],
-                      ["email", "📧", "אימייל"],
-                    ] as const
-                  ).map(([value, icon, label]) => {
-                    const selected = channel === value;
-                    return (
-                      <label
-                        key={value}
-                        className={[
-                          "inline-flex min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-sm font-semibold transition",
-                          "has-[:focus-visible]:outline-brand-navy has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2",
-                          selected
-                            ? "border-brand-navy bg-brand-navy text-brand-cream"
-                            : "border-brand-navy/25 text-brand-navy hover:bg-brand-navy/5 bg-white",
-                        ].join(" ")}
-                      >
-                        <input
-                          type="radio"
-                          name="otp-channel"
-                          value={value}
-                          checked={selected}
-                          onChange={() => setChannel(value)}
-                          className="sr-only"
-                        />
-                        <span aria-hidden="true">{icon}</span>
-                        {label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-
-              {channel === "sms" ? (
-                <FloatingField
-                  id="otp-login-phone"
-                  type="tel"
-                  label="מספר טלפון"
-                  autoComplete="tel"
-                  dir="ltr"
-                  required
-                  value={otpPhone}
-                  onChange={setOtpPhone}
-                />
-              ) : (
-                <FloatingField
-                  id="otp-login-email"
-                  type="email"
-                  label="אימייל"
-                  autoComplete="email"
-                  dir="ltr"
-                  required
-                  value={otpEmail}
-                  onChange={setOtpEmail}
-                />
-              )}
-
-              <button
-                type="submit"
-                disabled={busy || (channel === "sms" ? !otpPhone.trim() : !otpEmail.trim())}
-                aria-busy={busy || undefined}
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+            <div className="flex items-center justify-between gap-3">
+              <h3
+                id="otp-heading"
+                ref={panelHeadingRef}
+                tabIndex={-1}
+                className="text-brand-navy font-serif text-xl font-bold tracking-tight focus:outline-none"
               >
-                {busy ? "שולח…" : channel === "sms" ? "שלח קוד ב-SMS" : "שלח קוד באימייל"}
-              </button>
-            </form>
-          ) : (
-            <div className="mt-6 space-y-5">
-              <p
-                id="otp-login-code-hint"
-                className="text-brand-ink/70 text-center text-sm leading-relaxed"
+                כניסה עם קוד חד פעמי
+              </h3>
+              <span
+                aria-hidden="true"
+                className="bg-brand-gold/15 text-brand-navy inline-flex h-8 w-8 items-center justify-center rounded-full text-base"
               >
-                {actualChannel === "sms" ? (
-                  <>
-                    שלחנו קוד בן 6 ספרות ב-SMS אל
-                    <br />
-                    <span className="text-brand-navy font-semibold" dir="ltr">
-                      {otpPhone}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    שלחנו קוד בן 6 ספרות לכתובת
-                    <br />
-                    <span className="text-brand-navy font-semibold" dir="ltr">
-                      {otpEmail}
-                    </span>
-                  </>
-                )}
+                🔐
+              </span>
+            </div>
+
+            {stepAnnounce ? (
+              <p role="status" aria-live="polite" className="sr-only" key={stepAnnounce}>
+                {stepAnnounce}
               </p>
-              <OtpInput
-                value={otpCode}
-                onChange={(v) => setOtpCode(v.replace(/\D/g, "").slice(0, 6))}
-                onComplete={(v) => void verifyCode(v)}
-                state={err ? "error" : "idle"}
-                aria-describedby="otp-login-code-hint"
-                autoFocus
-              />
+            ) : null}
 
-              <div className="text-center text-sm">
-                <span className="text-brand-ink/65">לא קיבלת קוד? </span>
-                {resendIn > 0 ? (
-                  <span className="text-brand-ink/50">שליחה חוזרת בעוד {resendIn} שניות</span>
+            {err ? (
+              <p
+                role="alert"
+                className="bg-danger-bg text-danger-text mt-4 rounded-md px-3 py-2 text-sm"
+              >
+                {err}
+              </p>
+            ) : null}
+            {info && step === "code" ? (
+              <p className="bg-ok-bg text-ok-text mt-4 rounded-md px-3 py-2 text-sm">{info}</p>
+            ) : null}
+
+            {step === "identifier" ? (
+              <form onSubmit={requestCode} noValidate className="mt-5 space-y-4">
+                <fieldset>
+                  <legend className="text-brand-navy mb-2 block text-sm font-semibold">
+                    באיזה ערוץ לקבל את הקוד?
+                  </legend>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(
+                      [
+                        ["sms", "📱", "SMS"],
+                        ["email", "📧", "אימייל"],
+                      ] as const
+                    ).map(([value, icon, label]) => {
+                      const selected = channel === value;
+                      return (
+                        <label
+                          key={value}
+                          className={[
+                            "inline-flex min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-sm font-semibold transition",
+                            "has-[:focus-visible]:outline-brand-navy has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2",
+                            selected
+                              ? "border-brand-navy bg-brand-navy text-brand-cream"
+                              : "border-brand-navy/25 text-brand-navy hover:bg-brand-navy/5 bg-white",
+                          ].join(" ")}
+                        >
+                          <input
+                            type="radio"
+                            name="otp-channel"
+                            value={value}
+                            checked={selected}
+                            onChange={() => setChannel(value)}
+                            className="sr-only"
+                          />
+                          <span aria-hidden="true">{icon}</span>
+                          {label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+
+                {channel === "sms" ? (
+                  <FloatingField
+                    id="otp-login-phone"
+                    type="tel"
+                    label="מספר טלפון"
+                    autoComplete="tel"
+                    dir="ltr"
+                    required
+                    value={otpPhone}
+                    onChange={setOtpPhone}
+                  />
                 ) : (
+                  <FloatingField
+                    id="otp-login-email"
+                    type="email"
+                    label="אימייל"
+                    autoComplete="email"
+                    dir="ltr"
+                    required
+                    value={otpEmail}
+                    onChange={setOtpEmail}
+                  />
+                )}
+
+                <button
+                  type="submit"
+                  disabled={busy || (channel === "sms" ? !otpPhone.trim() : !otpEmail.trim())}
+                  aria-busy={busy || undefined}
+                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                >
+                  {busy ? "שולח…" : channel === "sms" ? "שלח קוד ב-SMS" : "שלח קוד באימייל"}
+                </button>
+              </form>
+            ) : (
+              <div className="mt-6 space-y-5">
+                <p
+                  id="otp-login-code-hint"
+                  className="text-brand-ink/70 text-center text-sm leading-relaxed"
+                >
+                  {actualChannel === "sms" ? (
+                    <>
+                      שלחנו קוד בן 6 ספרות ב-SMS אל
+                      <br />
+                      <span className="text-brand-navy font-semibold" dir="ltr">
+                        {otpPhone}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      שלחנו קוד בן 6 ספרות לכתובת
+                      <br />
+                      <span className="text-brand-navy font-semibold" dir="ltr">
+                        {otpEmail}
+                      </span>
+                    </>
+                  )}
+                </p>
+                <OtpInput
+                  value={otpCode}
+                  onChange={(v) => setOtpCode(v.replace(/\D/g, "").slice(0, 6))}
+                  onComplete={(v) => void verifyCode(v)}
+                  state={err ? "error" : "idle"}
+                  aria-describedby="otp-login-code-hint"
+                  autoFocus
+                />
+
+                <div className="text-center text-sm">
+                  <span className="text-brand-ink/65">לא קיבלת קוד? </span>
+                  {resendIn > 0 ? (
+                    <span className="text-brand-ink/50">שליחה חוזרת בעוד {resendIn} שניות</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Resend by re-firing the request flow.
+                        const fakeEvent = {
+                          preventDefault: () => undefined,
+                        } as unknown as FormEvent<HTMLFormElement>;
+                        void requestCode(fakeEvent);
+                      }}
+                      disabled={busy}
+                      className="text-brand-navy decoration-brand-gold focus-visible:outline-brand-navy rounded-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                    >
+                      שלח לי שוב
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
                   <button
                     type="button"
-                    onClick={() => {
-                      // Resend by re-firing the request flow.
-                      const fakeEvent = {
-                        preventDefault: () => undefined,
-                      } as unknown as FormEvent<HTMLFormElement>;
-                      void requestCode(fakeEvent);
-                    }}
-                    disabled={busy}
-                    className="text-brand-navy decoration-brand-gold focus-visible:outline-brand-navy rounded-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+                    onClick={() => void verifyCode()}
+                    disabled={busy || otpCode.length !== 6}
+                    aria-busy={busy || undefined}
+                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
                   >
-                    שלח לי שוב
+                    {busy ? "מאמת…" : "התחבר"}
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={goBack}
+                    className="border-brand-navy/25 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-[48px] items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
+                  >
+                    חזרה
+                  </button>
+                </div>
               </div>
-
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => void verifyCode()}
-                  disabled={busy || otpCode.length !== 6}
-                  aria-busy={busy || undefined}
-                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-                >
-                  {busy ? "מאמת…" : "התחבר"}
-                </button>
-                <button
-                  type="button"
-                  onClick={goBack}
-                  className="border-brand-navy/25 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-[48px] items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  חזרה
-                </button>
-              </div>
-            </div>
-          )}
+            )}
           </motion.div>
         ) : null}
       </AnimatePresence>
