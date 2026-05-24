@@ -388,7 +388,7 @@ const PasswordStep = forwardRef<
         <form onSubmit={onSubmit} noValidate className="space-y-5">
           {error ? (
             <div
-              ref={errorRef}
+              ref={errorRef as React.RefObject<HTMLDivElement>}
               tabIndex={-1}
               role="alert"
               className="bg-danger-bg text-danger-text rounded-md px-4 py-3 text-sm focus:outline-none"
@@ -531,7 +531,7 @@ const TotpStep = forwardRef<
       >
         {error ? (
           <div
-            ref={errorRef}
+            ref={errorRef as React.RefObject<HTMLDivElement>}
             tabIndex={-1}
             role="alert"
             className="bg-danger-bg text-danger-text rounded-md px-4 py-3 text-sm focus:outline-none"
@@ -1162,7 +1162,12 @@ function OtpLoginSection({
       </AnimatePresence>
       {/* Reference is reserved so parent's error focus can target this region.
           The actual error markup lives inside the panel above. */}
-      <div ref={errorRef} className="sr-only" tabIndex={-1} aria-hidden="true" />
+      <div
+        ref={errorRef as React.RefObject<HTMLDivElement>}
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
+      />
     </section>
   );
 }
