@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * /admin/transactions — admin escort screen for deals in flight.
@@ -66,28 +68,25 @@ type Resp = { items: Transaction[]; total: number };
 
 export default function AdminTransactionsPage() {
   const { token, loading } = useAdminAuth();
-  const [data, setData] = useState<Resp | null>(null);
+  const qc = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [completing, setCompleting] = useState<string | null>(null);
   const [confirmTarget, setConfirmTarget] = useState<Transaction | null>(null);
   const [toast, setToast] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<Resp>("/api/v1/admin/transactions-in-progress", {
-        token,
-      });
-      setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת העסקאות בתהליך");
-    }
-  }, [token]);
-
+  const txQuery = useQuery({
+    queryKey: queryKeys.admin.transactions(),
+    queryFn: () => apiFetch<Resp>("/api/v1/admin/transactions-in-progress", { token: token! }),
+    enabled: !!token,
+  });
+  const data = txQuery.data ?? null;
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (txQuery.error) {
+      setError(
+        txQuery.error instanceof Error ? txQuery.error.message : "שגיאה בטעינת העסקאות בתהליך",
+      );
+    }
+  }, [txQuery.error]);
 
   useEffect(() => {
     if (data) headingRef.current?.focus();
@@ -99,22 +98,24 @@ export default function AdminTransactionsPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const completeDeal = async (t: Transaction) => {
-    if (!token) return;
-    setCompleting(t.deal_id);
-    setError(null);
-    try {
-      await apiFetch(`/api/v1/admin/transactions/${t.deal_id}/complete`, {
+  const completeMutation = useMutation({
+    mutationFn: (t: Transaction) =>
+      apiFetch(`/api/v1/admin/transactions/${t.deal_id}/complete`, {
         method: "POST",
-        token,
-      });
+        token: token!,
+      }),
+    onSuccess: async (_d, t) => {
       setToast(`העסקה הושלמה: ${t.vehicle.make} ${t.vehicle.model} ${t.vehicle.year}`);
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בסיום העסקה");
-    } finally {
-      setCompleting(null);
-    }
+      await qc.invalidateQueries({ queryKey: queryKeys.admin.transactions() });
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "שגיאה בסיום העסקה"),
+  });
+  const completing = completeMutation.isPending
+    ? (completeMutation.variables?.deal_id ?? null)
+    : null;
+  const completeDeal = (t: Transaction) => {
+    setError(null);
+    return completeMutation.mutateAsync(t);
   };
 
   if (loading || !token) {

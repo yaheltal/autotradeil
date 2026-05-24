@@ -1,11 +1,13 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Admin system-settings page (Phase 4.4 Step 1).
@@ -31,9 +33,8 @@ type AdminUser = { id: string; email: string; created_at: string };
 
 export default function AdminSettingsPage() {
   const { token, loading } = useAdminAuth();
+  const qc = useQueryClient();
 
-  const [settings, setSettings] = useState<Settings | null>(null);
-  const [admins, setAdmins] = useState<AdminUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState("");
 
@@ -43,36 +44,40 @@ export default function AdminSettingsPage() {
   const [siteName, setSiteName] = useState("");
   const [supportEmail, setSupportEmail] = useState("");
   const [welcomeMsg, setWelcomeMsg] = useState("");
-  const [savingSettings, setSavingSettings] = useState(false);
 
   // Add-admin dialog state
   const [addOpen, setAddOpen] = useState(false);
   const [addEmail, setAddEmail] = useState("");
   const [addError, setAddError] = useState<string | null>(null);
-  const [addBusy, setAddBusy] = useState(false);
   const addInputRef = useRef<HTMLInputElement>(null);
   const addTriggerRef = useRef<HTMLButtonElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const [s, a] = await Promise.all([
-        apiFetch<Settings>("/api/v1/admin/settings", { token }),
-        apiFetch<AdminUser[]>("/api/v1/admin/admins", { token }),
-      ]);
-      setSettings(s);
-      setSiteName(s.site_name);
-      setSupportEmail(s.support_email);
-      setWelcomeMsg(s.welcome_message);
-      setAdmins(a);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינה");
+  const settingsQuery = useQuery({
+    queryKey: queryKeys.admin.settings(),
+    queryFn: () => apiFetch<Settings>("/api/v1/admin/settings", { token: token! }),
+    enabled: !!token,
+  });
+  const adminsQuery = useQuery({
+    queryKey: ["admin", "admins"] as const,
+    queryFn: () => apiFetch<AdminUser[]>("/api/v1/admin/admins", { token: token! }),
+    enabled: !!token,
+  });
+  const settings = settingsQuery.data ?? null;
+  const admins = adminsQuery.data ?? null;
+
+  // Seed form fields once settings arrive.
+  useEffect(() => {
+    if (settings) {
+      setSiteName(settings.site_name);
+      setSupportEmail(settings.support_email);
+      setWelcomeMsg(settings.welcome_message);
     }
-  }, [token]);
+  }, [settings]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    const e = settingsQuery.error || adminsQuery.error;
+    if (e) setError(e instanceof Error ? e.message : "שגיאה בטעינה");
+  }, [settingsQuery.error, adminsQuery.error]);
 
   useEffect(() => {
     if (settings) h1Ref.current?.focus();
@@ -88,49 +93,49 @@ export default function AdminSettingsPage() {
     if (addOpen) queueMicrotask(() => addInputRef.current?.focus());
   }, [addOpen]);
 
-  const saveSettings = async () => {
-    if (!token) return;
-    setSavingSettings(true);
-    try {
-      await apiFetch("/api/v1/admin/settings", {
+  const saveSettingsMutation = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/v1/admin/settings", {
         method: "PATCH",
-        token,
+        token: token!,
         body: JSON.stringify({
           site_name: siteName,
           support_email: supportEmail,
           welcome_message: welcomeMsg,
         }),
-      });
+      }),
+    onSuccess: () => {
       setToast("ההגדרות נשמרו");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בשמירה");
-    } finally {
-      setSavingSettings(false);
-    }
-  };
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.settings() });
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "שגיאה בשמירה"),
+  });
+  const savingSettings = saveSettingsMutation.isPending;
+  const saveSettings = () => saveSettingsMutation.mutateAsync();
 
-  const submitAdd = async () => {
-    if (!token) return;
-    setAddError(null);
-    setAddBusy(true);
-    try {
-      await apiFetch("/api/v1/admin/admins", {
+  const addAdminMutation = useMutation({
+    mutationFn: (email: string) =>
+      apiFetch("/api/v1/admin/admins", {
         method: "POST",
-        token,
-        body: JSON.stringify({ email: addEmail.trim() }),
-      });
-      setToast(`${addEmail} קיבל הרשאות מנהל`);
+        token: token!,
+        body: JSON.stringify({ email }),
+      }),
+    onSuccess: async (_d, email) => {
+      setToast(`${email} קיבל הרשאות מנהל`);
       setAddOpen(false);
       setAddEmail("");
-      await load();
+      await qc.invalidateQueries({ queryKey: ["admin", "admins"] });
       queueMicrotask(() => addTriggerRef.current?.focus());
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "שגיאה";
-      setAddError(msg);
+    },
+    onError: (e) => {
+      setAddError(e instanceof Error ? e.message : "שגיאה");
       addInputRef.current?.focus();
-    } finally {
-      setAddBusy(false);
-    }
+    },
+  });
+  const addBusy = addAdminMutation.isPending;
+  const submitAdd = async () => {
+    setAddError(null);
+    await addAdminMutation.mutateAsync(addEmail.trim());
   };
 
   if (loading || !token) {

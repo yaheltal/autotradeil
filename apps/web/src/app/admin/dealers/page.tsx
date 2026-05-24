@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, useState } from "react";
@@ -9,6 +10,7 @@ import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useSmartDealerFilters } from "@/hooks/useSmartDealerFilters";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 type DealerListItem = {
   id: string;
@@ -64,9 +66,6 @@ function DealersListPageInner() {
   const pageParam = parseInt(params.get("page") ?? "1", 10) || 1;
 
   const [searchInput, setSearchInput] = useState(searchParam);
-  const [data, setData] = useState<ListResponse | null>(null);
-  const [loadingData, setLoadingData] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { parse: parseSmart, busy: parsingSmart } = useSmartDealerFilters(token);
@@ -119,36 +118,35 @@ function DealersListPageInner() {
     };
   }, [searchInput, searchParam, params, router]);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    setLoadingData(true);
-    setError(null);
-    const qs = new URLSearchParams();
-    if (statusParam) qs.set("status", statusParam);
-    if (searchParam) qs.set("search", searchParam);
-    if (tierParam) qs.set("tier", tierParam);
-    if (kycParam) qs.set("kyc_status", kycParam);
-    qs.set("page", String(pageParam));
-    qs.set("per_page", "20");
-    (async () => {
-      try {
-        const res = await apiFetch<ListResponse>(`/api/v1/admin/dealers?${qs.toString()}`, {
-          token,
-        });
-        if (!cancelled) setData(res);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "שגיאה בטעינת הרשימה");
-        }
-      } finally {
-        if (!cancelled) setLoadingData(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, statusParam, searchParam, tierParam, kycParam, pageParam]);
+  const dealersQuery = useQuery({
+    queryKey: queryKeys.admin.dealers({
+      status: statusParam,
+      search: searchParam,
+      tier: tierParam,
+      kyc_status: kycParam,
+      page: pageParam,
+    }),
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (statusParam) qs.set("status", statusParam);
+      if (searchParam) qs.set("search", searchParam);
+      if (tierParam) qs.set("tier", tierParam);
+      if (kycParam) qs.set("kyc_status", kycParam);
+      qs.set("page", String(pageParam));
+      qs.set("per_page", "20");
+      return apiFetch<ListResponse>(`/api/v1/admin/dealers?${qs.toString()}`, { token: token! });
+    },
+    enabled: !!token,
+  });
+
+  const data = dealersQuery.data ?? null;
+  const loadingData = dealersQuery.isFetching;
+  const error =
+    dealersQuery.error instanceof Error
+      ? dealersQuery.error.message
+      : dealersQuery.error
+        ? "שגיאה בטעינת הרשימה"
+        : null;
 
   const setQuery = (key: string, value: string) => {
     const next = new URLSearchParams(params.toString());

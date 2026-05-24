@@ -1,9 +1,10 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { ArchiveDealerDialog } from "@/components/admin/ArchiveDealerDialog";
@@ -15,6 +16,7 @@ import { TabsBar } from "@/components/TabsBar";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 type Dealer = {
   id: string;
@@ -63,10 +65,8 @@ export default function DealerDetailPage() {
   const { token, loading } = useAdminAuth();
   const router = useRouter();
 
-  const [dealer, setDealer] = useState<Dealer | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [actionBusy, setActionBusy] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [toast, setToast] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -81,49 +81,50 @@ export default function DealerDetailPage() {
   // trigger after a SuspendWithReasonDialog / SilentSuspendDialog close.
   const suspendTriggerRef = useRef<HTMLButtonElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token || !id) return;
-    try {
-      const d = await apiFetch<Dealer>(`/api/v1/admin/dealers/${id}`, { token });
-      setDealer(d);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת הסוחר");
-    }
-  }, [token, id]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const dealerQuery = useQuery({
+    queryKey: queryKeys.admin.dealer(id ?? ""),
+    queryFn: () => apiFetch<Dealer>(`/api/v1/admin/dealers/${id}`, { token: token! }),
+    enabled: !!token && !!id,
+  });
+  const dealer = dealerQuery.data ?? null;
+  const error =
+    dealerQuery.error instanceof Error
+      ? dealerQuery.error.message
+      : dealerQuery.error
+        ? "שגיאה בטעינת הסוחר"
+        : null;
+  const load = async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") });
+  };
 
   useEffect(() => {
     if (dealer) headingRef.current?.focus();
   }, [dealer]);
 
+  const verifyMutation = useMutation({
+    mutationFn: (dealerId: string) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/verify`, { method: "POST", token: token! }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") }),
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה באישור"),
+  });
   const verify = async () => {
-    if (!token || !dealer) return;
+    if (!dealer) return;
     setActionError(null);
-    setActionBusy(true);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealer.id}/verify`, {
-        method: "POST",
-        token,
-      });
-      await load();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה באישור");
-    } finally {
-      setActionBusy(false);
-    }
+    await verifyMutation.mutateAsync(dealer.id);
   };
 
+  const rejectMutation = useMutation({
+    mutationFn: ({ dealerId, reason }: { dealerId: string; reason: string }) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/reject`, {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") }),
+  });
   const reject = async (reason: string) => {
-    if (!token || !dealer) return;
-    await apiFetch(`/api/v1/admin/dealers/${dealer.id}/reject`, {
-      method: "POST",
-      token,
-      body: JSON.stringify({ reason }),
-    });
-    await load();
+    if (!dealer) return;
+    await rejectMutation.mutateAsync({ dealerId: dealer.id, reason });
   };
 
   // Toast auto-clear
@@ -133,64 +134,69 @@ export default function DealerDetailPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const resetPassword = async () => {
-    if (!token || !dealer) return;
-    setActionError(null);
-    setActionBusy(true);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealer.id}/reset-password`, {
+  const resetPasswordMutation = useMutation({
+    mutationFn: (dealerId: string) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/reset-password`, {
         method: "POST",
-        token,
-      });
-      setToast("מייל איפוס נשלח לסוחר");
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setActionBusy(false);
-    }
+        token: token!,
+      }),
+    onSuccess: () => setToast("מייל איפוס נשלח לסוחר"),
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה"),
+  });
+  const resetPassword = async () => {
+    if (!dealer) return;
+    setActionError(null);
+    await resetPasswordMutation.mutateAsync(dealer.id);
   };
 
+  const unsuspendMutation = useMutation({
+    mutationFn: ({ dealerId, password }: { dealerId: string; password: string }) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/unsuspend`, {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ admin_password: password }),
+      }),
+    onSuccess: () => {
+      setToast("הושעיה בוטלה");
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") });
+    },
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה"),
+  });
   const unsuspend = async () => {
-    if (!token || !dealer) return;
+    if (!dealer) return;
     // Phase 6.7 — backend now requires admin password re-auth.
     const pw = window.prompt("סיסמת המנהל שלך לאישור ביטול ההשעיה:");
     if (!pw) return;
-    setActionBusy(true);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealer.id}/unsuspend`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ admin_password: pw }),
-      });
-      setToast("הושעיה בוטלה");
-      await load();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setActionBusy(false);
-    }
+    await unsuspendMutation.mutateAsync({ dealerId: dealer.id, password: pw });
   };
 
-  const impersonate = async () => {
-    if (!token || !dealer) return;
-    setActionError(null);
-    setActionBusy(true);
-    try {
-      const res = await apiFetch<ImpersonationResponse>(`/api/v1/admin/impersonate/${dealer.id}`, {
+  const impersonateMutation = useMutation({
+    mutationFn: (dealerId: string) =>
+      apiFetch<ImpersonationResponse>(`/api/v1/admin/impersonate/${dealerId}`, {
         method: "POST",
-        token,
-      });
+        token: token!,
+      }),
+    onSuccess: (res) => {
       window.sessionStorage.setItem("impersonation_token", res.impersonation_token);
       window.sessionStorage.setItem("impersonation_business_name", res.business_name);
       window.sessionStorage.setItem("impersonation_dealer_id", res.dealer_id);
       window.sessionStorage.setItem("impersonation_just_activated", "1");
       router.push("/dashboard");
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה בהתחזות");
-    } finally {
-      setActionBusy(false);
-    }
+    },
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה בהתחזות"),
+  });
+  const impersonate = async () => {
+    if (!dealer) return;
+    setActionError(null);
+    await impersonateMutation.mutateAsync(dealer.id);
   };
+
+  const actionBusy =
+    verifyMutation.isPending ||
+    rejectMutation.isPending ||
+    resetPasswordMutation.isPending ||
+    unsuspendMutation.isPending ||
+    impersonateMutation.isPending;
 
   if (loading || (!dealer && !error)) {
     return (
@@ -579,81 +585,74 @@ function KycTabPanel({
   onChanged: () => void;
 }) {
   // The /security/kyc/status endpoint is dealer-self only — for admins
-  // we re-use the per-dealer entry from /security/kyc/pending list, but
-  // we don't have a single-dealer admin endpoint yet. Workaround: pull
-  // the pending list and find this dealer; if not in pending list (e.g.
-  // already approved), fall back to status text only.
-  const [kyc, setKyc] = useState<_KycTabKyc | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // we re-use /api/v1/admin/dealers/{id}, which since 35bee61 returns
+  // 10-min signed KYC URLs alongside the personal fields.
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [viewer, setViewer] = useState<{ label: string; url: string } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoadErr(null);
-    try {
-      // /api/v1/admin/dealers/{id} returns 10-min signed KYC URLs for
-      // dealers in ANY status (not just submitted). The endpoint was
-      // extended in 35bee61 to include personal + KYC fields for admins.
-      const detail = await apiFetch<{
+  const kycQuery = useQuery({
+    queryKey: [...queryKeys.admin.dealer(dealerId), "kyc"] as const,
+    queryFn: () =>
+      apiFetch<{
         kyc_status: "pending" | "submitted" | "approved" | "rejected";
         kyc_rejected_reason: string | null;
         id_card_front_url: string | null;
         id_card_back_url: string | null;
         dealer_license_url: string | null;
-      }>(`/api/v1/admin/dealers/${dealerId}`, { token });
-      setKyc({
-        kyc_status: detail.kyc_status,
-        id_card_front_url: detail.id_card_front_url,
-        id_card_back_url: detail.id_card_back_url,
-        dealer_license_url: detail.dealer_license_url,
-        kyc_rejected_reason: detail.kyc_rejected_reason,
-      });
-    } catch (e) {
-      setLoadErr(e instanceof Error ? e.message : "שגיאה בטעינת מסמכים");
-    }
-  }, [dealerId, token]);
+      }>(`/api/v1/admin/dealers/${dealerId}`, { token }),
+  });
+  const kyc: _KycTabKyc | null = kycQuery.data
+    ? {
+        kyc_status: kycQuery.data.kyc_status,
+        id_card_front_url: kycQuery.data.id_card_front_url,
+        id_card_back_url: kycQuery.data.id_card_back_url,
+        dealer_license_url: kycQuery.data.dealer_license_url,
+        kyc_rejected_reason: kycQuery.data.kyc_rejected_reason,
+      }
+    : null;
+  const loadErr =
+    kycQuery.error instanceof Error
+      ? kycQuery.error.message
+      : kycQuery.error
+        ? "שגיאה בטעינת מסמכים"
+        : null;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const approve = async () => {
-    setBusy(true);
-    setActionErr(null);
-    try {
-      await apiFetch(`/api/v1/security/kyc/${dealerId}/approve`, {
-        method: "POST",
-        token,
-      });
+  const approveMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/security/kyc/${dealerId}/approve`, { method: "POST", token }),
+    onSuccess: () => {
+      void kycQuery.refetch();
       onChanged();
-    } catch (e) {
-      setActionErr(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reject = async () => {
-    if (!reason.trim()) return;
-    setBusy(true);
-    setActionErr(null);
-    try {
-      await apiFetch(`/api/v1/security/kyc/${dealerId}/reject`, {
+    },
+    onError: (e) => setActionErr(e instanceof Error ? e.message : "שגיאה"),
+  });
+  const rejectMutation = useMutation({
+    mutationFn: (txt: string) =>
+      apiFetch(`/api/v1/security/kyc/${dealerId}/reject`, {
         method: "POST",
         token,
-        body: JSON.stringify({ reason: reason.trim() }),
-      });
+        body: JSON.stringify({ reason: txt }),
+      }),
+    onSuccess: () => {
       setRejectOpen(false);
       setReason("");
+      void kycQuery.refetch();
       onChanged();
-    } catch (e) {
-      setActionErr(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (e) => setActionErr(e instanceof Error ? e.message : "שגיאה"),
+  });
+
+  const busy = approveMutation.isPending || rejectMutation.isPending;
+  const approve = async () => {
+    setActionErr(null);
+    await approveMutation.mutateAsync();
+  };
+  const reject = async () => {
+    if (!reason.trim()) return;
+    setActionErr(null);
+    await rejectMutation.mutateAsync(reason.trim());
   };
 
   const remaining = 500 - reason.length;

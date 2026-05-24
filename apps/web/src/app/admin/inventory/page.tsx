@@ -1,11 +1,13 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Admin all-inventory page (Phase 4.3).
@@ -57,8 +59,6 @@ const STATUS_LABEL: Record<Row["status"], string> = {
 
 export default function AdminInventoryPage() {
   const { token, loading } = useAdminAuth();
-  const [data, setData] = useState<Resp | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [f, setF] = useState({ visibility: "", status: "", make: "", model: "" });
   const [smartQuery, setSmartQuery] = useState("");
@@ -68,28 +68,31 @@ export default function AdminInventoryPage() {
 
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
+  const inventoryQuery = useQuery({
+    queryKey: queryKeys.admin.inventory({ ...f, page }),
+    queryFn: () => {
       const qs = new URLSearchParams({ page: String(page), per_page: "20" });
       if (f.visibility) qs.set("visibility", f.visibility);
       if (f.status) qs.set("status", f.status);
       if (f.make) qs.set("make", f.make);
       if (f.model) qs.set("model", f.model);
-      const res = await apiFetch<Resp>(`/api/v1/admin/inventory?${qs}`, { token });
-      setData(res);
-      setPageAnnounce(`מציג ${res.items.length} מתוך ${res.total} רכבים`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינה");
+      return apiFetch<Resp>(`/api/v1/admin/inventory?${qs}`, { token: token! });
+    },
+    enabled: !!token,
+  });
+  const data = inventoryQuery.data ?? null;
+  const error =
+    inventoryQuery.error instanceof Error
+      ? inventoryQuery.error.message
+      : inventoryQuery.error
+        ? "שגיאה בטעינה"
+        : null;
+
+  useEffect(() => {
+    if (data) {
+      setPageAnnounce(`מציג ${data.items.length} מתוך ${data.total} רכבים`);
+      h1Ref.current?.focus();
     }
-  }, [token, page, f]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  useEffect(() => {
-    if (data) h1Ref.current?.focus();
   }, [data]);
 
   if (loading || !token) {
@@ -145,7 +148,7 @@ export default function AdminInventoryPage() {
                 }));
               }
             }
-            void load();
+            void inventoryQuery.refetch();
           }}
           className="border-brand-navy/10 mt-6 rounded-lg border bg-white p-4"
         >

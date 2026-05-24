@@ -1,11 +1,13 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Admin KYC review panel.
@@ -43,32 +45,32 @@ const DOC_LABEL: Record<string, string> = {
 
 export default function AdminKycPage() {
   const { token, loading } = useAdminAuth();
+  const qc = useQueryClient();
 
   const h1Ref = useRef<HTMLHeadingElement>(null);
   const listHeadingRef = useRef<HTMLHeadingElement>(null);
 
-  const [rows, setRows] = useState<Pending[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState("");
 
   const [viewer, setViewer] = useState<{ label: string; url: string } | null>(null);
   const [rejectTarget, setRejectTarget] = useState<Pending | null>(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [rejectBusy, setRejectBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<Pending[]>("/api/v1/security/kyc/pending", { token });
-      setRows(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת הבקשות");
-    }
-  }, [token]);
+  const pendingQuery = useQuery({
+    queryKey: queryKeys.admin.kycPending(),
+    queryFn: () => apiFetch<Pending[]>("/api/v1/security/kyc/pending", { token: token! }),
+    enabled: !!token,
+  });
+  const rows = pendingQuery.data ?? null;
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (pendingQuery.error) {
+      setError(
+        pendingQuery.error instanceof Error ? pendingQuery.error.message : "שגיאה בטעינת הבקשות",
+      );
+    }
+  }, [pendingQuery.error]);
 
   useEffect(() => {
     if (rows !== null) h1Ref.current?.focus();
@@ -80,41 +82,42 @@ export default function AdminKycPage() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  const approve = async (dealer: Pending) => {
-    if (!token) return;
-    try {
-      await apiFetch(`/api/v1/security/kyc/${dealer.id}/approve`, {
-        method: "POST",
-        token,
-      });
-      setToast(`${dealer.business_name} — אימות אושר`);
-      await load();
+  const approveMutation = useMutation({
+    mutationFn: (dealerId: string) =>
+      apiFetch(`/api/v1/security/kyc/${dealerId}/approve`, { method: "POST", token: token! }),
+    onSuccess: async (_d, _v, _c) => {
+      await qc.invalidateQueries({ queryKey: queryKeys.admin.kycPending() });
       queueMicrotask(() => listHeadingRef.current?.focus());
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : "שגיאה באישור");
-    }
+    },
+    onError: (e) => setToast(e instanceof Error ? e.message : "שגיאה באישור"),
+  });
+  const approve = async (dealer: Pending) => {
+    await approveMutation.mutateAsync(dealer.id);
+    setToast(`${dealer.business_name} — אימות אושר`);
   };
 
-  const submitReject = async () => {
-    if (!token || !rejectTarget) return;
-    if (!rejectReason.trim()) return;
-    setRejectBusy(true);
-    try {
-      await apiFetch(`/api/v1/security/kyc/${rejectTarget.id}/reject`, {
+  const rejectMutation = useMutation({
+    mutationFn: ({ dealerId, reason }: { dealerId: string; reason: string }) =>
+      apiFetch(`/api/v1/security/kyc/${dealerId}/reject`, {
         method: "POST",
-        token,
-        body: JSON.stringify({ reason: rejectReason.trim() }),
-      });
-      setToast(`${rejectTarget.business_name} — אימות נדחה`);
+        token: token!,
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: async () => {
       setRejectTarget(null);
       setRejectReason("");
-      await load();
+      await qc.invalidateQueries({ queryKey: queryKeys.admin.kycPending() });
       queueMicrotask(() => listHeadingRef.current?.focus());
-    } catch (e) {
-      setToast(e instanceof Error ? e.message : "שגיאה בדחייה");
-    } finally {
-      setRejectBusy(false);
-    }
+    },
+    onError: (e) => setToast(e instanceof Error ? e.message : "שגיאה בדחייה"),
+  });
+  const rejectBusy = rejectMutation.isPending;
+  const submitReject = async () => {
+    if (!rejectTarget) return;
+    const reason = rejectReason.trim();
+    if (!reason) return;
+    await rejectMutation.mutateAsync({ dealerId: rejectTarget.id, reason });
+    setToast(`${rejectTarget.business_name} — אימות נדחה`);
   };
 
   if (loading || !token) {

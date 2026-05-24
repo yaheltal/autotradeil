@@ -1,10 +1,12 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 type AuditItem = {
   id: string;
@@ -23,31 +25,24 @@ const PER_PAGE = 50;
 
 export default function AuditLogPage() {
   const { token, loading } = useAdminAuth();
-  const [data, setData] = useState<AuditResponse | null>(null);
   const [page, setPage] = useState(1);
-  const [error, setError] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch<AuditResponse>(
-          `/api/v1/admin/audit-log?page=${page}&per_page=${PER_PAGE}`,
-          { token },
-        );
-        if (!cancelled) setData(res);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "שגיאה בטעינת הלוג");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, page]);
+  const auditQuery = useQuery({
+    queryKey: queryKeys.admin.auditLog({ page, per_page: PER_PAGE }),
+    queryFn: () =>
+      apiFetch<AuditResponse>(`/api/v1/admin/audit-log?page=${page}&per_page=${PER_PAGE}`, {
+        token: token!,
+      }),
+    enabled: !!token,
+  });
+  const data = auditQuery.data ?? null;
+  const error =
+    auditQuery.error instanceof Error
+      ? auditQuery.error.message
+      : auditQuery.error
+        ? "שגיאה בטעינת הלוג"
+        : null;
 
   useEffect(() => {
     if (data) headingRef.current?.focus();

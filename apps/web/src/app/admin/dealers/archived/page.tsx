@@ -1,10 +1,12 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * /admin/dealers/archived — Phase 6.7. List of soft-deleted dealers
@@ -36,51 +38,54 @@ type ListResponse = {
 
 export default function ArchivedDealersPage() {
   const { token, loading: authLoading } = useAdminAuth();
+  const qc = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const [data, setData] = useState<ListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<ListResponse>("/api/v1/admin/dealers/archived?per_page=50", {
-        token,
-      });
-      setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת ארכיון הסוחרים");
-    }
-  }, [token]);
-
+  const archivedQuery = useQuery({
+    queryKey: queryKeys.admin.dealersArchived(),
+    queryFn: () =>
+      apiFetch<ListResponse>("/api/v1/admin/dealers/archived?per_page=50", { token: token! }),
+    enabled: !!token,
+  });
+  const data = archivedQuery.data ?? null;
   useEffect(() => {
-    if (token) void load();
-  }, [token, load]);
+    if (archivedQuery.error) {
+      setError(
+        archivedQuery.error instanceof Error
+          ? archivedQuery.error.message
+          : "שגיאה בטעינת ארכיון הסוחרים",
+      );
+    }
+  }, [archivedQuery.error]);
 
   useEffect(() => {
     if (data) headingRef.current?.focus();
   }, [data]);
 
+  const restoreMutation = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      apiFetch(`/api/v1/admin/dealers/${id}/unarchive`, {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ admin_password: password }),
+      }),
+    onSuccess: () => {
+      setToast("הסוחר שוחזר מהארכיון");
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.dealersArchived() });
+      void qc.invalidateQueries({ queryKey: ["admin", "dealers"] });
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "שגיאה בשחזור"),
+  });
+  const restoringId = restoreMutation.isPending ? (restoreMutation.variables?.id ?? null) : null;
+
   const restore = async (id: string) => {
     if (!token) return;
     const pw = window.prompt("סיסמת המנהל שלך לשחזור הסוחר מהארכיון:");
     if (!pw) return;
-    setRestoringId(id);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${id}/unarchive`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ admin_password: pw }),
-      });
-      setToast("הסוחר שוחזר מהארכיון");
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בשחזור");
-    } finally {
-      setRestoringId(null);
-    }
+    await restoreMutation.mutateAsync({ id, password: pw });
   };
 
   if (authLoading) return null;

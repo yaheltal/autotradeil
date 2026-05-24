@@ -1,12 +1,13 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
 
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Admin vehicle detail (Phase 6.9).
@@ -104,25 +105,15 @@ function fmtDate(iso: string | null): string {
 export default function AdminVehicleDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { token, loading: authLoading } = useAdminAuth();
-  const [v, setV] = useState<AdminVehicle | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!token || !id) return;
-    let cancelled = false;
-    apiFetch<AdminVehicle>(`/api/v1/admin/inventory/${id}`, { token })
-      .then((res) => {
-        if (!cancelled) setV(res);
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "שגיאה בטעינה");
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, id]);
+  const vQuery = useQuery({
+    queryKey: queryKeys.admin.inventoryDetail(id ?? ""),
+    queryFn: () => apiFetch<AdminVehicle>(`/api/v1/admin/inventory/${id}`, { token: token! }),
+    enabled: !!token && !!id,
+  });
+  const v = vQuery.data ?? null;
+  const error =
+    vQuery.error instanceof Error ? vQuery.error.message : vQuery.error ? "שגיאה בטעינה" : null;
 
   if (authLoading || (!v && !error)) {
     return (

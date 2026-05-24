@@ -1,10 +1,12 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { apiFetch } from "@/lib/api";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { queryKeys } from "@/lib/query-keys";
 import type { AdminStatsResponse as Stats } from "@autotradeil/shared-types";
 
 /*
@@ -23,26 +25,19 @@ import type { AdminStatsResponse as Stats } from "@autotradeil/shared-types";
 export default function AdminHomePage() {
   const { token, loading } = useAdminAuth();
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const [stats, setStats] = useState<Stats | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await apiFetch<Stats>("/api/v1/admin/stats", { token });
-        if (!cancelled) setStats(data);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "שגיאה בטעינת הסטטיסטיקות");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  const statsQuery = useQuery({
+    queryKey: queryKeys.admin.stats(),
+    queryFn: () => apiFetch<Stats>("/api/v1/admin/stats", { token: token! }),
+    enabled: !!token,
+  });
+  const stats = statsQuery.data ?? null;
+  const error =
+    statsQuery.error instanceof Error
+      ? statsQuery.error.message
+      : statsQuery.error
+        ? "שגיאה בטעינת הסטטיסטיקות"
+        : null;
 
   useEffect(() => {
     if (!loading && stats) headingRef.current?.focus();
