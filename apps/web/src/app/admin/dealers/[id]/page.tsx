@@ -1,20 +1,64 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Check, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { BackLink } from "@/components/BackLink";
+import { AdminMasthead } from "@/components/admin/AdminMasthead";
+import { AdminStatusPill } from "@/components/admin/AdminStatusPill";
 import { ArchiveDealerDialog } from "@/components/admin/ArchiveDealerDialog";
 import { SilentSuspendDialog } from "@/components/admin/SilentSuspendDialog";
 import { SuspendWithReasonDialog } from "@/components/admin/SuspendWithReasonDialog";
 import { RejectDealerDialog } from "@/components/RejectDealerDialog";
-import { StatusBadge, deriveStatus } from "@/components/StatusBadge";
-import { TabsBar } from "@/components/TabsBar";
+import { deriveStatus } from "@/components/StatusBadge";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
+
+/*
+ * /admin/dealers/[id] — editorial deep-read on a single dealer.
+ *
+ *   {business_name}                              ← Frank Ruhl 4xl
+ *   ──────────
+ *   {email} · {status pill} · {tier} · [מושעה]
+ *
+ *   [פרטים · מלאי · עסקאות · הצעות · KYC]      ← shadcn Tabs
+ *
+ *   פרטים tab:
+ *     פרטי העסק                                  ← eyebrow
+ *     ──────────
+ *     dl rows (ח.פ · רישיון · איש קשר · ...)
+ *
+ *     פעולות
+ *     ──────────
+ *     state-dependent action buttons
+ *
+ *   KYC tab:
+ *     status pill + 3 photo cards + approve/reject
+ *
+ * Heaviest admin page — last commit because the shared primitives
+ * (masthead, status pill, dialog conventions) had to be battle-
+ * tested first. The 3 external admin action dialogs (Archive /
+ * SilentSuspend / SuspendWithReason) are preserved verbatim from
+ * @/components/admin/* — they're slated for their own pass.
+ */
 
 type Dealer = {
   id: string;
@@ -34,7 +78,6 @@ type Dealer = {
   tier: Tier;
   trust_score: number | string;
   created_at: string;
-  // Phase 4.4
   deals_completed: number;
   kyc_status: "pending" | "submitted" | "approved" | "rejected";
   member_since: string | null;
@@ -58,515 +101,520 @@ type ImpersonationResponse = {
   expires_in_seconds: number;
 };
 
+function dealerStatusVariant(d: {
+  verified: boolean;
+  rejected_at: string | null;
+  suspended_at: string | null;
+}): { variant: "ink" | "neutral" | "accent" | "danger"; label: string } {
+  if (d.suspended_at) return { variant: "danger", label: "מושעה" };
+  if (d.rejected_at) return { variant: "danger", label: "נדחה" };
+  if (d.verified) return { variant: "ink", label: "מאושר" };
+  return { variant: "neutral", label: "ממתין" };
+}
+
 export default function DealerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { token, loading } = useAdminAuth();
   const router = useRouter();
 
-  const [dealer, setDealer] = useState<Dealer | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const qc = useQueryClient();
   const [actionError, setActionError] = useState<string | null>(null);
-  const [actionBusy, setActionBusy] = useState(false);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [toast, setToast] = useState("");
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  // Phase 6.7 — three new admin action dialogs
   const [suspendWithReasonOpen, setSuspendWithReasonOpen] = useState(false);
   const [silentSuspendOpen, setSilentSuspendOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
-  // Phase 4.4 — tabs
   const [tab, setTab] = useState<TabId>("details");
-  // Trigger ref for the suspend button — used so focus returns to the
-  // trigger after a SuspendWithReasonDialog / SilentSuspendDialog close.
   const suspendTriggerRef = useRef<HTMLButtonElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token || !id) return;
-    try {
-      const d = await apiFetch<Dealer>(`/api/v1/admin/dealers/${id}`, { token });
-      setDealer(d);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת הסוחר");
-    }
-  }, [token, id]);
+  const dealerQuery = useQuery({
+    queryKey: queryKeys.admin.dealer(id ?? ""),
+    queryFn: () => apiFetch<Dealer>(`/api/v1/admin/dealers/${id}`, { token: token! }),
+    enabled: !!token && !!id,
+  });
+  const dealer = dealerQuery.data ?? null;
+  const error =
+    dealerQuery.error instanceof Error
+      ? dealerQuery.error.message
+      : dealerQuery.error
+        ? "שגיאה בטעינת הסוחר"
+        : null;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const load = async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") });
+  };
 
   useEffect(() => {
     if (dealer) headingRef.current?.focus();
   }, [dealer]);
 
-  const verify = async () => {
-    if (!token || !dealer) return;
-    setActionError(null);
-    setActionBusy(true);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealer.id}/verify`, {
-        method: "POST",
-        token,
-      });
-      await load();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה באישור");
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
-  const reject = async (reason: string) => {
-    if (!token || !dealer) return;
-    await apiFetch(`/api/v1/admin/dealers/${dealer.id}/reject`, {
-      method: "POST",
-      token,
-      body: JSON.stringify({ reason }),
-    });
-    await load();
-  };
-
-  // Toast auto-clear
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(""), 3500);
     return () => clearTimeout(t);
   }, [toast]);
 
-  const resetPassword = async () => {
-    if (!token || !dealer) return;
+  const verifyMutation = useMutation({
+    mutationFn: (dealerId: string) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/verify`, { method: "POST", token: token! }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") }),
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה באישור"),
+  });
+  const verify = async () => {
+    if (!dealer) return;
     setActionError(null);
-    setActionBusy(true);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealer.id}/reset-password`, {
-        method: "POST",
-        token,
-      });
-      setToast("מייל איפוס נשלח לסוחר");
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setActionBusy(false);
-    }
+    await verifyMutation.mutateAsync(dealer.id);
   };
 
+  const rejectMutation = useMutation({
+    mutationFn: ({ dealerId, reason }: { dealerId: string; reason: string }) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/reject`, {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") }),
+  });
+  const reject = async (reason: string) => {
+    if (!dealer) return;
+    await rejectMutation.mutateAsync({ dealerId: dealer.id, reason });
+  };
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: (dealerId: string) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/reset-password`, {
+        method: "POST",
+        token: token!,
+      }),
+    onSuccess: () => setToast("מייל איפוס נשלח לסוחר"),
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה"),
+  });
+  const resetPassword = async () => {
+    if (!dealer) return;
+    setActionError(null);
+    await resetPasswordMutation.mutateAsync(dealer.id);
+  };
+
+  const unsuspendMutation = useMutation({
+    mutationFn: ({ dealerId, password }: { dealerId: string; password: string }) =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/unsuspend`, {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ admin_password: password }),
+      }),
+    onSuccess: () => {
+      setToast("הושעיה בוטלה");
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.dealer(id ?? "") });
+    },
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה"),
+  });
   const unsuspend = async () => {
-    if (!token || !dealer) return;
-    // Phase 6.7 — backend now requires admin password re-auth.
+    if (!dealer) return;
     const pw = window.prompt("סיסמת המנהל שלך לאישור ביטול ההשעיה:");
     if (!pw) return;
-    setActionBusy(true);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealer.id}/unsuspend`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ admin_password: pw }),
-      });
-      setToast("הושעיה בוטלה");
-      await load();
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setActionBusy(false);
-    }
+    await unsuspendMutation.mutateAsync({ dealerId: dealer.id, password: pw });
   };
 
-  const impersonate = async () => {
-    if (!token || !dealer) return;
-    setActionError(null);
-    setActionBusy(true);
-    try {
-      const res = await apiFetch<ImpersonationResponse>(`/api/v1/admin/impersonate/${dealer.id}`, {
+  const impersonateMutation = useMutation({
+    mutationFn: (dealerId: string) =>
+      apiFetch<ImpersonationResponse>(`/api/v1/admin/impersonate/${dealerId}`, {
         method: "POST",
-        token,
-      });
+        token: token!,
+      }),
+    onSuccess: (res) => {
       window.sessionStorage.setItem("impersonation_token", res.impersonation_token);
       window.sessionStorage.setItem("impersonation_business_name", res.business_name);
       window.sessionStorage.setItem("impersonation_dealer_id", res.dealer_id);
       window.sessionStorage.setItem("impersonation_just_activated", "1");
       router.push("/dashboard");
-    } catch (e) {
-      setActionError(e instanceof Error ? e.message : "שגיאה בהתחזות");
-    } finally {
-      setActionBusy(false);
-    }
+    },
+    onError: (e) => setActionError(e instanceof Error ? e.message : "שגיאה בהתחזות"),
+  });
+  const impersonate = async () => {
+    if (!dealer) return;
+    setActionError(null);
+    await impersonateMutation.mutateAsync(dealer.id);
   };
 
-  if (loading || (!dealer && !error)) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="status" className="text-brand-ink/70 p-10">
-          טוען…
-        </p>
-      </main>
-    );
-  }
+  const actionBusy =
+    verifyMutation.isPending ||
+    rejectMutation.isPending ||
+    resetPasswordMutation.isPending ||
+    unsuspendMutation.isPending ||
+    impersonateMutation.isPending;
 
-  if (error) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="alert" className="bg-danger-bg text-danger-text m-10 rounded-md px-4 py-3">
-          {error}
-        </p>
-      </main>
-    );
-  }
-
-  if (!dealer) return null;
-
-  const status = deriveStatus(dealer);
-  const isSuspended = !!dealer.suspended_at;
+  const pageLoading = loading || (!dealer && !error);
+  const status = dealer ? dealerStatusVariant(dealer) : null;
+  const derivedStatus = dealer ? deriveStatus(dealer) : null;
+  const isSuspended = !!dealer?.suspended_at;
 
   return (
-    <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-        <BackLink href="/admin/dealers" label="חזרה לרשימת הסוחרים" />
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <h1
-            ref={headingRef}
-            tabIndex={-1}
-            className="text-brand-navy text-3xl font-bold tracking-tight focus:outline-none"
-          >
-            {dealer.business_name}
-          </h1>
-          <StatusBadge status={status} />
-          <TrustBadge tier={dealer.tier} />
-          {isSuspended ? (
-            <span
-              aria-label="סוחר מושעה"
-              className="inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900 ring-1 ring-amber-700/30"
-            >
-              ⏸ מושעה
+    <div className="px-lg sm:px-2xl py-2xl mx-auto max-w-5xl">
+      <AdminMasthead
+        title={dealer?.business_name ?? "טוען סוחר…"}
+        dek={dealer ? <span dir="ltr">{dealer.email}</span> : undefined}
+        loading={pageLoading}
+        count={
+          dealer && status ? (
+            <span className="gap-xs flex flex-wrap items-center">
+              <AdminStatusPill variant={status.variant} withCheck={status.variant === "accent"}>
+                {status.label}
+              </AdminStatusPill>
+              <TrustBadge tier={dealer.tier} compact />
             </span>
-          ) : null}
-        </div>
-        <p className="text-brand-ink/70 mt-2">{dealer.email}</p>
+          ) : undefined
+        }
+        headingRef={headingRef}
+      />
 
-        {toast ? (
-          <p role="status" aria-live="polite" className="sr-only" key={toast}>
-            {toast}
-          </p>
-        ) : null}
+      {toast ? (
+        <p role="status" aria-live="polite" className="sr-only" key={toast}>
+          {toast}
+        </p>
+      ) : null}
 
-        {actionError ? (
-          <p role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
-            {actionError}
-          </p>
-        ) : null}
+      {error ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        <div className="mt-6">
-          <TabsBar tabs={TABS} active={tab} onChange={setTab} ariaLabel="טאבי סוחר" />
-        </div>
+      {actionError ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{actionError}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        <div
-          role="tabpanel"
-          id="tabpanel-details"
-          aria-labelledby="tab-details"
-          hidden={tab !== "details"}
-        >
-          <section aria-labelledby="dealer-info-heading" className="mt-8">
-            <h2 id="dealer-info-heading" className="text-brand-navy text-lg font-semibold">
-              פרטי העסק
-            </h2>
-            <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-              <Info label="ח.פ / ע.מ" value={dealer.business_id} />
-              <Info label="רישיון סחר" value={dealer.license_number} />
-              <Info label="איש קשר" value={dealer.contact_name} />
-              <Info label="טלפון" value={dealer.phone} />
-              <Info label="עיר" value={dealer.city} />
-              <Info label="גודל חצר" value={`${dealer.lot_size}`} />
-              <Info label="דרגה" value={dealer.tier} lang="en" />
-              <Info label="ציון אמון" value={String(dealer.trust_score)} />
-              <Info
-                label="תאריך הרשמה"
-                value={new Date(dealer.created_at).toLocaleDateString("he-IL")}
-              />
-              {dealer.verified_at ? (
-                <Info
-                  label="אושר בתאריך"
-                  value={new Date(dealer.verified_at).toLocaleDateString("he-IL")}
+      {pageLoading || !dealer ? (
+        <DealerDetailSkeleton />
+      ) : (
+        <Tabs value={tab} onValueChange={(v) => setTab(v as TabId)} className="mt-2xl">
+          <TabsList aria-label="טאבי סוחר">
+            {TABS.map((t) => (
+              <TabsTrigger key={t.id} value={t.id}>
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {/* ── DETAILS TAB ─────────────────────────────────────────── */}
+          <TabsContent value="details" className="mt-2xl">
+            <section aria-labelledby="biz-heading">
+              <p className="text-muted text-xs font-medium uppercase tracking-widest">פרטי העסק</p>
+              <h2 id="biz-heading" className="sr-only">
+                פרטי העסק
+              </h2>
+              <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+              <dl className="gap-x-2xl gap-y-md mt-lg grid grid-cols-1 sm:grid-cols-2">
+                <DRow label="ח.פ / ע.מ" value={dealer.business_id} />
+                <DRow label="רישיון סחר" value={dealer.license_number} />
+                <DRow label="איש קשר" value={dealer.contact_name} />
+                <DRow label="טלפון" value={<span dir="ltr">{dealer.phone}</span>} />
+                <DRow label="עיר" value={dealer.city} />
+                <DRow
+                  label="גודל חצר"
+                  value={<span className="font-tabular">{dealer.lot_size}</span>}
                 />
-              ) : null}
-              {dealer.rejected_at ? (
-                <Info
-                  label="נדחה בתאריך"
-                  value={new Date(dealer.rejected_at).toLocaleDateString("he-IL")}
+                <DRow label="דרגה" value={<span lang="en">{dealer.tier}</span>} />
+                <DRow
+                  label="ציון אמון"
+                  value={<span className="font-tabular">{dealer.trust_score}</span>}
                 />
+                <DRow
+                  label="תאריך הרשמה"
+                  value={
+                    <time dateTime={dealer.created_at} className="font-tabular">
+                      {new Date(dealer.created_at).toLocaleDateString("he-IL")}
+                    </time>
+                  }
+                />
+                {dealer.verified_at ? (
+                  <DRow
+                    label="אושר בתאריך"
+                    value={
+                      <time dateTime={dealer.verified_at} className="font-tabular">
+                        {new Date(dealer.verified_at).toLocaleDateString("he-IL")}
+                      </time>
+                    }
+                  />
+                ) : null}
+                {dealer.rejected_at ? (
+                  <DRow
+                    label="נדחה בתאריך"
+                    value={
+                      <time dateTime={dealer.rejected_at} className="font-tabular">
+                        {new Date(dealer.rejected_at).toLocaleDateString("he-IL")}
+                      </time>
+                    }
+                  />
+                ) : null}
+              </dl>
+
+              {dealer.rejection_reason ? (
+                <Alert variant="destructive" className="mt-xl">
+                  <TriangleAlert aria-hidden="true" />
+                  <AlertDescription>
+                    <span className="font-medium">סיבת דחייה: </span>
+                    {dealer.rejection_reason}
+                  </AlertDescription>
+                </Alert>
               ) : null}
-            </dl>
+            </section>
 
-            {dealer.rejection_reason ? (
-              <div className="border-danger-text/20 bg-danger-bg text-danger-text mt-6 rounded-md border px-4 py-3 text-sm">
-                <p className="font-semibold">סיבת דחייה</p>
-                <p className="mt-1">{dealer.rejection_reason}</p>
-              </div>
-            ) : null}
-          </section>
+            <section aria-labelledby="actions-heading" className="mt-3xl">
+              <p className="text-muted text-xs font-medium uppercase tracking-widest">פעולות</p>
+              <h2 id="actions-heading" className="sr-only">
+                פעולות
+              </h2>
+              <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
 
-          <section aria-labelledby="actions-heading" className="mt-10">
-            <h2 id="actions-heading" className="text-brand-navy text-lg font-semibold">
-              פעולות
-            </h2>
-
-            {status === "pending" ? (
-              <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={verify}
-                  disabled={actionBusy}
-                  aria-busy={actionBusy || undefined}
-                  className="bg-ok hover:bg-ok-text focus-visible:outline-ok-text inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                >
-                  אשר סוחר
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRejectOpen(true)}
-                  disabled={actionBusy}
-                  className="border-danger text-danger-text hover:bg-danger-bg focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                >
-                  דחה סוחר
-                </button>
-              </div>
-            ) : status === "verified" ? (
-              <div className="mt-4 flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  onClick={impersonate}
-                  disabled={actionBusy}
-                  aria-busy={actionBusy || undefined}
-                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                >
-                  {actionBusy ? "מתחבר…" : "התחבר בתור סוחר"}
-                </button>
-                <button
-                  type="button"
-                  onClick={resetPassword}
-                  disabled={actionBusy}
-                  aria-describedby="dealer-info-heading"
-                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-                >
-                  אפס סיסמה
-                </button>
-                {isSuspended ? (
-                  <button
+              {derivedStatus === "pending" ? (
+                <div className="gap-sm mt-lg flex flex-wrap">
+                  <Button
                     type="button"
-                    onClick={unsuspend}
+                    onClick={verify}
                     disabled={actionBusy}
-                    className="bg-ok hover:bg-ok/90 focus-visible:outline-ok inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+                    aria-busy={actionBusy || undefined}
                   >
-                    בטל הושעיה
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      ref={suspendTriggerRef}
-                      type="button"
-                      onClick={() => setSuspendWithReasonOpen(true)}
-                      disabled={actionBusy}
-                      className="inline-flex min-h-11 items-center justify-center rounded-md border-2 border-amber-700 bg-white px-5 py-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 disabled:opacity-60"
-                    >
-                      🟡 השעה עם סיבה
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSilentSuspendOpen(true)}
-                      disabled={actionBusy}
-                      className="inline-flex min-h-11 items-center justify-center rounded-md border-2 border-amber-700 bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-700 disabled:opacity-60"
-                    >
-                      🟠 השעה בשקט
-                    </button>
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setArchiveOpen(true)}
-                  disabled={actionBusy}
-                  className="border-danger text-danger-text hover:bg-danger-bg focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md border-2 bg-white px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-                >
-                  🔴 מחק (העבר לארכיון)
-                </button>
-              </div>
-            ) : (
-              <div className="mt-4">
-                <button
-                  type="button"
-                  onClick={verify}
-                  disabled={actionBusy}
-                  aria-busy={actionBusy || undefined}
-                  className="bg-ok hover:bg-ok-text focus-visible:outline-ok-text inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                >
-                  בטל דחייה ואשר
-                </button>
-              </div>
-            )}
-          </section>
-        </div>
-        {/* /tabpanel-details */}
+                    <Check aria-hidden="true" />
+                    <span>אשר סוחר</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setRejectOpen(true)}
+                    disabled={actionBusy}
+                    className="text-danger-fg border-danger/30 hover:bg-danger-bg"
+                  >
+                    <X aria-hidden="true" />
+                    <span>דחה סוחר</span>
+                  </Button>
+                </div>
+              ) : derivedStatus === "verified" ? (
+                <div className="gap-sm mt-lg flex flex-wrap">
+                  <Button
+                    type="button"
+                    onClick={impersonate}
+                    disabled={actionBusy}
+                    aria-busy={actionBusy || undefined}
+                  >
+                    {actionBusy ? "מתחבר…" : "התחבר בתור סוחר"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={resetPassword}
+                    disabled={actionBusy}
+                  >
+                    אפס סיסמה
+                  </Button>
+                  {isSuspended ? (
+                    <Button type="button" onClick={unsuspend} disabled={actionBusy}>
+                      בטל הושעיה
+                    </Button>
+                  ) : (
+                    <>
+                      <Button
+                        ref={suspendTriggerRef}
+                        type="button"
+                        variant="outline"
+                        onClick={() => setSuspendWithReasonOpen(true)}
+                        disabled={actionBusy}
+                        className="text-warn-fg border-warn/40 hover:bg-warn-bg"
+                      >
+                        <AlertTriangle aria-hidden="true" />
+                        <span>השעה עם סיבה</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => setSilentSuspendOpen(true)}
+                        disabled={actionBusy}
+                        className="text-warn-fg border-warn/40 hover:bg-warn-bg"
+                      >
+                        <AlertTriangle aria-hidden="true" />
+                        <span>השעה בשקט</span>
+                      </Button>
+                    </>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setArchiveOpen(true)}
+                    disabled={actionBusy}
+                    className="text-danger-fg border-danger/30 hover:bg-danger-bg"
+                  >
+                    <X aria-hidden="true" />
+                    <span>מחק (העבר לארכיון)</span>
+                  </Button>
+                </div>
+              ) : (
+                <div className="mt-lg">
+                  <Button
+                    type="button"
+                    onClick={verify}
+                    disabled={actionBusy}
+                    aria-busy={actionBusy || undefined}
+                  >
+                    בטל דחייה ואשר
+                  </Button>
+                </div>
+              )}
+            </section>
+          </TabsContent>
 
-        {/* ====================================================
-            Inventory tab — links into existing /admin/inventory
-            ==================================================== */}
-        <div
-          role="tabpanel"
-          id="tabpanel-inventory"
-          aria-labelledby="tab-inventory"
-          hidden={tab !== "inventory"}
-          className="mt-8"
-        >
-          <div className="border-brand-navy/10 rounded-lg border bg-white p-6">
-            <h2 className="text-brand-navy text-lg font-semibold">המלאי של הסוחר</h2>
-            <p className="text-brand-ink/70 mt-2 text-sm">
-              צפה בכל הרכבים של הסוחר עם סינון מלא לפי סטטוס וחשיפה.
-            </p>
-            <Link
-              href={`/admin/inventory?dealer_id=${dealer.id}`}
-              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy mt-4 inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              פתח רשימת מלאי מסוננת
-            </Link>
-          </div>
-        </div>
+          {/* ── INVENTORY TAB ──────────────────────────────────────── */}
+          <TabsContent value="inventory" className="mt-2xl">
+            <section aria-labelledby="inv-heading">
+              <p className="text-muted text-xs font-medium uppercase tracking-widest">
+                המלאי של הסוחר
+              </p>
+              <h2 id="inv-heading" className="sr-only">
+                המלאי של הסוחר
+              </h2>
+              <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+              <p className="text-muted mt-lg text-sm">
+                צפה בכל הרכבים של הסוחר עם סינון מלא לפי סטטוס וחשיפה.
+              </p>
+              <Button asChild className="mt-lg">
+                <Link href={`/admin/inventory?dealer_id=${dealer.id}`}>פתח רשימת מלאי מסוננת</Link>
+              </Button>
+            </section>
+          </TabsContent>
 
-        {/* ====================================================
-            Deals tab — placeholder
-            ==================================================== */}
-        <div
-          role="tabpanel"
-          id="tabpanel-deals"
-          aria-labelledby="tab-deals"
-          hidden={tab !== "deals"}
-          className="mt-8"
-        >
-          <div className="border-brand-navy/10 rounded-lg border bg-white p-6">
-            <h2 className="text-brand-navy text-lg font-semibold">עסקאות הסוחר</h2>
-            <dl className="mt-3 grid gap-3 sm:grid-cols-2">
-              <div>
-                <dt className="text-brand-ink/60 text-xs">עסקאות שהושלמו</dt>
-                <dd className="text-brand-navy mt-1 text-2xl font-bold">
-                  {dealer.deals_completed}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-brand-ink/60 text-xs">דרגה נוכחית</dt>
-                <dd className="text-brand-navy mt-1 text-2xl font-bold">{dealer.tier}</dd>
-              </div>
-            </dl>
-            <p className="text-brand-ink/60 mt-4 text-sm">צפייה בהיסטוריית עסקאות מלאה — בקרוב.</p>
-          </div>
-        </div>
+          {/* ── DEALS TAB ──────────────────────────────────────────── */}
+          <TabsContent value="deals" className="mt-2xl">
+            <section aria-labelledby="deals-heading">
+              <p className="text-muted text-xs font-medium uppercase tracking-widest">
+                עסקאות הסוחר
+              </p>
+              <h2 id="deals-heading" className="sr-only">
+                עסקאות הסוחר
+              </h2>
+              <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+              <dl className="gap-2xl mt-lg grid grid-cols-1 sm:grid-cols-2">
+                <div>
+                  <dt className="text-muted text-xs font-medium uppercase tracking-widest">
+                    עסקאות שהושלמו
+                  </dt>
+                  <dd className="text-ink font-tabular mt-xs font-serif text-3xl font-medium">
+                    {dealer.deals_completed}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted text-xs font-medium uppercase tracking-widest">
+                    דרגה נוכחית
+                  </dt>
+                  <dd className="text-ink mt-xs font-serif text-3xl font-medium">{dealer.tier}</dd>
+                </div>
+              </dl>
+              <p className="text-muted mt-xl text-sm">צפייה בהיסטוריית עסקאות מלאה — בקרוב.</p>
+            </section>
+          </TabsContent>
 
-        {/* ====================================================
-            Offers tab — placeholder
-            ==================================================== */}
-        <div
-          role="tabpanel"
-          id="tabpanel-offers"
-          aria-labelledby="tab-offers"
-          hidden={tab !== "offers"}
-          className="mt-8"
-        >
-          <div className="border-brand-navy/10 rounded-lg border bg-white p-6">
-            <h2 className="text-brand-navy text-lg font-semibold">הצעות הסוחר</h2>
-            <p className="text-brand-ink/60 mt-2 text-sm">צפייה בהצעות שנשלחו ושהתקבלו — בקרוב.</p>
-          </div>
-        </div>
+          {/* ── OFFERS TAB ─────────────────────────────────────────── */}
+          <TabsContent value="offers" className="mt-2xl">
+            <section aria-labelledby="offers-heading">
+              <p className="text-muted text-xs font-medium uppercase tracking-widest">
+                הצעות הסוחר
+              </p>
+              <h2 id="offers-heading" className="sr-only">
+                הצעות הסוחר
+              </h2>
+              <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+              <p className="text-muted mt-lg text-sm">צפייה בהצעות שנשלחו ושהתקבלו — בקרוב.</p>
+            </section>
+          </TabsContent>
 
-        {/* ====================================================
-            KYC tab — fetches docs for THIS dealer + approve/reject
-            ==================================================== */}
-        <div
-          role="tabpanel"
-          id="tabpanel-kyc"
-          aria-labelledby="tab-kyc"
-          hidden={tab !== "kyc"}
-          className="mt-8"
-        >
-          {token ? (
-            <KycTabPanel
-              dealerId={dealer.id}
-              kycStatus={dealer.kyc_status}
-              token={token}
-              onChanged={() => {
-                setToast("סטטוס אימות הזהות עודכן");
-                void load();
-              }}
-            />
-          ) : null}
-        </div>
+          {/* ── KYC TAB ────────────────────────────────────────────── */}
+          <TabsContent value="kyc" className="mt-2xl">
+            {token ? (
+              <KycTabPanel
+                dealerId={dealer.id}
+                token={token}
+                onChanged={() => {
+                  setToast("סטטוס אימות הזהות עודכן");
+                  void load();
+                }}
+              />
+            ) : null}
+          </TabsContent>
+        </Tabs>
+      )}
 
-        <RejectDealerDialog
-          open={rejectOpen}
-          onOpenChange={setRejectOpen}
-          onSubmit={reject}
-          businessName={dealer.business_name}
-        />
+      <RejectDealerDialog
+        open={rejectOpen}
+        onOpenChange={setRejectOpen}
+        onSubmit={reject}
+        businessName={dealer?.business_name ?? ""}
+      />
 
-        {/* Phase 6.7 — three replacement dialogs */}
-        <SuspendWithReasonDialog
-          open={suspendWithReasonOpen}
-          onOpenChange={setSuspendWithReasonOpen}
-          dealerId={dealer.id}
-          dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
-          token={token!}
-          onSuspended={() => {
-            setToast("הסוחר הושעה");
-            void load();
-            queueMicrotask(() => suspendTriggerRef.current?.focus());
-          }}
-        />
-        <SilentSuspendDialog
-          open={silentSuspendOpen}
-          onOpenChange={setSilentSuspendOpen}
-          dealerId={dealer.id}
-          dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
-          token={token!}
-          onSuspended={() => {
-            setToast("הסוחר הושעה בשקט");
-            void load();
-            queueMicrotask(() => suspendTriggerRef.current?.focus());
-          }}
-        />
-        <ArchiveDealerDialog
-          open={archiveOpen}
-          onOpenChange={setArchiveOpen}
-          dealerId={dealer.id}
-          dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
-          token={token!}
-          onArchived={() => {
-            setToast("הסוחר הועבר לארכיון");
-            void load();
-          }}
-        />
-      </div>
-    </main>
-  );
-}
-
-function Info({ label, value, lang }: { label: string; value: string; lang?: string }) {
-  return (
-    <div className="border-brand-navy/10 rounded-lg border bg-white p-4">
-      <dt className="text-brand-ink/60 text-sm">{label}</dt>
-      <dd lang={lang} className="text-brand-navy mt-1 break-words text-base font-medium">
-        {value}
-      </dd>
+      {dealer ? (
+        <>
+          <SuspendWithReasonDialog
+            open={suspendWithReasonOpen}
+            onOpenChange={setSuspendWithReasonOpen}
+            dealerId={dealer.id}
+            dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
+            token={token!}
+            onSuspended={() => {
+              setToast("הסוחר הושעה");
+              void load();
+              queueMicrotask(() => suspendTriggerRef.current?.focus());
+            }}
+          />
+          <SilentSuspendDialog
+            open={silentSuspendOpen}
+            onOpenChange={setSilentSuspendOpen}
+            dealerId={dealer.id}
+            dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
+            token={token!}
+            onSuspended={() => {
+              setToast("הסוחר הושעה בשקט");
+              void load();
+              queueMicrotask(() => suspendTriggerRef.current?.focus());
+            }}
+          />
+          <ArchiveDealerDialog
+            open={archiveOpen}
+            onOpenChange={setArchiveOpen}
+            dealerId={dealer.id}
+            dealerLabel={`${dealer.business_name}${dealer.city ? ` · ${dealer.city}` : ""}`}
+            token={token!}
+            onArchived={() => {
+              setToast("הסוחר הועבר לארכיון");
+              void load();
+            }}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
 
-// =============================================================================
-// KYC tab panel — Phase 4.4 fix.
-// Fetches the per-dealer KYC status (signed image URLs) and lets the admin
-// approve/reject directly from the dealer detail page.
-// =============================================================================
+// ---------------------------------------------------------------------------
+// DRow — hairline-separated label/value pair, mirrors the inventory detail.
+// ---------------------------------------------------------------------------
 
-type _KycTabKyc = {
-  kyc_status: "pending" | "submitted" | "approved" | "rejected";
-  id_card_front_url: string | null;
-  id_card_back_url: string | null;
-  dealer_license_url: string | null;
-  kyc_rejected_reason: string | null;
-};
+function DRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="border-hairline gap-md py-sm flex flex-wrap items-baseline justify-between border-b last:border-b-0">
+      <dt className="text-muted text-sm">{label}</dt>
+      <dd className="text-ink text-sm font-medium">{value}</dd>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// KycTabPanel — per-dealer KYC review (signed URLs from
+// /api/v1/admin/dealers/{id}). Approve/reject mutations + photo
+// viewer + reject reason dialog, all on shadcn primitives.
+// ---------------------------------------------------------------------------
 
 function KycTabPanel({
   dealerId,
@@ -574,145 +622,149 @@ function KycTabPanel({
   onChanged,
 }: {
   dealerId: string;
-  kycStatus: "pending" | "submitted" | "approved" | "rejected";
   token: string;
   onChanged: () => void;
 }) {
-  // The /security/kyc/status endpoint is dealer-self only — for admins
-  // we re-use the per-dealer entry from /security/kyc/pending list, but
-  // we don't have a single-dealer admin endpoint yet. Workaround: pull
-  // the pending list and find this dealer; if not in pending list (e.g.
-  // already approved), fall back to status text only.
-  const [kyc, setKyc] = useState<_KycTabKyc | null>(null);
-  const [loadErr, setLoadErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [viewer, setViewer] = useState<{ label: string; url: string } | null>(null);
 
-  const load = useCallback(async () => {
-    setLoadErr(null);
-    try {
-      // /api/v1/admin/dealers/{id} returns 10-min signed KYC URLs for
-      // dealers in ANY status (not just submitted). The endpoint was
-      // extended in 35bee61 to include personal + KYC fields for admins.
-      const detail = await apiFetch<{
+  const kycQuery = useQuery({
+    queryKey: [...queryKeys.admin.dealer(dealerId), "kyc"] as const,
+    queryFn: () =>
+      apiFetch<{
         kyc_status: "pending" | "submitted" | "approved" | "rejected";
         kyc_rejected_reason: string | null;
         id_card_front_url: string | null;
         id_card_back_url: string | null;
         dealer_license_url: string | null;
-      }>(`/api/v1/admin/dealers/${dealerId}`, { token });
-      setKyc({
-        kyc_status: detail.kyc_status,
-        id_card_front_url: detail.id_card_front_url,
-        id_card_back_url: detail.id_card_back_url,
-        dealer_license_url: detail.dealer_license_url,
-        kyc_rejected_reason: detail.kyc_rejected_reason,
-      });
-    } catch (e) {
-      setLoadErr(e instanceof Error ? e.message : "שגיאה בטעינת מסמכים");
-    }
-  }, [dealerId, token]);
+      }>(`/api/v1/admin/dealers/${dealerId}`, { token }),
+  });
+  const kyc = kycQuery.data ?? null;
+  const loadErr =
+    kycQuery.error instanceof Error
+      ? kycQuery.error.message
+      : kycQuery.error
+        ? "שגיאה בטעינת מסמכים"
+        : null;
 
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const approve = async () => {
-    setBusy(true);
-    setActionErr(null);
-    try {
-      await apiFetch(`/api/v1/security/kyc/${dealerId}/approve`, {
-        method: "POST",
-        token,
-      });
+  const approveMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/security/kyc/${dealerId}/approve`, { method: "POST", token }),
+    onSuccess: () => {
+      void kycQuery.refetch();
       onChanged();
-    } catch (e) {
-      setActionErr(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const reject = async () => {
-    if (!reason.trim()) return;
-    setBusy(true);
-    setActionErr(null);
-    try {
-      await apiFetch(`/api/v1/security/kyc/${dealerId}/reject`, {
+    },
+    onError: (e) => setActionErr(e instanceof Error ? e.message : "שגיאה"),
+  });
+  const rejectMutation = useMutation({
+    mutationFn: (txt: string) =>
+      apiFetch(`/api/v1/security/kyc/${dealerId}/reject`, {
         method: "POST",
         token,
-        body: JSON.stringify({ reason: reason.trim() }),
-      });
+        body: JSON.stringify({ reason: txt }),
+      }),
+    onSuccess: () => {
       setRejectOpen(false);
       setReason("");
+      void kycQuery.refetch();
       onChanged();
-    } catch (e) {
-      setActionErr(e instanceof Error ? e.message : "שגיאה");
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (e) => setActionErr(e instanceof Error ? e.message : "שגיאה"),
+  });
+
+  const busy = approveMutation.isPending || rejectMutation.isPending;
+  const approve = async () => {
+    setActionErr(null);
+    await approveMutation.mutateAsync();
+  };
+  const submitReject = async () => {
+    if (!reason.trim()) return;
+    setActionErr(null);
+    await rejectMutation.mutateAsync(reason.trim());
   };
 
   const remaining = 500 - reason.length;
 
+  const statusVariant = (
+    s: "pending" | "submitted" | "approved" | "rejected",
+  ): "ink" | "neutral" | "accent" | "danger" => {
+    if (s === "approved") return "accent";
+    if (s === "rejected") return "danger";
+    if (s === "submitted") return "ink";
+    return "neutral";
+  };
+  const STATUS_LABEL = {
+    pending: "ממתין להעלאה",
+    submitted: "ממתין לאישור",
+    approved: "מאומת",
+    rejected: "נדחה",
+  } as const;
+
   return (
-    <div className="border-brand-navy/10 rounded-lg border bg-white p-6">
-      <h2 className="text-brand-navy text-lg font-semibold">אימות זהות (KYC)</h2>
+    <section aria-labelledby="kyc-tab-heading">
+      <p className="text-muted text-xs font-medium uppercase tracking-widest">אימות זהות (KYC)</p>
+      <h2 id="kyc-tab-heading" className="sr-only">
+        אימות זהות
+      </h2>
+      <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
 
       {loadErr ? (
-        <p role="alert" className="bg-danger-bg text-danger-text mt-3 rounded-md px-3 py-2 text-sm">
-          {loadErr}
-        </p>
+        <Alert variant="destructive" className="mt-lg">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{loadErr}</AlertDescription>
+        </Alert>
       ) : null}
       {actionErr ? (
-        <p role="alert" className="bg-danger-bg text-danger-text mt-3 rounded-md px-3 py-2 text-sm">
-          {actionErr}
-        </p>
+        <Alert variant="destructive" className="mt-lg">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{actionErr}</AlertDescription>
+        </Alert>
       ) : null}
 
-      {/* Status pill — visible regardless of whether photos are present */}
       {kyc ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <KycStatusPill status={kyc.kyc_status} />
+        <div className="gap-xs mt-lg flex flex-wrap items-center">
+          <AdminStatusPill
+            variant={statusVariant(kyc.kyc_status)}
+            withCheck={statusVariant(kyc.kyc_status) === "accent"}
+          >
+            {STATUS_LABEL[kyc.kyc_status]}
+          </AdminStatusPill>
           {kyc.kyc_status === "rejected" && kyc.kyc_rejected_reason ? (
-            <span className="text-brand-ink/70 text-xs">סיבת דחייה: {kyc.kyc_rejected_reason}</span>
+            <span className="text-muted text-xs">סיבת דחייה: {kyc.kyc_rejected_reason}</span>
           ) : null}
         </div>
       ) : null}
 
       {!kyc ? (
-        // Loading skeleton — same shape as the eventual photo grid so the
-        // layout doesn't jump when data lands. role=status so SR users
-        // hear that something's loading.
-        <div role="status" aria-live="polite" className="mt-4">
+        <div role="status" aria-live="polite" className="mt-lg">
           <span className="sr-only">טוען מסמכים…</span>
-          <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <ul className="gap-md grid grid-cols-1 sm:grid-cols-3">
             {[0, 1, 2].map((i) => (
-              <li key={i} aria-hidden="true">
-                <div className="bg-brand-navy/10 mb-1 h-3 w-32 rounded motion-safe:animate-pulse" />
-                <div className="bg-brand-navy/10 aspect-[4/3] w-full rounded-md motion-safe:animate-pulse" />
+              <li key={i} aria-hidden="true" className="space-y-2">
+                <Skeleton className="h-3 w-32" />
+                <Skeleton className="aspect-[4/3] w-full rounded-md" />
               </li>
             ))}
           </ul>
         </div>
       ) : !kyc.id_card_front_url && !kyc.id_card_back_url && !kyc.dealer_license_url ? (
-        // No photos uploaded yet — show clear empty-state message.
-        <p className="border-brand-navy/15 bg-brand-cream/40 text-brand-ink/65 mt-4 rounded-md border p-4 text-sm">
+        <p className="text-muted mt-lg py-2xl text-center text-sm">
           הסוחר עדיין לא העלה מסמכי זהות.
         </p>
       ) : (
         <>
-          <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {[
-              ["id_card_front_url", "תעודת זהות — צד קדמי"] as const,
-              ["id_card_back_url", "תעודת זהות — צד אחורי"] as const,
-              ["dealer_license_url", "רישיון סוחר רכבים"] as const,
-            ].map(([key, label]) => (
+          <ul className="gap-md mt-lg grid grid-cols-1 sm:grid-cols-3">
+            {(
+              [
+                ["id_card_front_url", "תעודת זהות — צד קדמי"],
+                ["id_card_back_url", "תעודת זהות — צד אחורי"],
+                ["dealer_license_url", "רישיון סוחר רכבים"],
+              ] as const
+            ).map(([key, label]) => (
               <li key={key}>
-                <p className="text-brand-ink/65 mb-1.5 text-xs font-semibold">{label}</p>
+                <p className="text-muted mb-xs text-xs">{label}</p>
                 <KycPhotoCard
                   url={kyc[key]}
                   label={label}
@@ -723,146 +775,111 @@ function KycTabPanel({
           </ul>
 
           {kyc.kyc_status === "submitted" ? (
-            <div className="mt-5 flex flex-wrap gap-2">
-              <button
+            <div className="gap-sm mt-xl flex flex-wrap">
+              <Button type="button" onClick={approve} disabled={busy} aria-busy={busy || undefined}>
+                <Check aria-hidden="true" />
+                <span>אשר אימות זהות</span>
+              </Button>
+              <Button
                 type="button"
-                onClick={approve}
-                disabled={busy}
-                aria-busy={busy || undefined}
-                className="bg-ok hover:bg-ok/90 focus-visible:outline-ok inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-              >
-                <span aria-hidden="true">✓</span>
-                אשר אימות זהות
-              </button>
-              <button
-                type="button"
+                variant="outline"
                 onClick={() => setRejectOpen(true)}
                 disabled={busy}
-                className="bg-danger hover:bg-danger/90 focus-visible:outline-danger-text inline-flex min-h-11 items-center gap-1.5 rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
+                className="text-danger-fg border-danger/30 hover:bg-danger-bg"
               >
-                <span aria-hidden="true">✕</span>
-                דחה אימות זהות
-              </button>
+                <X aria-hidden="true" />
+                <span>דחה אימות זהות</span>
+              </Button>
             </div>
           ) : null}
         </>
       )}
 
       {/* Doc viewer dialog */}
-      <Dialog.Root open={!!viewer} onOpenChange={(v) => !v && setViewer(null)}>
-        <Dialog.Portal>
-          <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/60 fixed inset-0 z-40" />
-          <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-brand-cream w-full max-w-3xl rounded-xl p-4 shadow-xl">
-              <div className="flex items-start justify-between gap-3">
-                <Dialog.Title className="text-brand-navy text-base font-bold">
-                  {viewer?.label}
-                </Dialog.Title>
-                <Dialog.Close asChild>
-                  <button
-                    type="button"
-                    aria-label="סגור"
-                    className="text-brand-ink/70 hover:text-brand-navy rounded"
-                  >
-                    ✕
-                  </button>
-                </Dialog.Close>
-              </div>
-              {viewer ? (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={viewer.url}
-                    alt={viewer.label}
-                    className="mt-3 max-h-[70vh] w-full rounded-md object-contain"
-                  />
-                  <a
-                    href={viewer.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-brand-navy mt-3 inline-block text-sm font-semibold underline"
-                  >
-                    פתח בכרטיסייה חדשה
-                  </a>
-                </>
-              ) : null}
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <Dialog open={!!viewer} onOpenChange={(v) => !v && setViewer(null)}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>{viewer?.label}</DialogTitle>
+          </DialogHeader>
+          {viewer ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={viewer.url}
+                alt={viewer.label}
+                className="mt-md max-h-[70vh] w-full rounded-md object-contain"
+              />
+              <a
+                href={viewer.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-ink duration-fast hover:text-accent focus-visible:outline-accent mt-sm inline-block text-sm font-medium underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              >
+                פתח בכרטיסייה חדשה
+              </a>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
 
       {/* Reject dialog */}
-      <Dialog.Root open={rejectOpen} onOpenChange={setRejectOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay aria-hidden="true" className="bg-brand-navy/40 fixed inset-0 z-40" />
-          <Dialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-brand-cream w-full max-w-md rounded-xl p-6 shadow-xl">
-              <Dialog.Title className="text-brand-navy text-lg font-bold">
-                דחיית אימות זהות
-              </Dialog.Title>
-              <Dialog.Description className="text-brand-ink/80 mt-2 text-sm">
-                הסוחר יקבל את הסיבה במייל. פעולה לא ניתנת לביטול.
-              </Dialog.Description>
+      <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>דחיית אימות זהות</DialogTitle>
+            <DialogDescription>הסוחר יקבל את הסיבה במייל. פעולה לא ניתנת לביטול.</DialogDescription>
+          </DialogHeader>
 
-              <label
-                htmlFor="kyc-reject-reason"
-                className="text-brand-navy mt-4 block text-sm font-medium"
-              >
-                סיבת הדחייה{" "}
-                <span aria-hidden="true" className="text-danger-text ms-1">
-                  *
-                </span>
-              </label>
-              <textarea
-                id="kyc-reject-reason"
-                rows={4}
-                maxLength={500}
-                required
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                aria-describedby="kyc-reject-count"
-                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-              />
-              <p
-                id="kyc-reject-count"
-                aria-live="polite"
-                className="text-brand-ink/60 mt-1 text-xs"
-              >
-                {remaining <= 50 ? `נותרו ${remaining} תווים` : ""}
-              </p>
+          <div className="mt-md">
+            <Label htmlFor="kyc-reject-reason">
+              סיבת הדחייה
+              <span aria-hidden="true" className="text-danger-fg ms-xxs">
+                *
+              </span>
+            </Label>
+            <Textarea
+              id="kyc-reject-reason"
+              rows={4}
+              maxLength={500}
+              required
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              aria-describedby="kyc-reject-count"
+              className="mt-xs"
+            />
+            <p id="kyc-reject-count" aria-live="polite" className="text-muted mt-xxs text-xs">
+              {remaining <= 50 ? (
+                <>
+                  נותרו <span className="font-tabular">{remaining}</span> תווים
+                </>
+              ) : null}
+            </p>
+          </div>
 
-              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Dialog.Close asChild>
-                  <button
-                    type="button"
-                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                  >
-                    ביטול
-                  </button>
-                </Dialog.Close>
-                <button
-                  type="button"
-                  onClick={() => void reject()}
-                  disabled={busy || !reason.trim()}
-                  aria-busy={busy || undefined}
-                  className="bg-danger hover:bg-danger/90 focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-                >
-                  {busy ? "דוחה…" : "דחה ושלח מייל"}
-                </button>
-              </div>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-    </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setRejectOpen(false)}>
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void submitReject()}
+              disabled={busy || !reason.trim()}
+              aria-busy={busy || undefined}
+            >
+              {busy ? "דוחה…" : "דחה ושלח מייל"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </section>
   );
 }
 
-// =============================================================================
-// KYC photo card — handles loading, error fallback, and click-to-open.
-// Signed Cloudinary URLs expire 10min after the parent fetch, so an expired
-// signature surfaces as a real onError event; we render a graceful retry hint.
-// =============================================================================
+// ---------------------------------------------------------------------------
+// KycPhotoCard — handles loading shimmer, signed-URL expiry error, and
+// click-to-open. Signed URLs expire 10min after the parent fetch.
+// ---------------------------------------------------------------------------
 
 function KycPhotoCard({
   url,
@@ -877,7 +894,7 @@ function KycPhotoCard({
 
   if (!url) {
     return (
-      <div className="border-brand-navy/15 text-brand-ink/55 bg-brand-cream/40 flex aspect-[4/3] items-center justify-center rounded-md border text-xs">
+      <div className="border-hairline text-subtle bg-paper flex aspect-[4/3] items-center justify-center rounded-md border text-xs">
         חסר
       </div>
     );
@@ -888,16 +905,14 @@ function KycPhotoCard({
       type="button"
       onClick={() => onOpen(url)}
       aria-label={`הצג ${label} בגודל מלא`}
-      className="border-brand-navy/15 hover:border-brand-navy/35 focus-visible:outline-brand-navy bg-brand-cream/40 group relative block aspect-[4/3] w-full overflow-hidden rounded-md border focus-visible:outline-2 focus-visible:outline-offset-2"
+      className="border-hairline hover:border-ink focus-visible:outline-accent duration-fast bg-paper group relative block aspect-[4/3] w-full overflow-hidden rounded-md border transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
     >
-      {/* Loading shimmer underneath the image — hidden once loaded. */}
       {state === "idle" ? (
         <div
           aria-hidden="true"
-          className="bg-brand-navy/10 absolute inset-0 motion-safe:animate-pulse"
+          className="bg-muted/10 absolute inset-0 motion-safe:animate-pulse"
         />
       ) : null}
-
       {state !== "error" ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -907,39 +922,40 @@ function KycPhotoCard({
           decoding="async"
           onLoad={() => setState("loaded")}
           onError={() => setState("error")}
-          className="relative h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+          className="duration-fast relative h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
         />
       ) : (
-        <div className="text-brand-ink/65 flex h-full w-full flex-col items-center justify-center gap-1 px-3 text-center text-xs">
-          <span aria-hidden="true" className="text-2xl">
-            ⚠
-          </span>
+        <div className="text-muted gap-xxs px-md flex h-full w-full flex-col items-center justify-center text-center text-xs">
+          <AlertTriangle aria-hidden="true" className="h-5 w-5" />
           <span>טעינת התמונה נכשלה</span>
-          <span className="text-brand-ink/55">החתימה אולי פגה — רענן</span>
+          <span className="text-subtle">החתימה אולי פגה — רענן</span>
         </div>
       )}
     </button>
   );
 }
 
-// =============================================================================
-// Localized KYC status pill. Self-explanatory chip; color carries meaning but
-// is duplicated by the text label so screen readers + colorblind users get it.
-// =============================================================================
+// ---------------------------------------------------------------------------
+// Skeleton for the masthead-loaded state.
+// ---------------------------------------------------------------------------
 
-function KycStatusPill({ status }: { status: "pending" | "submitted" | "approved" | "rejected" }) {
-  const map = {
-    pending: { label: "ממתין להעלאה", classes: "bg-brand-navy/10 text-brand-navy/80" },
-    submitted: { label: "ממתין לאישור", classes: "bg-amber-100 text-amber-900" },
-    approved: { label: "מאומת ✓", classes: "bg-ok-bg text-ok-text" },
-    rejected: { label: "נדחה", classes: "bg-danger-bg text-danger-text" },
-  } as const;
-  const m = map[status];
+function DealerDetailSkeleton() {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-bold ${m.classes}`}
-    >
-      {m.label}
-    </span>
+    <div className="mt-2xl" role="status" aria-live="polite">
+      <span className="sr-only">טוען סוחר…</span>
+      <Skeleton className="h-10 w-full max-w-md" />
+      <div className="gap-x-2xl gap-y-md mt-2xl grid grid-cols-1 sm:grid-cols-2">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={i}
+            aria-hidden="true"
+            className="border-hairline gap-md py-sm flex items-baseline justify-between border-b last:border-b-0"
+          >
+            <Skeleton className="h-3 w-24" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }

@@ -1,27 +1,40 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { ArrowRight, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
-import { BrandMark } from "@/components/BrandMark";
-import { DashboardSubNav } from "@/components/DashboardSubNav";
-import { NotificationBell } from "@/components/NotificationBell";
+import { MarketplaceCard, type MarketplaceCardVehicle } from "@/components/MarketplaceCard";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
-import { formatMileage, formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
- * Public dealer profile (Phase 4.2).
+ * /dashboard/marketplace/dealer/[id] — public dealer profile.
  *
- * A11y (approved):
- *   - H1 dealer name, focusable on data-ready.
- *   - Stats grid uses <dl>. "חבר מאז" uses <time datetime>.
- *   - Listings from this dealer reuse the marketplace card pattern,
- *     with `hideSellerRow=true` to avoid duplicated seller info
- *     (a11y-lead required change #6).
- *   - TrustBadge carries the tier as its accessible name; no color-only.
+ *   → חזרה לשוק
+ *   פרופיל סוחר
+ *   {business_name}                       [TrustBadge]
+ *   ──────────
+ *   {city} · חבר מאז {member_since}
+ *
+ *   01 · עסקאות שהושלמו        02 · ציון אמון         03 · חבר מאז
+ *   47                          87                      2022
+ *
+ *   רכבים זמינים · 12
+ *   ──────────
+ *   [MarketplaceCard hideSellerRow] × N
+ *
+ * Stats live on the page as a hairline-separated strip (no cards).
+ * Listings use the shared <MarketplaceCard> with `hideSellerRow`
+ * because the dealer is the page subject — repeating their name on
+ * every card would be redundant.
  */
 
 type Profile = {
@@ -34,21 +47,8 @@ type Profile = {
   member_since: string;
 };
 
-type Listing = {
-  id: string;
-  make: string;
-  model: string;
-  year: number;
-  mileage: number;
-  price: number;
-  b2b_price: number | null;
-  primary_image_url: string | null;
-  seller_business_name: string;
-  seller_city: string | null;
-};
-
 type SearchResp = {
-  items: Listing[];
+  items: MarketplaceCardVehicle[];
   total: number;
 };
 
@@ -57,32 +57,33 @@ export default function DealerProfilePage() {
   const params = useParams<{ id: string }>();
   const dealerId = params?.id ?? "";
 
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [listings, setListings] = useState<Listing[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token || !dealerId) return;
-    try {
-      const [p, l] = await Promise.all([
-        apiFetch<Profile>(`/api/v1/marketplace/dealers/${dealerId}/profile`, { token }),
-        apiFetch<SearchResp>(
-          `/api/v1/marketplace/search?seller_dealer_id=${dealerId}&per_page=50`,
-          { token },
-        ),
-      ]);
-      setProfile(p);
-      setListings(l.items);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת פרופיל הסוחר");
-    }
-  }, [token, dealerId]);
+  const profileQuery = useQuery({
+    queryKey: queryKeys.marketplace.dealer(dealerId),
+    queryFn: () =>
+      apiFetch<Profile>(`/api/v1/marketplace/dealers/${dealerId}/profile`, { token: token! }),
+    enabled: !!token && !!dealerId,
+  });
+  const listingsQuery = useQuery({
+    queryKey: ["marketplace", "dealer", dealerId, "listings"] as const,
+    queryFn: () =>
+      apiFetch<SearchResp>(`/api/v1/marketplace/search?seller_dealer_id=${dealerId}&per_page=50`, {
+        token: token!,
+      }),
+    enabled: !!token && !!dealerId,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const profile = profileQuery.data ?? null;
+  const listings = listingsQuery.data?.items ?? null;
+  const error =
+    profileQuery.error instanceof Error
+      ? profileQuery.error.message
+      : listingsQuery.error instanceof Error
+        ? listingsQuery.error.message
+        : profileQuery.error || listingsQuery.error
+          ? "שגיאה בטעינת פרופיל הסוחר"
+          : null;
 
   useEffect(() => {
     if (profile) h1Ref.current?.focus();
@@ -90,176 +91,181 @@ export default function DealerProfilePage() {
 
   if (!token) {
     return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="status" className="text-brand-ink/70 p-10">
-          טוען…
-        </p>
+      <main
+        id="main"
+        tabIndex={-1}
+        className="px-lg sm:px-2xl py-2xl mx-auto max-w-6xl focus:outline-none"
+      >
+        <ProfileSkeleton />
       </main>
     );
   }
 
-  const fmtDate = (iso: string): string => {
-    const d = new Date(iso);
-    return d.toLocaleDateString("he-IL", { year: "numeric", month: "long" });
-  };
+  const memberSinceYear = profile ? new Date(profile.member_since).getFullYear().toString() : "—";
+  const memberSinceISO = profile?.member_since;
 
   return (
-    <div className="bg-brand-cream text-brand-ink min-h-screen">
-      <header className="border-brand-navy/10 border-b bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-          <BrandMark />
-          <NotificationBell token={token} />
-        </div>
-      </header>
+    <main
+      id="main"
+      tabIndex={-1}
+      className="px-lg sm:px-2xl py-2xl mx-auto max-w-6xl focus:outline-none"
+    >
+      <Button asChild variant="link" size="sm" className="px-0">
+        <Link href="/dashboard/marketplace">
+          <ArrowRight aria-hidden="true" />
+          חזרה לשוק
+        </Link>
+      </Button>
 
-      <DashboardSubNav />
+      {error ? (
+        <Alert variant="destructive" className="mt-lg">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-          <Link
-            href="/dashboard/marketplace"
-            className="text-brand-navy focus-visible:outline-brand-navy inline-flex items-center gap-1 rounded text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            <span aria-hidden="true">→</span>
-            חזרה לשוק
-          </Link>
-
-          {error ? (
-            <p role="alert" className="bg-danger-bg text-danger-text mt-4 rounded-md px-4 py-3">
-              {error}
-            </p>
-          ) : null}
-
-          {!profile ? (
-            <p role="status" className="text-brand-ink/60 p-8">
-              טוען…
-            </p>
-          ) : (
-            <>
-              <section
-                aria-labelledby="dealer-heading"
-                className="border-brand-navy/10 mt-4 rounded-lg border bg-white p-6"
+      {!profile ? (
+        <ProfileSkeleton />
+      ) : (
+        <>
+          {/* ── MASTHEAD ─────────────────────────────────────────────── */}
+          <header className="mt-md">
+            <p className="text-muted text-xs font-medium uppercase tracking-widest">פרופיל סוחר</p>
+            <div className="gap-md mt-sm flex flex-wrap items-start justify-between">
+              <h1
+                ref={h1Ref}
+                tabIndex={-1}
+                className="text-ink tracking-editorial font-serif text-4xl font-medium leading-tight focus:outline-none"
               >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <h1
-                      id="dealer-heading"
-                      ref={h1Ref}
-                      tabIndex={-1}
-                      className="text-brand-navy text-3xl font-bold tracking-tight focus:outline-none"
-                    >
-                      {profile.business_name}
-                    </h1>
-                    {profile.city ? <p className="text-brand-ink/70 mt-1">{profile.city}</p> : null}
-                  </div>
-                  <TrustBadge tier={profile.tier} />
-                </div>
+                {profile.business_name}
+              </h1>
+              <TrustBadge tier={profile.tier} />
+            </div>
+            <div aria-hidden="true" className="bg-hairline mt-lg h-px w-full" />
+            <p className="text-muted mt-lg text-sm">
+              {profile.city ? `${profile.city} · ` : ""}
+              חבר מאז{" "}
+              <time dateTime={memberSinceISO} className="font-tabular">
+                {memberSinceYear}
+              </time>
+            </p>
+          </header>
 
-                <dl className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                  <div>
-                    <dt className="text-brand-ink/60 text-xs">עסקאות שהושלמו</dt>
-                    <dd className="text-brand-navy mt-1 text-2xl font-bold">
-                      {profile.deals_completed}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-brand-ink/60 text-xs">ציון אמון</dt>
-                    <dd className="text-brand-navy mt-1 text-2xl font-bold">
-                      {profile.trust_score}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-brand-ink/60 text-xs">חבר מאז</dt>
-                    <dd className="text-brand-navy mt-1 text-lg font-semibold">
-                      <time dateTime={profile.member_since}>{fmtDate(profile.member_since)}</time>
-                    </dd>
-                  </div>
-                </dl>
-              </section>
+          {/* ── STATS STRIP ─────────────────────────────────────────── */}
+          <section
+            aria-labelledby="stats-heading"
+            className="mt-3xl gap-2xl grid grid-cols-1 sm:grid-cols-3"
+          >
+            <h2 id="stats-heading" className="sr-only">
+              נתוני הסוחר
+            </h2>
+            <Stat number="01" label="עסקאות שהושלמו" value={String(profile.deals_completed)} />
+            <Stat number="02" label="ציון אמון" value={String(profile.trust_score)} />
+            <Stat number="03" label="חבר מאז" value={memberSinceYear} />
+          </section>
 
-              <section aria-labelledby="listings-heading" className="mt-8">
-                <h2 id="listings-heading" className="text-brand-navy text-lg font-semibold">
-                  רכבים זמינים ({listings?.length ?? 0})
-                </h2>
+          {/* ── LISTINGS ────────────────────────────────────────────── */}
+          <section aria-labelledby="listings-heading" className="mt-3xl">
+            <p className="text-muted text-xs font-medium uppercase tracking-widest">
+              <span>רכבים זמינים</span>
+              <span aria-hidden="true" className="text-subtle mx-xxs">
+                ·
+              </span>
+              <span className="font-tabular">{listings?.length ?? 0}</span>
+            </p>
+            <h2 id="listings-heading" className="sr-only">
+              רכבים זמינים של {profile.business_name}
+            </h2>
+            <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
 
-                {listings === null ? (
-                  <p role="status" className="text-brand-ink/60 p-8">
-                    טוען…
-                  </p>
-                ) : listings.length === 0 ? (
-                  <p className="border-brand-navy/10 text-brand-ink/60 mt-4 rounded-lg border bg-white p-10 text-center">
-                    אין כרגע רכבים פעילים בשוק של סוחר זה
-                  </p>
-                ) : (
-                  <ul className="mt-4 grid gap-4 sm:grid-cols-2">
-                    {listings.map((v) => {
-                      const priceF = formatPrice(v.b2b_price ?? v.price);
-                      const mileageF = formatMileage(v.mileage);
-                      const fullLabel = `${v.make} ${v.model} שנת ${v.year}`;
-                      const titleId = `dvl-${v.id}-title`;
-                      return (
-                        <li
-                          key={v.id}
-                          className="border-brand-navy/10 overflow-hidden rounded-lg border bg-white"
-                        >
-                          <article aria-labelledby={titleId}>
-                            <div className="bg-brand-navy/5 aspect-[16/9] w-full">
-                              {v.primary_image_url ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img
-                                  src={v.primary_image_url}
-                                  alt={`תמונת ${fullLabel}`}
-                                  loading="lazy"
-                                  className="h-full w-full object-cover"
-                                />
-                              ) : (
-                                <div
-                                  aria-hidden="true"
-                                  className="text-brand-ink/30 flex h-full w-full items-center justify-center text-4xl"
-                                >
-                                  🚗
-                                </div>
-                              )}
-                            </div>
-                            <div className="p-4">
-                              <h3 id={titleId} className="text-brand-navy text-lg font-bold">
-                                {v.make} {v.model} · {v.year}
-                              </h3>
-                              <dl className="mt-3 space-y-1.5 text-sm">
-                                <div className="flex items-baseline justify-between gap-2">
-                                  <dt className="text-brand-ink/60">מחיר</dt>
-                                  <dd className="text-brand-navy font-bold">
-                                    <span aria-hidden="true">{priceF.visual}</span>
-                                    <span className="sr-only">{priceF.sr}</span>
-                                  </dd>
-                                </div>
-                                <div className="flex items-baseline justify-between gap-2">
-                                  <dt className="text-brand-ink/60">קילומטראז׳</dt>
-                                  <dd>
-                                    <span aria-hidden="true">{mileageF.visual}</span>
-                                    <span className="sr-only">{mileageF.sr}</span>
-                                  </dd>
-                                </div>
-                              </dl>
-                              <Link
-                                href={`/dashboard/marketplace/${v.id}`}
-                                aria-label={`פרטים נוספים על ${fullLabel}`}
-                                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                              >
-                                פרטים נוספים
-                              </Link>
-                            </div>
-                          </article>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </section>
-            </>
-          )}
-        </div>
-      </main>
+            {!listings ? (
+              <ListingsSkeleton />
+            ) : listings.length === 0 ? (
+              <p className="text-muted py-2xl text-center text-sm">
+                אין כרגע רכבים פעילים בשוק של סוחר זה.
+              </p>
+            ) : (
+              <ul className="gap-md mt-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                {listings.map((v) => (
+                  <MarketplaceCard key={v.id} vehicle={v} hideSellerRow />
+                ))}
+              </ul>
+            )}
+          </section>
+        </>
+      )}
+    </main>
+  );
+}
+
+// ============================================================================
+// Stat — single stat block. Numbered eyebrow + label + tabular value.
+// ============================================================================
+
+function Stat({ number, label, value }: { number: string; label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-muted gap-xs text-xs font-medium uppercase tracking-widest">
+        <span className="font-tabular">{number}</span>
+        <span aria-hidden="true" className="text-subtle mx-xxs">
+          ·
+        </span>
+        <span>{label}</span>
+      </p>
+      <p className="text-ink font-tabular mt-md font-serif text-3xl font-medium leading-none">
+        {value}
+      </p>
     </div>
+  );
+}
+
+// ============================================================================
+// Skeletons
+// ============================================================================
+
+function ProfileSkeleton() {
+  return (
+    <div role="status" aria-live="polite">
+      <span className="sr-only">טוען פרופיל סוחר…</span>
+      <Skeleton className="h-3 w-24" />
+      <Skeleton className="mt-sm h-12 w-2/3" />
+      <Skeleton className="mt-lg h-px w-full" />
+      <Skeleton className="mt-lg h-4 w-48" />
+      <div className="mt-3xl gap-2xl grid grid-cols-1 sm:grid-cols-3">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="space-y-sm">
+            <Skeleton className="h-3 w-32" />
+            <Skeleton className="h-9 w-16" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ListingsSkeleton() {
+  return (
+    <ul
+      className="gap-md mt-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">טוען רכבים…</span>
+      {[0, 1, 2].map((i) => (
+        <li
+          key={i}
+          aria-hidden="true"
+          className="border-hairline bg-paper overflow-hidden rounded-md border"
+        >
+          <Skeleton className="aspect-[16/9] w-full rounded-none" />
+          <div className="px-md py-md space-y-xs">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="my-md h-px w-full" />
+            <Skeleton className="h-5 w-1/3" />
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

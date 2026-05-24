@@ -1,22 +1,110 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Camera,
+  Check,
+  FileText,
+  ImageIcon,
+  Lightbulb,
+  Loader2,
+  Sparkles,
+  TriangleAlert,
+  X,
+} from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
-import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { FormField } from "@/components/FormField";
-import { useDialogScrollReset } from "@/hooks/useDialogScrollReset";
+import { ImageDropZone } from "@/components/ImageDropZone";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake, matchMake, matchModel } from "@/lib/car-data";
+import { formatRelativeTime } from "@/lib/format";
+
+/*
+ * InventoryFormDialog — editorial 3-step wizard.
+ *
+ *  ┌───────────────────────────────────────────────────────────────┐
+ *  │  הוספת רכב                                                  ×  │
+ *  │  שדות חובה מסומנים *                                            │
+ *  │  ─────                                                          │
+ *  │  ❶━━━━━━━━○━━━━━━━━○      רכב · מחיר · אחריות                  │
+ *  │                                                                  │
+ *  │  [טיוטה שמורה מלפני 12 דקות.  שחזר · מחק]   (only if draft)     │
+ *  │                                                                  │
+ *  │  STEP 1: רכב                                                    │
+ *  │    מילוי אוטומטי                                                │
+ *  │    [רישיון רכב · מספר רכב · תמונה]   ← shadcn Tabs              │
+ *  │    פרטי הרכב                                                    │
+ *  │    יצרן* / דגם* / שנה* / ק"מ* / יד / נפח / דלק / תיבה / צבע    │
+ *  │                                                                  │
+ *  │  STEP 2: מחיר                                                   │
+ *  │    מחיר* (AI hint inline)                                       │
+ *  │    חשיפה (private/b2b/b2c/both)                                 │
+ *  │    b2b_price / b2c_price / עלות קנייה / הערות                   │
+ *  │                                                                  │
+ *  │  STEP 3: אחריות + תמונות                                        │
+ *  │    סוג אחריות · תוקף  (optional)                                │
+ *  │    תמונות — link to manage OR (create mode) drop zone           │
+ *  │                                                                  │
+ *  │  [← הקודם]  [שמור טיוטה]              [ביטול]  [הבא / הוסף רכב] │
+ *  └───────────────────────────────────────────────────────────────┘
+ *
+ * Preserves verbatim from the long-scroll version:
+ *   - useForm + zod schema + all field validations
+ *   - 3 auto-fill paths (registration scan / plate lookup / image
+ *     recognition) — now consolidated into a shadcn Tabs row at the
+ *     top of step 1 instead of three vertical disclosure panels
+ *   - applyAutoFill + matchMake/matchModel canonicalization
+ *   - autofilledFields highlight set
+ *   - market-price hint (debounced /price-hint fetch)
+ *   - AI price estimate (debounced /price-estimate fetch)
+ *   - electric-vehicle engine_volume conditional
+ *   - MODEL_ENGINE_MAP per-model engine narrowing
+ *   - hand_combo encoded value (hand + ownership_type)
+ *   - visibility radio with B2C/both locked behind "בקרוב"
+ *   - sr-only live regions for combo/price announcements
+ *   - submit payload shape + ID-photo attach-on-create
+ *
+ * NEW in this commit:
+ *   - 3-step gating via react-hook-form trigger(stepFields)
+ *   - Stepper UI (clickable BACK only)
+ *   - Autosave to localStorage every 800ms (keyed per mode + edit id)
+ *   - Draft-restore Alert at top on open if a <24h draft exists
+ *   - "שמור טיוטה" button writes + closes
+ *   - Successful submit clears the draft
+ *   - shadcn Dialog/Button/Input/Label/Select/Textarea/Tabs throughout
+ *   - lucide icons replace 📋/📷/🖼️/✏️/✦/💡/⏳/✓ glyphs
+ *   - ink/paper/accent/muted/hairline token sweep
+ *
+ * Followed by commit 5 (drop zone in step 3 create mode + smart polish).
+ */
 
 export type Visibility = "private" | "b2b" | "b2c" | "both";
-
 export type WarrantyType = "manufacturer" | "dealer" | "extended" | "none";
-
 export type OwnershipType = "private" | "dealer" | "leasing" | "rental" | "government";
 
 export type InventoryPayload = {
@@ -33,25 +121,20 @@ export type InventoryPayload = {
   visibility: Visibility;
   b2b_price: number | null;
   b2c_price: number | null;
-  // Phase 6.5 — sale lifecycle + warranty (all optional)
   purchase_cost: number | null;
   warranty_type: WarrantyType | null;
-  warranty_until: string | null; // YYYY-MM-DD
-  // Ownership history — set together via the combined yad dropdown.
+  warranty_until: string | null;
   hand: number | null;
   ownership_type: OwnershipType | null;
 };
 
-// Combined "יד" dropdown options. The single string value encodes both
-// the hand integer and the ownership_type so the form keeps one field
-// for the dealer; we split before submit and merge on load.
 const HAND_OPTIONS: Array<{
   value: string;
   label: string;
   hand: number | null;
   ownership: OwnershipType | null;
 }> = [
-  { value: "", label: "בחר יד...", hand: null, ownership: null },
+  { value: "", label: "בחר יד…", hand: null, ownership: null },
   { value: "1-private", label: "יד 1 — פרטית", hand: 1, ownership: "private" },
   { value: "2-private", label: "יד 2 — פרטית", hand: 2, ownership: "private" },
   { value: "3-private", label: "יד 3 — פרטית", hand: 3, ownership: "private" },
@@ -87,25 +170,18 @@ export type InventoryInitial = Partial<InventoryPayload> & { id?: string };
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Returns the created/updated row (callers in create mode use the
-   *  returned `id` to attach the just-captured ID photo as the primary
-   *  image). May return void in edit mode. */
   onSubmit: (payload: InventoryPayload) => Promise<{ id: string } | void>;
   initial?: InventoryInitial | null;
   mode: "create" | "edit";
   token?: string | null;
-  /** Called when the dealer wants to manage images for an existing vehicle.
-   *  Caller should close this dialog and open the images dialog. */
   onManageImages?: (vehicleId: string) => void;
   imageCount?: number;
 };
 
 const IL_NUMERIC = /^\d+$/;
 
-// Engine displacement options — closed list. "0.0" is the electric
-// sentinel (submitted as null so the backend's >= 0.5 check passes).
 const ENGINE_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "בחר נפח מנוע..." },
+  { value: "", label: "בחר נפח מנוע…" },
   { value: "1.0", label: '1.0 ליטר (1000 סמ"ק)' },
   { value: "1.2", label: '1.2 ליטר (1200 סמ"ק)' },
   { value: "1.4", label: '1.4 ליטר (1400 סמ"ק)' },
@@ -120,13 +196,7 @@ const ENGINE_OPTIONS: { value: string; label: string }[] = [
   { value: "0.0", label: "חשמלי (ללא מנוע)" },
 ];
 
-// Per-model engine availability for the most common Israeli market
-// vehicles. Keys are lowercased "{make}|{model}" — see modelEngineKey().
-// When a key is absent we fall back to the FULL list (current behavior).
-// Coverage is intentionally narrow — better to show ALL options than
-// to wrongly hide the right one.
 const MODEL_ENGINE_MAP: Record<string, string[]> = {
-  // Toyota
   "toyota|corolla": ["1.6", "1.8", "2.0"],
   "טויוטה|קורולה": ["1.6", "1.8", "2.0"],
   "toyota|yaris": ["1.0", "1.2", "1.5"],
@@ -137,7 +207,6 @@ const MODEL_ENGINE_MAP: Record<string, string[]> = {
   "טויוטה|chr": ["1.2", "1.8", "2.0"],
   "toyota|camry": ["2.0", "2.5"],
   "טויוטה|קאמרי": ["2.0", "2.5"],
-  // Hyundai
   "hyundai|i20": ["1.0", "1.2", "1.4"],
   "יונדאי|i20": ["1.0", "1.2", "1.4"],
   "hyundai|i30": ["1.4", "1.6", "2.0"],
@@ -146,7 +215,6 @@ const MODEL_ENGINE_MAP: Record<string, string[]> = {
   "יונדאי|טוסון": ["1.6", "2.0", "2.5"],
   "hyundai|kona": ["1.0", "1.6"],
   "יונדאי|קונה": ["1.0", "1.6"],
-  // Kia
   "kia|picanto": ["1.0", "1.2"],
   "קיה|פיקנטו": ["1.0", "1.2"],
   "kia|rio": ["1.2", "1.4"],
@@ -155,17 +223,14 @@ const MODEL_ENGINE_MAP: Record<string, string[]> = {
   "קיה|ספורטאז'": ["1.6", "2.0", "2.5"],
   "kia|niro": ["1.6"],
   "קיה|נירו": ["1.6"],
-  // Mazda
   "mazda|3": ["1.5", "2.0", "2.5"],
   "מאזדה|3": ["1.5", "2.0", "2.5"],
   "mazda|cx-5": ["2.0", "2.5"],
   "מאזדה|cx-5": ["2.0", "2.5"],
-  // Skoda
   "skoda|octavia": ["1.0", "1.4", "1.5", "2.0"],
   "סקודה|אוקטביה": ["1.0", "1.4", "1.5", "2.0"],
   "skoda|kodiaq": ["1.5", "2.0"],
   "סקודה|קודיאק": ["1.5", "2.0"],
-  // BMW
   "bmw|3 series": ["2.0", "3.0"],
   "ב.מ.וו|סדרה 3": ["2.0", "3.0"],
   "ב.מ.וו|3": ["2.0", "3.0"],
@@ -177,32 +242,27 @@ const MODEL_ENGINE_MAP: Record<string, string[]> = {
   "ב.מ.וו|x3": ["2.0", "3.0"],
   "bmw|x5": ["3.0", "4.0"],
   "ב.מ.וו|x5": ["3.0", "4.0"],
-  // Mercedes
   "mercedes|c class": ["1.5", "2.0", "3.0"],
   "מרצדס|c class": ["1.5", "2.0", "3.0"],
-  // Audi
   "audi|a3": ["1.4", "1.5", "2.0"],
   "אודי|a3": ["1.4", "1.5", "2.0"],
   "audi|a4": ["2.0", "3.0"],
   "אודי|a4": ["2.0", "3.0"],
   "audi|q3": ["1.5", "2.0"],
   "אודי|q3": ["1.5", "2.0"],
-  // Volkswagen
   "volkswagen|polo": ["1.0", "1.2"],
   "פולקסווגן|פולו": ["1.0", "1.2"],
   "volkswagen|golf": ["1.0", "1.4", "1.5", "2.0"],
   "פולקסווגן|גולף": ["1.0", "1.4", "1.5", "2.0"],
   "volkswagen|tiguan": ["1.5", "2.0"],
   "פולקסווגן|טיגואן": ["1.5", "2.0"],
-  // Nissan
   "nissan|x-trail": ["1.6", "2.0", "2.5"],
   "ניסאן|x-trail": ["1.6", "2.0", "2.5"],
-  "nissan|qashqai": ["1.3", "1.6", "2.0"].filter((v) => v !== "1.3"),
+  "nissan|qashqai": ["1.6", "2.0"],
   "ניסאן|קשקאי": ["1.6", "2.0"],
   "nissan|juke": ["1.0", "1.6"],
   "ניסאן|ג'וק": ["1.0", "1.6"],
-  // Mitsubishi
-  "mitsubishi|outlander": ["2.0", "2.4"].filter((v) => v !== "2.4"),
+  "mitsubishi|outlander": ["2.0"],
   "מיצובישי|אאוטלנדר": ["2.0", "2.5"],
 };
 
@@ -211,8 +271,6 @@ function modelEngineKey(make: string, model: string): string {
 }
 
 const schema = z.object({
-  // `make` / `model` validated via the combobox component; zod still
-  // enforces non-empty so the form can flag them on submit.
   make: z.string().min(1, "חובה לבחור יצרן"),
   model: z.string().min(1, "חובה לבחור דגם"),
   year: z
@@ -241,8 +299,6 @@ const schema = z.object({
       z.literal(""),
     ])
     .optional(),
-  // Closed allowlist — values must match ENGINE_OPTIONS below.
-  // "" = not selected, "0.0" = electric sentinel (submitted as null).
   engine_volume: z.enum([
     "",
     "1.0",
@@ -285,7 +341,6 @@ const schema = z.object({
     .string()
     .optional()
     .refine((v) => !v || /^\d{4}-\d{2}-\d{2}$/.test(v), "תאריך לא תקין"),
-  // Combined hand+ownership encoded value, validated against HAND_OPTIONS.
   hand_combo: z
     .string()
     .optional()
@@ -294,9 +349,6 @@ const schema = z.object({
 
 type FormValues = z.infer<typeof schema>;
 
-// Coerce any incoming engine_volume (free-text from pre-allowlist rows) to
-// the closed set. Values outside the list fall back to "" so the form
-// resolver doesn't throw on legacy inventory rows.
 function normalizeEngineVolume(n: number | null | undefined): FormValues["engine_volume"] {
   if (n == null) return "";
   const s = String(n);
@@ -316,9 +368,6 @@ function toFormValues(v: InventoryInitial | null | undefined): FormValues {
     fuel_type: (v?.fuel_type ?? "") as FormValues["fuel_type"],
     engine_volume: normalizeEngineVolume(v?.engine_volume ?? null),
     notes: v?.notes ?? "",
-    // Default to b2b for new vehicles (mode === "create" sees v=null) so
-    // every new addition lands on the marketplace by default. Editing an
-    // existing row preserves whatever the dealer chose previously.
     visibility: (v?.visibility ?? "b2b") as Visibility,
     b2b_price: v?.b2b_price != null ? String(v.b2b_price) : "",
     b2c_price: v?.b2c_price != null ? String(v.b2c_price) : "",
@@ -357,6 +406,37 @@ type ImageLookupResult = {
   market_price: number | null;
 };
 
+const STEP_FIELDS = {
+  1: ["make", "model", "year", "mileage"] as const,
+  2: ["price", "b2b_price", "b2c_price", "purchase_cost", "notes"] as const,
+  3: ["warranty_until"] as const,
+} as const;
+
+type StepNum = 1 | 2 | 3;
+
+const STEPS: Array<{ num: StepNum; label: string }> = [
+  { num: 1, label: "רכב" },
+  { num: 2, label: "מחיר" },
+  { num: 3, label: "אחריות" },
+];
+
+const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+
+// ── Create-mode image queue constants ──────────────────────────────
+// Match VehicleImagesDialog so the same MIME/size policy applies on both
+// surfaces. The 10-image cap is enforced before submit; uploads happen
+// fire-and-forget after the vehicle is created.
+const QUEUE_MAX_IMAGES = 10;
+const QUEUE_MAX_BYTES = 10 * 1024 * 1024;
+const QUEUE_ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+]);
+const QUEUE_ALLOWED_EXT = /\.(jpe?g|png|webp|heic)$/i;
+
 export function InventoryFormDialog({
   open,
   onOpenChange,
@@ -373,6 +453,8 @@ export function InventoryFormDialog({
     reset,
     setValue,
     watch,
+    trigger,
+    getValues,
     formState: { errors, isSubmitting },
     setError: setFieldError,
   } = useForm<FormValues>({
@@ -382,8 +464,17 @@ export function InventoryFormDialog({
   });
 
   const watchMake = watch("make");
+  const watchedModel = watch("model");
+  const watchedYear = watch("year");
+  const watchedMileage = watch("mileage");
+  const watchedHandCombo = watch("hand_combo");
+  const watchedVisibility = watch("visibility");
+  const watchedFuel = watch("fuel_type");
 
-  // Track which fields were auto-filled (for highlight + describedby)
+  // ── Step state ─────────────────────────────────────────────────────
+  const [step, setStep] = useState<StepNum>(1);
+
+  // ── Autofill tracking ──────────────────────────────────────────────
   const [autofilledFields, setAutofilledFields] = useState<Set<string>>(new Set());
   const clearAutofill = useCallback((field: string) => {
     setAutofilledFields((prev) => {
@@ -394,21 +485,14 @@ export function InventoryFormDialog({
     });
   }, []);
 
-  // Disclosure panels — all can be open simultaneously (not tabs)
-  const [panelPlate, setPanelPlate] = useState(false);
-  const [panelImage, setPanelImage] = useState(false);
-
-  // Plate lookup
+  // ── Plate lookup ───────────────────────────────────────────────────
   const [plate, setPlate] = useState("");
   const [plateBusy, setPlateBusy] = useState(false);
   const [plateStatus, setPlateStatus] = useState<string>("");
   const [plateError, setPlateError] = useState<string>("");
-  // True when the plate input was populated by image OCR (not user typing).
-  // Drives an extra aria-describedby line so AT users hear "auto-detected,
-  // editable" when they focus the field.
   const [plateAutofilled, setPlateAutofilled] = useState(false);
 
-  // Image lookup
+  // ── Image lookup ───────────────────────────────────────────────────
   const imgInputRef = useRef<HTMLInputElement>(null);
   const imgGalleryRef = useRef<HTMLInputElement>(null);
   const [imgFile, setImgFile] = useState<File | null>(null);
@@ -416,54 +500,75 @@ export function InventoryFormDialog({
   const [imgStatus, setImgStatus] = useState<string>("");
   const [imgError, setImgError] = useState<string>("");
 
-  // Vehicle-registration scan (Claude Vision)
+  // ── Registration scan ─────────────────────────────────────────────
   const regInputRef = useRef<HTMLInputElement>(null);
-  // Inner-card ref — paired with useDialogScrollReset so a dealer
-  // reopening the form mid-fill never lands at the warranty fields
-  // (or wherever they last scrolled). Always reopens at the title.
-  const cardRef = useRef<HTMLDivElement>(null);
-  useDialogScrollReset(cardRef, open);
   const [regBusy, setRegBusy] = useState(false);
   const [regStatus, setRegStatus] = useState<string>("");
   const [regError, setRegError] = useState<string>("");
 
-  // Live-region for combobox revert announcements
+  // ── Live regions ──────────────────────────────────────────────────
   const [comboStatus, setComboStatus] = useState<string>("");
+  const [priceHintStatus, setPriceHintStatus] = useState<string>("");
+  const lastAnnouncedPrice = useRef<number | null>(null);
 
-  // TODO Phase 6: replace gov.il price with internal market price calculated
-  // from our own inventory data. Until then we display the ministry's
-  // new-car list price as a non-binding hint.
+  // ── Create-mode image queue ────────────────────────────────────────
+  // Drop zone in step 3 (create mode only) collects File[] locally.
+  // On submit success, each queued file is uploaded to the new vehicle
+  // fire-and-forget (non-fatal — dealer can re-add if any fail).
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [queueErrors, setQueueErrors] = useState<string[]>([]);
+
+  const handleQueuePick = useCallback(
+    (files: File[]) => {
+      const errs: string[] = [];
+      const ok: File[] = [];
+      const remaining = QUEUE_MAX_IMAGES - queuedFiles.length;
+      for (const f of files) {
+        if (!QUEUE_ALLOWED_MIME.has(f.type) && !QUEUE_ALLOWED_EXT.test(f.name)) {
+          errs.push(`${f.name}: סוג קובץ לא נתמך`);
+          continue;
+        }
+        if (f.size > QUEUE_MAX_BYTES) {
+          errs.push(`${f.name}: גדול מ-10MB`);
+          continue;
+        }
+        ok.push(f);
+      }
+      const capped = ok.slice(0, remaining);
+      if (ok.length > capped.length) {
+        errs.push(`ניתן להוסיף עוד ${remaining} תמונות בלבד`);
+      }
+      setQueueErrors(errs);
+      if (capped.length) setQueuedFiles((prev) => [...prev, ...capped]);
+    },
+    [queuedFiles.length],
+  );
+
+  const removeQueuedFile = useCallback((index: number) => {
+    setQueuedFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
+  // ── Market price hint + AI price estimate ─────────────────────────
   const [marketPriceHint, setMarketPriceHint] = useState<number | null>(null);
-  // Dynamic Claude-driven price estimate. Reflects make+model+year+
-  // mileage+hand+ownership_type. Replaces the static "new-car list"
-  // hint as the primary suggestion shown under "מחיר מבוקש".
   const [priceEstimate, setPriceEstimate] = useState<{
     price: number;
     confidence: "high" | "medium" | "low";
     breakdown: string;
   } | null>(null);
   const [priceEstimateBusy, setPriceEstimateBusy] = useState(false);
-  // Separate sr-only live region — announcement-only, NOT wired into
-  // aria-describedby. Keyed on value to force re-render of the status
-  // message when a new price arrives (SRs reliably re-announce then).
-  const [priceHintStatus, setPriceHintStatus] = useState<string>("");
-  // Dedupe across plate/image lookups AND the live effect: never announce
-  // the same price twice in a row.
-  const lastAnnouncedPrice = useRef<number | null>(null);
 
   const announcePrice = useCallback((price: number | null) => {
-    // Announce only on transition-to-number, and only if the value differs
-    // from the previously announced one. Never announce on transition-to-null.
     if (price == null || price <= 0) return;
     if (lastAnnouncedPrice.current === price) return;
     lastAnnouncedPrice.current = price;
     setPriceHintStatus(`מחיר מחירון חדש: ${price.toLocaleString("he-IL")} שקלים`);
   }, []);
 
-  // Reset when dialog opens for a different item
+  // ── Reset when dialog opens ───────────────────────────────────────
   useEffect(() => {
     if (open) {
       reset(toFormValues(initial));
+      setStep(1);
       setAutofilledFields(new Set());
       setPlate("");
       setPlateStatus("");
@@ -472,19 +577,19 @@ export function InventoryFormDialog({
       setImgFile(null);
       setImgStatus("");
       setImgError("");
+      setRegStatus("");
+      setRegError("");
       setComboStatus("");
       setMarketPriceHint(null);
+      setPriceEstimate(null);
       setPriceHintStatus("");
       lastAnnouncedPrice.current = null;
+      setQueuedFiles([]);
+      setQueueErrors([]);
     }
   }, [open, initial, reset]);
 
-  // Live market-price hint — debounced fetch whenever make+model+year
-  // are all valid. Clears synchronously on invalid input so stale hints
-  // never flash under the price field.
-  const watchedModel = watch("model");
-  const watchedYear = watch("year");
-
+  // ── Live market-price hint ────────────────────────────────────────
   useEffect(() => {
     if (!open) return;
     const yearNum = parseInt(String(watchedYear), 10);
@@ -524,13 +629,7 @@ export function InventoryFormDialog({
     return () => clearTimeout(timer);
   }, [open, watchMake, watchedModel, watchedYear, token, announcePrice]);
 
-  // Live AI price estimate — fires whenever any of the inputs that
-  // affect price (make+model+year+mileage+hand+ownership) settle for
-  // 1 second. Calls /api/v1/inventory/price-estimate which goes
-  // through Claude with deterministic fallback.
-  const watchedMileage = watch("mileage");
-  const watchedHandCombo = watch("hand_combo");
-
+  // ── Live AI price estimate ────────────────────────────────────────
   useEffect(() => {
     if (!open || !token) return;
     const yearNum = parseInt(String(watchedYear), 10);
@@ -588,6 +687,7 @@ export function InventoryFormDialog({
     return () => clearTimeout(timer);
   }, [open, token, watchMake, watchedModel, watchedYear, watchedMileage, watchedHandCombo]);
 
+  // ── Autofill apply ────────────────────────────────────────────────
   const applyAutoFill = useCallback(
     (
       patch: {
@@ -612,7 +712,6 @@ export function InventoryFormDialog({
           newlyFilled.push("model");
         }
       } else if (patch.model) {
-        // Model without make — still set, user can fix
         setValue("model", patch.model, { shouldValidate: true });
         newlyFilled.push("model");
       }
@@ -632,7 +731,6 @@ export function InventoryFormDialog({
 
       setAutofilledFields(new Set(newlyFilled));
 
-      // Announce via the single-status region
       const count = newlyFilled.length;
       setComboStatus(
         count > 0
@@ -672,7 +770,7 @@ export function InventoryFormDialog({
       const mp = res.market_price && res.market_price > 0 ? res.market_price : null;
       setMarketPriceHint(mp);
       announcePrice(mp);
-      setPlateStatus("הפרטים מולאו אוטומטית ✓");
+      setPlateStatus("הפרטים מולאו אוטומטית");
     } catch (e) {
       setPlateStatus("");
       setPlateError(e instanceof Error ? e.message : "שגיאה בחיפוש");
@@ -746,7 +844,6 @@ export function InventoryFormDialog({
       }
       if (data.engine_volume != null && data.engine_volume > 0) {
         const ev = String(data.engine_volume);
-        // Snap to closed list — the form schema only accepts ENGINE_OPTIONS values.
         const allowed = ENGINE_OPTIONS.map((o) => o.value);
         if (allowed.includes(ev)) {
           setValue("engine_volume", ev as FormValues["engine_volume"], {
@@ -756,9 +853,6 @@ export function InventoryFormDialog({
         }
       }
       if (data.ownership_type) {
-        // Map to the combined hand_combo dropdown. For private/dealer
-        // we'd need a hand integer too; without it, pick the most common
-        // (יד 1 — private/dealer). leasing/rental/government use no hand.
         const ownership = data.ownership_type;
         const fallbackHand = ownership === "private" || ownership === "dealer" ? 1 : null;
         const encoded = encodeHand(fallbackHand, ownership);
@@ -808,25 +902,13 @@ export function InventoryFormDialog({
         throw new Error(msg);
       }
       const data = (await res.json()) as ImageLookupResult;
-      // Plate OCR populates the existing plate input so the user can edit
-      // and re-search via the existing button. Track the OCR origin so the
-      // input announces "auto-detected, editable" on focus.
       const plateDigits = data.plate_number ? data.plate_number.replace(/\D/g, "") : "";
       const plateLooksValid = plateDigits.length >= 6 && plateDigits.length <= 9;
       if (data.plate_number && plateLooksValid) {
         setPlate(data.plate_number);
         setPlateAutofilled(true);
         setPlateError("");
-        // Auto-expand the plate panel so the dealer SEES the detected
-        // number even if they only opened the image panel. The disclosure
-        // flip is a direct, expected consequence of the upload they just
-        // initiated. Expand-only — do NOT steal focus (WCAG 3.2.2).
-        setPanelPlate(true);
       } else if (data.plate_number && !plateLooksValid) {
-        // Phase 6.8.2 — partial detection. Don't auto-fill; surface a
-        // clear alert telling the dealer to enter the plate manually so
-        // we don't silently feed gov.il a bad number and pollute the form.
-        setPanelPlate(true);
         setPlate("");
         setPlateAutofilled(false);
         setPlateError(
@@ -851,16 +933,10 @@ export function InventoryFormDialog({
         const mp = data.market_price && data.market_price > 0 ? data.market_price : null;
         setMarketPriceHint(mp);
         announcePrice(mp);
-        // Keep imgStatus generic — plate detection is announced via the
-        // sourceLabel that applyAutoFill writes to comboStatus, so we don't
-        // collide three live regions in the same tick.
-        setImgStatus("הרכב זוהה ✓");
+        setImgStatus("הרכב זוהה");
       } else if (data.plate_number) {
-        // Plate detected but no make/model — applyAutoFill didn't run, so
-        // announce the plate detection through the comboStatus region so AT
-        // users hear what happened.
         setComboStatus(`מספר רכב זוהה מהתמונה: ${data.plate_number} — אנא מלא את שאר הפרטים`);
-        setImgStatus("מספר רכב זוהה ✓");
+        setImgStatus("מספר רכב זוהה");
       } else {
         setImgStatus("");
         setImgError("לא הצלחנו לזהות את הרכב, אנא מלא ידנית");
@@ -873,6 +949,103 @@ export function InventoryFormDialog({
     }
   };
 
+  // ── Autosave to localStorage ───────────────────────────────────────
+  const draftKey = `inv-form-draft-${mode}-${initial?.id ?? "new"}`;
+  const [draftRestoreAvailable, setDraftRestoreAvailable] = useState<{ savedAt: number } | null>(
+    null,
+  );
+
+  // Check draft on open
+  useEffect(() => {
+    if (!open) return;
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) {
+        setDraftRestoreAvailable(null);
+        return;
+      }
+      const parsed = JSON.parse(raw) as { values: FormValues; savedAt: number };
+      const age = Date.now() - parsed.savedAt;
+      if (age > DRAFT_TTL_MS) {
+        localStorage.removeItem(draftKey);
+        setDraftRestoreAvailable(null);
+        return;
+      }
+      const hasContent = !!(
+        parsed.values.make ||
+        parsed.values.model ||
+        parsed.values.year ||
+        parsed.values.mileage ||
+        parsed.values.price
+      );
+      setDraftRestoreAvailable(hasContent ? { savedAt: parsed.savedAt } : null);
+      if (!hasContent) localStorage.removeItem(draftKey);
+    } catch {
+      setDraftRestoreAvailable(null);
+    }
+  }, [open, draftKey]);
+
+  // Debounced save (800ms after last field change)
+  const allValues = watch();
+  useEffect(() => {
+    if (!open) return;
+    const timer = setTimeout(() => {
+      try {
+        const hasContent = !!(
+          allValues.make ||
+          allValues.model ||
+          allValues.year ||
+          allValues.mileage ||
+          allValues.price
+        );
+        if (!hasContent) return;
+        localStorage.setItem(draftKey, JSON.stringify({ values: allValues, savedAt: Date.now() }));
+      } catch {
+        // localStorage full — silent
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [allValues, open, draftKey]);
+
+  const restoreDraft = () => {
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { values: FormValues };
+      reset(parsed.values);
+      setDraftRestoreAvailable(null);
+    } catch {
+      localStorage.removeItem(draftKey);
+      setDraftRestoreAvailable(null);
+    }
+  };
+
+  const discardDraft = () => {
+    localStorage.removeItem(draftKey);
+    setDraftRestoreAvailable(null);
+  };
+
+  const saveDraftAndClose = () => {
+    try {
+      localStorage.setItem(draftKey, JSON.stringify({ values: getValues(), savedAt: Date.now() }));
+    } catch {
+      // silent
+    }
+    onOpenChange(false);
+  };
+
+  // ── Step navigation ────────────────────────────────────────────────
+  const goNext = async () => {
+    const ok = await trigger([...STEP_FIELDS[step]] as (keyof FormValues)[]);
+    if (!ok) return;
+    setStep((s) => (s < 3 ? ((s + 1) as StepNum) : s));
+  };
+
+  const goPrev = () => {
+    setStep((s) => (s > 1 ? ((s - 1) as StepNum) : s));
+  };
+
+  // ── Submit ─────────────────────────────────────────────────────────
   const submit = handleSubmit(async (values) => {
     const handDecoded = decodeHand(values.hand_combo ?? "");
     const payload: InventoryPayload = {
@@ -884,7 +1057,6 @@ export function InventoryFormDialog({
       color: values.color ? values.color : null,
       transmission: values.transmission === "" ? null : (values.transmission ?? null),
       fuel_type: values.fuel_type === "" ? null : (values.fuel_type ?? null),
-      // "" = not selected, "0.0" = electric sentinel → both submit as null
       engine_volume:
         values.engine_volume && values.engine_volume !== "0.0"
           ? parseFloat(values.engine_volume)
@@ -907,23 +1079,37 @@ export function InventoryFormDialog({
     };
     try {
       const created = await onSubmit(payload);
-      // Close immediately (a11y-lead req: don't keep the dialog open during
-      // background uploads). Then fire-and-forget the ID-photo attach so the
-      // image used for AI identification becomes the new vehicle's primary.
+      // Clear the autosaved draft on success.
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {
+        // silent
+      }
       const fileToAttach = mode === "create" ? imgFile : null;
       const newId = mode === "create" && created ? created.id : null;
+      const queuedToAttach = mode === "create" ? queuedFiles : [];
       onOpenChange(false);
       reset(toFormValues(null));
-      if (newId && fileToAttach && token) {
-        const form = new FormData();
-        form.append("file", fileToAttach);
-        void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/inventory/${newId}/images`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
-        }).catch(() => {
-          // Non-fatal — vehicle exists, dealer can upload images later.
-        });
+      if (newId && token) {
+        // Fire-and-forget uploads. AI identification photo first (so it
+        // becomes position 1), then any queued gallery files in order.
+        // Non-fatal failures — vehicle exists, dealer can re-upload.
+        const uploadOne = (file: File) => {
+          const form = new FormData();
+          form.append("file", file);
+          return fetch(
+            `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/inventory/${newId}/images`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              body: form,
+            },
+          ).catch(() => {
+            // Silent — non-fatal
+          });
+        };
+        if (fileToAttach) void uploadOne(fileToAttach);
+        for (const f of queuedToAttach) void uploadOne(f);
       }
     } catch (e) {
       setFieldError("root", {
@@ -933,762 +1119,1141 @@ export function InventoryFormDialog({
   });
 
   const title = mode === "create" ? "הוספת רכב" : "עריכת רכב";
+  const draftRel = draftRestoreAvailable
+    ? formatRelativeTime(new Date(draftRestoreAvailable.savedAt).toISOString())
+    : null;
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          className="bg-brand-navy/40 fixed inset-0 z-40 motion-reduce:transition-none"
-          aria-hidden="true"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        dir="rtl"
+        aria-describedby="inv-form-desc"
+        className="max-h-[90dvh] max-w-2xl overflow-y-auto"
+      >
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription id="inv-form-desc">
+            שדות חובה מסומנים{" "}
+            <span aria-hidden="true" className="text-danger-fg">
+              *
+            </span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <Stepper
+          step={step}
+          onJump={(s) => {
+            if (s < step) setStep(s);
+          }}
         />
-        <Dialog.Content
-          aria-describedby="inventory-form-desc"
-          dir="rtl"
-          className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
-        >
-          <div
-            ref={cardRef}
-            className="bg-brand-cream relative max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-4 shadow-xl sm:max-h-[90vh] sm:p-6"
+
+        {/* sr-only live regions for combo/price announcements */}
+        {comboStatus ? (
+          <p role="status" aria-live="polite" className="sr-only" key={comboStatus}>
+            {comboStatus}
+          </p>
+        ) : null}
+        {priceHintStatus ? (
+          <p
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="sr-only"
+            key={priceHintStatus}
           >
-            <DialogCloseButton />
-            <Dialog.Title className="text-brand-navy pe-12 text-lg font-bold">{title}</Dialog.Title>
-            <Dialog.Description id="inventory-form-desc" className="text-brand-ink/70 mt-1 text-sm">
-              שדות המסומנים ב־<span aria-hidden="true">*</span>
-              <span className="sr-only">כוכבית</span> הם שדות חובה.
-            </Dialog.Description>
+            {priceHintStatus}
+          </p>
+        ) : null}
 
-            {/* Single live region for combobox/auto-fill announcements */}
-            {comboStatus ? (
-              <p role="status" aria-live="polite" className="sr-only" key={comboStatus}>
-                {comboStatus}
-              </p>
-            ) : null}
-
-            {/* Dedicated live region for the market-price hint. Separate from
-                comboStatus so blur-revert announcements don't clobber price
-                notifications (and vice versa). Announcement-only — NOT wired
-                into any aria-describedby. */}
-            {priceHintStatus ? (
-              <p
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                className="sr-only"
-                key={priceHintStatus}
-              >
-                {priceHintStatus}
-              </p>
-            ) : null}
-
-            {errors.root?.message ? (
-              <div
-                role="alert"
-                className="bg-danger-bg text-danger-text mt-4 rounded-md px-4 py-3 text-sm"
-              >
-                {errors.root.message}
-              </div>
-            ) : null}
-
-            {/* ==========================================================
-                Auto-fill bar (3 always-visible disclosures)
-                ========================================================== */}
-            <section
-              aria-labelledby="autofill-heading"
-              className="border-brand-navy/15 mt-5 rounded-lg border bg-white p-4"
-            >
-              <h3 id="autofill-heading" className="text-brand-navy text-sm font-semibold">
-                מלא פרטים אוטומטית
-              </h3>
-
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPanelPlate((v) => !v)}
-                  aria-expanded={panelPlate}
-                  aria-controls="panel-plate"
-                  className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  <span aria-hidden="true">📋</span>
-                  לפי מספר רכב
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPanelImage((v) => !v)}
-                  aria-expanded={panelImage}
-                  aria-controls="panel-image"
-                  className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  <span aria-hidden="true">📷</span>
-                  זהה מתמונה
-                </button>
-                <span className="text-brand-ink/60 inline-flex min-h-11 items-center gap-2 rounded-md px-3 py-2 text-sm">
-                  <span aria-hidden="true">✏️</span>
-                  או מלא ידנית למטה
+        {/* Draft restore */}
+        {draftRestoreAvailable && draftRel ? (
+          <Alert className="mt-md">
+            <FileText aria-hidden="true" />
+            <AlertDescription>
+              <div className="gap-md flex flex-wrap items-center justify-between">
+                <span>
+                  טיוטה שמורה מ-<span className="font-tabular">{draftRel.visual}</span>
                 </span>
+                <div className="gap-xs flex">
+                  <Button type="button" size="sm" variant="outline" onClick={discardDraft}>
+                    מחק
+                  </Button>
+                  <Button type="button" size="sm" onClick={restoreDraft}>
+                    שחזר
+                  </Button>
+                </div>
               </div>
+            </AlertDescription>
+          </Alert>
+        ) : null}
 
-              {/* Plate lookup panel */}
-              {panelPlate ? (
-                <div
-                  id="panel-plate"
-                  role="region"
-                  aria-labelledby="autofill-heading"
-                  className="border-brand-navy/10 mt-4 border-t pt-4"
-                >
-                  <label
-                    htmlFor="plate-lookup-input"
-                    className="text-brand-navy block text-sm font-medium"
-                  >
-                    מספר רכב
-                  </label>
-                  <p id="plate-lookup-hint" className="text-brand-navy/70 mt-1 text-xs">
-                    7 או 8 ספרות, עם או בלי מקפים
-                  </p>
-                  <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-                    <input
-                      id="plate-lookup-input"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      value={plate}
-                      onChange={(e) => {
-                        setPlate(e.target.value);
-                        // User typed → no longer "auto-detected from image".
-                        if (plateAutofilled) setPlateAutofilled(false);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void runPlateLookup();
-                        }
-                      }}
-                      aria-describedby={
-                        plateAutofilled
-                          ? "plate-lookup-hint plate-lookup-source"
-                          : "plate-lookup-hint"
-                      }
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    />
-                    {plateAutofilled ? (
-                      <span id="plate-lookup-source" className="sr-only">
-                        זוהה אוטומטית מהתמונה — ניתן לערוך
-                      </span>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => void runPlateLookup()}
-                      disabled={plateBusy}
-                      aria-busy={plateBusy || undefined}
-                      aria-label={plateBusy ? "מחפש לפי מספר רכב" : "חפש לפי מספר רכב"}
-                      className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                    >
-                      {plateBusy ? "מחפש…" : "חפש לפי מספר רכב"}
-                    </button>
-                  </div>
-                  {plateStatus ? (
-                    <p role="status" aria-live="polite" className="text-ok-text mt-2 text-sm">
-                      {plateStatus}
-                    </p>
-                  ) : null}
-                  {plateError ? (
-                    <p role="alert" className="text-danger-text mt-2 text-sm">
-                      {plateError}
-                    </p>
-                  ) : null}
-                </div>
+        {errors.root?.message ? (
+          <Alert variant="destructive" className="mt-md">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{errors.root.message}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <form onSubmit={submit} noValidate className="mt-lg">
+          {step === 1 ? (
+            <Step1
+              register={register}
+              setValue={setValue}
+              watch={watch}
+              errors={errors}
+              clearAutofill={clearAutofill}
+              autofilledFields={autofilledFields}
+              watchMake={watchMake}
+              watchedFuel={watchedFuel}
+              plate={plate}
+              setPlate={setPlate}
+              plateBusy={plateBusy}
+              plateStatus={plateStatus}
+              plateError={plateError}
+              plateAutofilled={plateAutofilled}
+              setPlateAutofilled={setPlateAutofilled}
+              runPlateLookup={runPlateLookup}
+              imgInputRef={imgInputRef}
+              imgGalleryRef={imgGalleryRef}
+              imgFile={imgFile}
+              setImgFile={setImgFile}
+              imgBusy={imgBusy}
+              imgStatus={imgStatus}
+              imgError={imgError}
+              runImageLookup={runImageLookup}
+              regInputRef={regInputRef}
+              regBusy={regBusy}
+              regStatus={regStatus}
+              regError={regError}
+              runRegistrationScan={runRegistrationScan}
+              setComboStatus={setComboStatus}
+            />
+          ) : null}
+
+          {step === 2 ? (
+            <Step2
+              register={register}
+              errors={errors}
+              watchedVisibility={watchedVisibility}
+              priceEstimateBusy={priceEstimateBusy}
+              priceEstimate={priceEstimate}
+              marketPriceHint={marketPriceHint}
+            />
+          ) : null}
+
+          {step === 3 ? (
+            <Step3
+              register={register}
+              setValue={setValue}
+              watch={watch}
+              errors={errors}
+              mode={mode}
+              initialId={initial?.id}
+              imageCount={imageCount}
+              onManageImages={onManageImages}
+              queuedFiles={queuedFiles}
+              onQueuePick={handleQueuePick}
+              onQueueRemove={removeQueuedFile}
+              queueErrors={queueErrors}
+            />
+          ) : null}
+
+          {/* Footer */}
+          <div className="border-hairline mt-2xl pt-lg gap-md flex flex-col-reverse border-t sm:flex-row sm:items-center sm:justify-between">
+            <div className="gap-xs flex flex-col-reverse sm:flex-row">
+              {step > 1 ? (
+                <Button type="button" variant="outline" onClick={goPrev} disabled={isSubmitting}>
+                  הקודם
+                </Button>
               ) : null}
-
-              {/* Image recognition panel */}
-              {panelImage ? (
-                <div
-                  id="panel-image"
-                  role="region"
-                  aria-labelledby="autofill-heading"
-                  className="border-brand-navy/10 mt-4 border-t pt-4"
-                >
-                  {/* Two hidden inputs — one forces camera (capture=environment),
-                   *  the other lets the OS picker show gallery + files. iOS
-                   *  Safari requires this split because `capture` overrides
-                   *  the picker UX completely. */}
-                  <input
-                    ref={imgInputRef}
-                    id="img-camera-input"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/heic"
-                    capture="environment"
-                    className="sr-only"
-                    aria-label="צילום תמונת רכב במצלמה"
-                    onChange={(e) => setImgFile(e.target.files?.[0] ?? null)}
-                  />
-                  <input
-                    ref={imgGalleryRef}
-                    id="img-gallery-input"
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp,image/heic"
-                    className="sr-only"
-                    aria-label="בחירת תמונת רכב מהגלריה"
-                    onChange={(e) => setImgFile(e.target.files?.[0] ?? null)}
-                  />
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <button
-                      type="button"
-                      onClick={() => imgInputRef.current?.click()}
-                      className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                    >
-                      <span aria-hidden="true">📷</span>
-                      צלם תמונה
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => imgGalleryRef.current?.click()}
-                      className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                    >
-                      <span aria-hidden="true">🖼️</span>
-                      בחר מהגלריה
-                    </button>
-                  </div>
-                  {imgFile ? (
-                    <p
-                      role="status"
-                      aria-live="polite"
-                      className="text-brand-ink/70 mt-2 text-xs"
-                      key={imgFile.name}
-                    >
-                      נבחר: {imgFile.name}
-                    </p>
-                  ) : null}
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      onClick={() => void runImageLookup()}
-                      disabled={!imgFile || imgBusy}
-                      aria-busy={imgBusy || undefined}
-                      className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                    >
-                      {imgBusy ? "מזהה…" : "זהה רכב מתמונה"}
-                    </button>
-                  </div>
-                  {imgStatus ? (
-                    <p role="status" aria-live="polite" className="text-ok-text mt-2 text-sm">
-                      {imgStatus}
-                    </p>
-                  ) : null}
-                  {imgError ? (
-                    <p role="alert" className="text-danger-text mt-2 text-sm">
-                      {imgError}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-
-            {/* ==========================================================
-                Vehicle registration scanner — Claude Vision auto-fills
-                make/model/year/engine_volume/fuel/color/ownership from
-                a photo of the registration document (רישיון רכב).
-                ========================================================== */}
-            <section
-              aria-labelledby="reg-scan-heading"
-              className="border-brand-gold/40 bg-brand-cream/60 mt-5 rounded-lg border p-4"
-            >
-              <h3
-                id="reg-scan-heading"
-                className="text-brand-navy flex items-center gap-2 text-sm font-bold"
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={saveDraftAndClose}
+                disabled={isSubmitting}
               >
-                <span aria-hidden="true" className="text-brand-gold">
-                  ✦
-                </span>
-                סריקת רישיון רכב — מילוי אוטומטי
-              </h3>
-              <p className="text-brand-ink/70 mt-1 text-xs">
-                צלם או העלה תמונה של רישיון הרכב — Claude AI יחלץ אוטומטית את כל הפרטים.
-              </p>
-              <input
-                ref={regInputRef}
-                type="file"
-                accept="image/*,application/pdf"
-                className="sr-only"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void runRegistrationScan(file);
-                  e.target.value = "";
-                }}
-              />
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => regInputRef.current?.click()}
-                  disabled={regBusy}
-                  aria-busy={regBusy || undefined}
-                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                >
-                  <span aria-hidden="true">📋</span>
-                  {regBusy ? "סורק…" : "סרוק רישיון רכב"}
-                </button>
-              </div>
-              {regStatus ? (
-                <p
-                  role="status"
-                  aria-live="polite"
-                  className="text-brand-ink/75 mt-2 text-xs"
-                  key={regStatus}
-                >
-                  {regStatus}
-                </p>
-              ) : null}
-              {regError ? (
-                <p
-                  role="alert"
-                  className="bg-danger-bg text-danger-text mt-2 rounded-md px-3 py-2 text-xs"
-                >
-                  {regError}
-                </p>
-              ) : null}
-            </section>
-
-            {/* ==========================================================
-                Main form
-                ========================================================== */}
-            <form onSubmit={submit} noValidate className="mt-5 space-y-5">
-              <div className="grid gap-5 sm:grid-cols-2">
-                <SearchableSelect
-                  id="inv-make"
-                  label="יצרן"
-                  value={watch("make")}
-                  onChange={(v) => {
-                    setValue("make", v, { shouldValidate: true });
-                    // Reset model when make changes
-                    setValue("model", "", { shouldValidate: true });
-                    clearAutofill("make");
-                    clearAutofill("model");
-                  }}
-                  options={CAR_MAKES}
-                  placeholder="בחר יצרן…"
-                  required
-                  autofilled={autofilledFields.has("make")}
-                  error={errors.make?.message}
-                  onBlurInvalid={() => setComboStatus("נא בחר יצרן מהרשימה — הוחזר לערך הקודם")}
-                />
-                <SearchableSelect
-                  id="inv-model"
-                  label="דגם"
-                  value={watch("model")}
-                  onChange={(v) => {
-                    setValue("model", v, { shouldValidate: true });
-                    clearAutofill("model");
-                  }}
-                  options={getModelsForMake(watchMake)}
-                  placeholder="בחר דגם…"
-                  required
-                  disabled={!watchMake}
-                  disabledHint="בחר יצרן תחילה"
-                  autofilled={autofilledFields.has("model")}
-                  error={errors.model?.message}
-                  onBlurInvalid={() => setComboStatus("נא בחר דגם מהרשימה — הוחזר לערך הקודם")}
-                />
-                <HighlightedField
-                  id="inv-year"
-                  label="שנה"
-                  required
-                  hint="ארבע ספרות"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  maxLength={4}
-                  registration={register("year", {
-                    onChange: () => clearAutofill("year"),
-                  })}
-                  error={errors.year?.message}
-                  autofilled={autofilledFields.has("year")}
-                />
-                <SelectField
-                  id="inv-hand"
-                  label="יד / סוג בעלות"
-                  error={errors.hand_combo?.message}
-                  registration={register("hand_combo")}
-                  options={HAND_OPTIONS}
-                />
-                <HighlightedField
-                  id="inv-mileage"
-                  label="קילומטראז׳"
-                  required
-                  inputMode="numeric"
-                  autoComplete="off"
-                  registration={register("mileage", {
-                    onChange: () => clearAutofill("mileage"),
-                  })}
-                  error={errors.mileage?.message}
-                />
-                <HighlightedField
-                  id="inv-price"
-                  label="מחיר מבוקש ₪"
-                  required
-                  inputMode="numeric"
-                  autoComplete="off"
-                  registration={register("price")}
-                  error={errors.price?.message}
-                  hint={
-                    priceEstimateBusy ? (
-                      <>
-                        <span aria-hidden="true">⏳ </span>
-                        מחשב הערכת מחיר שוק…
-                      </>
-                    ) : priceEstimate ? (
-                      <>
-                        <span aria-hidden="true" className="text-brand-gold">
-                          ✦{" "}
-                        </span>
-                        <span className="text-brand-navy font-semibold">
-                          מחיר שוק משוער: ₪{priceEstimate.price.toLocaleString("he-IL")}
-                        </span>
-                        <span className="text-brand-ink/60">
-                          {" "}
-                          —{" "}
-                          {
-                            {
-                              high: "ביטחון גבוה",
-                              medium: "ביטחון בינוני",
-                              low: "ביטחון נמוך",
-                            }[priceEstimate.confidence]
-                          }
-                        </span>
-                        <br />
-                        <span className="text-brand-ink/65 text-[11px]">
-                          {priceEstimate.breakdown}
-                        </span>
-                      </>
-                    ) : marketPriceHint ? (
-                      <>
-                        <span aria-hidden="true">💡 </span>
-                        {`מחיר מחירון רכב חדש: ₪${marketPriceHint.toLocaleString("he-IL")} (לצורך השוואה בלבד)`}
-                      </>
-                    ) : undefined
-                  }
-                />
-                {/* Phase 6.5 — purchase_cost. Optional. Used by /sell and
-                 *  the dealer's KPI dashboard to compute profit. */}
-                <HighlightedField
-                  id="inv-purchase-cost"
-                  label="עלות קנייה ₪ (אופציונלי)"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  registration={register("purchase_cost")}
-                  error={errors.purchase_cost?.message}
-                  hint={
-                    <span className="text-brand-ink/70">לצורך חישוב רווח אוטומטי בעת המכירה</span>
-                  }
-                />
-                <HighlightedField
-                  id="inv-color"
-                  label="צבע"
-                  autoComplete="off"
-                  registration={register("color", {
-                    onChange: () => clearAutofill("color"),
-                  })}
-                  error={errors.color?.message}
-                  autofilled={autofilledFields.has("color")}
-                />
-
-                <SelectField
-                  id="inv-transmission"
-                  label="תיבת הילוכים"
-                  error={errors.transmission?.message}
-                  registration={register("transmission")}
-                  options={[
-                    { value: "", label: "בחירה…" },
-                    { value: "automatic", label: "אוטומט" },
-                    { value: "manual", label: "ידני" },
-                  ]}
-                />
-
-                <SelectField
-                  id="inv-fuel"
-                  label="סוג דלק"
-                  error={errors.fuel_type?.message}
-                  registration={register("fuel_type", {
-                    onChange: () => clearAutofill("fuel_type"),
-                  })}
-                  autofilled={autofilledFields.has("fuel_type")}
-                  options={[
-                    { value: "", label: "בחירה…" },
-                    { value: "petrol", label: "בנזין" },
-                    { value: "diesel", label: "דיזל" },
-                    { value: "electric", label: "חשמלי" },
-                    { value: "hybrid", label: "היברידי" },
-                  ]}
-                />
-
-                {watch("fuel_type") === "electric" ? (
-                  // Electric vehicles have no engine displacement —
-                  // show a static read-only line instead of the
-                  // dropdown so dealers can't accidentally pick a
-                  // value that the backend would then reject.
-                  <div>
-                    <span className="text-brand-navy block text-sm font-medium">נפח מנוע</span>
-                    <p className="border-brand-navy/15 bg-brand-navy/5 text-brand-ink/70 mt-1 inline-flex h-11 w-full items-center rounded-md border px-3 text-sm">
-                      חשמלי (ללא מנוע)
-                    </p>
-                  </div>
-                ) : (
-                  <SelectField
-                    id="inv-engine"
-                    label="נפח מנוע (ליטרים)"
-                    error={errors.engine_volume?.message}
-                    registration={register("engine_volume")}
-                    // When the chosen make+model has a known engine list
-                    // we narrow the options to just those — easier for
-                    // dealers, fewer accidental picks. Unknown models fall
-                    // back to the full ENGINE_OPTIONS list.
-                    options={(() => {
-                      const m = String(watch("make") ?? "");
-                      const mo = String(watch("model") ?? "");
-                      if (!m || !mo) return ENGINE_OPTIONS;
-                      const allowed = MODEL_ENGINE_MAP[modelEngineKey(m, mo)];
-                      if (!allowed) return ENGINE_OPTIONS;
-                      const allowedSet = new Set(allowed);
-                      return ENGINE_OPTIONS.filter(
-                        (o) => o.value === "" || allowedSet.has(o.value),
-                      );
-                    })()}
-                  />
-                )}
-              </div>
-
-              <div>
-                <label htmlFor="inv-notes" className="text-brand-navy block text-sm font-medium">
-                  הערות
-                </label>
-                <p id="inv-notes-hint" className="text-brand-navy/70 mt-1 text-xs">
-                  עד 2000 תווים. ההערות אינן מופיעות לצרכנים.
-                </p>
-                <textarea
-                  id="inv-notes"
-                  rows={4}
-                  maxLength={2000}
-                  aria-describedby={
-                    errors.notes?.message ? "inv-notes-hint inv-notes-error" : "inv-notes-hint"
-                  }
-                  aria-invalid={errors.notes?.message ? true : undefined}
-                  {...register("notes")}
-                  className={[
-                    "text-brand-ink mt-2 block w-full rounded-md border px-3 py-2 text-base",
-                    "focus-visible:outline-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2",
-                    errors.notes
-                      ? "border-danger-text bg-danger-bg"
-                      : "border-brand-navy/20 bg-white",
-                  ].join(" ")}
-                />
-                {errors.notes?.message ? (
-                  <p id="inv-notes-error" className="text-danger-text mt-1 text-sm">
-                    {errors.notes.message}
-                  </p>
-                ) : null}
-              </div>
-
-              {/* Phase 4.3 — visibility selector */}
-              <fieldset className="border-brand-navy/15 rounded-lg border bg-white p-4">
-                <legend className="text-brand-navy px-2 text-sm font-semibold">חשיפת הרכב</legend>
-                <div className="mt-2 space-y-2">
-                  {/* Phase 6.8.3 — B2C and "both" are locked behind a
-                   *  "בקרוב" tooltip until the B2C marketplace launches. */}
-                  {(
-                    [
-                      ["private", "פרטי — רק אני רואה", false],
-                      ["b2b", "B2B — סוחרים בלבד", false],
-                      ["b2c", "B2C — לקוחות בלבד", true],
-                      ["both", "שניהם — סוחרים + לקוחות", true],
-                    ] as const
-                  ).map(([v, label, locked]) => (
-                    <label
-                      key={v}
-                      title={locked ? "בקרוב — שוק B2C עדיין לא פתוח" : undefined}
-                      className={[
-                        "flex min-h-11 items-center gap-2 rounded-md border bg-white px-3 py-2",
-                        locked
-                          ? "border-brand-navy/10 cursor-not-allowed opacity-50"
-                          : "border-brand-navy/20 hover:bg-brand-navy/5 cursor-pointer",
-                      ].join(" ")}
-                    >
-                      <input
-                        type="radio"
-                        value={v}
-                        disabled={locked}
-                        aria-describedby={locked ? `vis-${v}-soon` : undefined}
-                        {...register("visibility")}
-                        className="accent-brand-navy"
-                      />
-                      <span className="text-brand-navy text-sm font-medium">{label}</span>
-                      {locked ? (
-                        <span
-                          id={`vis-${v}-soon`}
-                          className="bg-brand-navy/10 text-brand-navy/70 ms-auto rounded-full px-2 py-0.5 text-xs font-semibold"
-                        >
-                          בקרוב
-                        </span>
-                      ) : null}
-                    </label>
-                  ))}
-                </div>
-
-                {watch("visibility") === "b2b" || watch("visibility") === "both" ? (
-                  <div className="mt-4">
-                    <label
-                      htmlFor="inv-b2b-price"
-                      className="text-brand-navy block text-sm font-medium"
-                    >
-                      מחיר B2B ₪ (אופציונלי)
-                    </label>
-                    <p id="inv-b2b-price-hint" className="text-brand-navy/70 mt-1 text-xs">
-                      אם לא הוזן — יוצג המחיר המבוקש הרגיל
-                    </p>
-                    <input
-                      id="inv-b2b-price"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      {...register("b2b_price")}
-                      aria-describedby="inv-b2b-price-hint"
-                      aria-invalid={errors.b2b_price?.message ? true : undefined}
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    />
-                    {errors.b2b_price?.message ? (
-                      <p className="text-danger-text mt-1 text-sm">{errors.b2b_price.message}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {watch("visibility") === "b2c" || watch("visibility") === "both" ? (
-                  <div className="mt-4">
-                    <label
-                      htmlFor="inv-b2c-price"
-                      className="text-brand-navy block text-sm font-medium"
-                    >
-                      מחיר קמעונאי ₪ (אופציונלי)
-                    </label>
-                    <p id="inv-b2c-price-hint" className="text-brand-navy/70 mt-1 text-xs">
-                      המחיר המוצג ללקוחות הקצה
-                    </p>
-                    <input
-                      id="inv-b2c-price"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="off"
-                      {...register("b2c_price")}
-                      aria-describedby="inv-b2c-price-hint"
-                      aria-invalid={errors.b2c_price?.message ? true : undefined}
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    />
-                    {errors.b2c_price?.message ? (
-                      <p className="text-danger-text mt-1 text-sm">{errors.b2c_price.message}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </fieldset>
-
-              {/* Phase 6.5 — Warranty (separate optional section, NOT a
-               *  panel under "מלא פרטים אוטומטית") */}
-              <section
-                aria-labelledby="warranty-heading"
-                className="border-brand-navy/15 mt-2 rounded-lg border bg-white p-4"
+                שמור טיוטה
+              </Button>
+            </div>
+            <div className="gap-xs flex flex-col-reverse sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
               >
-                <h3 id="warranty-heading" className="text-brand-navy text-sm font-semibold">
-                  פרטי אחריות (אופציונלי)
-                </h3>
-                <p className="text-brand-ink/70 mt-1 text-xs">
-                  מלא רק אם יש לרכב אחריות בתוקף — יוצג לקונים בשוק
-                </p>
-                <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <SelectField
-                    id="inv-warranty-type"
-                    label="סוג אחריות"
-                    registration={register("warranty_type")}
-                    options={[
-                      { value: "", label: "בחר סוג אחריות..." },
-                      { value: "manufacturer", label: "אחריות יצרן" },
-                      { value: "dealer", label: "אחריות סוחר" },
-                      { value: "extended", label: "אחריות מורחבת" },
-                      { value: "none", label: "ללא אחריות" },
-                    ]}
-                    error={errors.warranty_type?.message}
-                  />
-                  <div>
-                    <label
-                      htmlFor="inv-warranty-until"
-                      className="text-brand-navy block text-sm font-medium"
-                    >
-                      תוקף האחריות
-                    </label>
-                    <input
-                      id="inv-warranty-until"
-                      type="date"
-                      dir="ltr"
-                      {...register("warranty_until")}
-                      aria-invalid={errors.warranty_until?.message ? true : undefined}
-                      aria-describedby="inv-warranty-until-hint"
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    />
-                    <p id="inv-warranty-until-hint" className="text-brand-ink/70 mt-1 text-xs">
-                      התאריך עד אליו האחריות בתוקף
-                    </p>
-                    {errors.warranty_until?.message ? (
-                      <p className="text-danger-text mt-1 text-sm">
-                        {errors.warranty_until.message}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-              </section>
-
-              {/* Images link-button */}
-              <div className="border-brand-navy/10 rounded-lg border bg-white p-4">
-                <p className="text-brand-navy text-sm font-semibold">תמונות הרכב</p>
-                {mode === "create" || !initial?.id ? (
-                  <p className="text-brand-ink/70 mt-1 text-sm">
-                    תמונות יהיו זמינות לאחר שמירת הרכב.
-                  </p>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (initial?.id && onManageImages) onManageImages(initial.id);
-                    }}
-                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy mt-2 inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                  >
-                    ניהול תמונות{imageCount != null ? ` (${imageCount})` : ""}
-                  </button>
-                )}
-              </div>
-
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Dialog.Close asChild>
-                  <button
-                    type="button"
-                    disabled={isSubmitting}
-                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                  >
-                    ביטול
-                  </button>
-                </Dialog.Close>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  aria-busy={isSubmitting || undefined}
-                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                >
-                  {isSubmitting ? "שומר…" : mode === "create" ? "הוסף רכב" : "שמור שינויים"}
-                </button>
-              </div>
-            </form>
+                ביטול
+              </Button>
+              {step < 3 ? (
+                <Button type="button" onClick={() => void goNext()} disabled={isSubmitting}>
+                  הבא
+                </Button>
+              ) : (
+                <Button type="submit" disabled={isSubmitting} aria-busy={isSubmitting || undefined}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 aria-hidden="true" className="animate-spin" />
+                      <span>שומר…</span>
+                    </>
+                  ) : mode === "create" ? (
+                    "הוסף רכב"
+                  ) : (
+                    "שמור שינויים"
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
-/* -------------------------------------------------------------------
- * Local form helpers — thin wrappers that add auto-fill highlight +
- * describedby. Separated to keep the main component readable.
- * ----------------------------------------------------------------- */
+// ============================================================================
+// Stepper — 3-circle indicator with accent connectors for completed segments.
+// Clickable BACK only; forward gating goes through the goNext() validator.
+// ============================================================================
+
+function Stepper({ step, onJump }: { step: StepNum; onJump: (s: StepNum) => void }) {
+  return (
+    <ol className="mt-md flex items-start gap-0" aria-label="שלבי הטופס">
+      {STEPS.map((s, i) => {
+        const isCompleted = s.num < step;
+        const isActive = s.num === step;
+        const canJump = s.num < step;
+        const label =
+          `שלב ${s.num} מתוך 3 — ${s.label}` +
+          (isCompleted ? " (הושלם)" : isActive ? " (נוכחי)" : " (ממתין)");
+        return (
+          <Fragment key={s.num}>
+            <li className="flex flex-col items-center">
+              <button
+                type="button"
+                onClick={() => canJump && onJump(s.num)}
+                disabled={!canJump}
+                aria-current={isActive ? "step" : undefined}
+                aria-label={label}
+                className={[
+                  "inline-flex h-8 w-8 items-center justify-center rounded-full border-2 text-sm",
+                  "duration-fast transition-colors motion-reduce:transition-none",
+                  "focus-visible:outline-accent focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+                  isCompleted ? "bg-accent text-accent-ink border-accent cursor-pointer" : "",
+                  isActive ? "border-ink bg-paper text-ink font-medium" : "",
+                  !isCompleted && !isActive ? "border-hairline bg-paper text-subtle" : "",
+                  !canJump && !isActive ? "cursor-default" : "",
+                ].join(" ")}
+              >
+                {isCompleted ? (
+                  <Check className="h-4 w-4" aria-hidden />
+                ) : (
+                  <span className="font-tabular">{s.num}</span>
+                )}
+              </button>
+              <span
+                className={[
+                  "mt-xs text-xs font-medium",
+                  isActive ? "text-ink" : isCompleted ? "text-muted" : "text-subtle",
+                ].join(" ")}
+              >
+                {s.label}
+              </span>
+            </li>
+            {i < STEPS.length - 1 ? (
+              <li aria-hidden="true" className="mt-4 flex-1">
+                <span
+                  className={[
+                    "duration-fast block h-px w-full transition-colors",
+                    isCompleted ? "bg-accent" : "bg-hairline",
+                  ].join(" ")}
+                />
+              </li>
+            ) : null}
+          </Fragment>
+        );
+      })}
+    </ol>
+  );
+}
+
+// ============================================================================
+// Step 1 — Vehicle identity. Three auto-fill paths consolidated into a
+// shadcn Tabs row (collapsed by default, each tab expands its panel inline)
+// followed by the manual entry grid.
+// ============================================================================
+
+type Step1Props = {
+  register: ReturnType<typeof useForm<FormValues>>["register"];
+  setValue: ReturnType<typeof useForm<FormValues>>["setValue"];
+  watch: ReturnType<typeof useForm<FormValues>>["watch"];
+  errors: ReturnType<typeof useForm<FormValues>>["formState"]["errors"];
+  clearAutofill: (field: string) => void;
+  autofilledFields: Set<string>;
+  watchMake: string;
+  watchedFuel: FormValues["fuel_type"];
+  plate: string;
+  setPlate: (v: string) => void;
+  plateBusy: boolean;
+  plateStatus: string;
+  plateError: string;
+  plateAutofilled: boolean;
+  setPlateAutofilled: (v: boolean) => void;
+  runPlateLookup: () => Promise<void>;
+  // `RefObject<T | null>` accepts both @types/react ≤18 (`useRef<T>(null)`
+  // returns `RefObject<T>`) and ≥19 (returns `RefObject<T | null>`) so
+  // local typecheck + Vercel typecheck both pass.
+  imgInputRef: React.RefObject<HTMLInputElement | null>;
+  imgGalleryRef: React.RefObject<HTMLInputElement | null>;
+  imgFile: File | null;
+  setImgFile: (f: File | null) => void;
+  imgBusy: boolean;
+  imgStatus: string;
+  imgError: string;
+  runImageLookup: () => Promise<void>;
+  regInputRef: React.RefObject<HTMLInputElement | null>;
+  regBusy: boolean;
+  regStatus: string;
+  regError: string;
+  runRegistrationScan: (file: File) => Promise<void>;
+  setComboStatus: (v: string) => void;
+};
+
+function Step1(p: Step1Props) {
+  const watchedMake = p.watch("make");
+  const watchedModel = p.watch("model");
+
+  return (
+    <div className="space-y-xl">
+      {/* ── Auto-fill tabs ─────────────────────────────────────────── */}
+      <section aria-labelledby="autofill-heading">
+        <div className="gap-xxs flex items-center">
+          <Sparkles aria-hidden="true" className="text-accent h-3.5 w-3.5" />
+          <p
+            id="autofill-heading"
+            className="text-muted text-xs font-medium uppercase tracking-widest"
+          >
+            מילוי אוטומטי (אופציונלי)
+          </p>
+        </div>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        <Tabs defaultValue="registration" className="mt-md">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="registration">
+              <FileText aria-hidden="true" className="h-3.5 w-3.5" />
+              <span className="ms-1 hidden sm:inline">רישיון רכב</span>
+              <span className="ms-1 sm:hidden">רישיון</span>
+            </TabsTrigger>
+            <TabsTrigger value="plate">
+              <span className="ms-1">מספר רכב</span>
+            </TabsTrigger>
+            <TabsTrigger value="image">
+              <Camera aria-hidden="true" className="h-3.5 w-3.5" />
+              <span className="ms-1 hidden sm:inline">תמונה</span>
+              <span className="ms-1 sm:hidden">תמונה</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="registration" className="mt-md">
+            <p className="text-muted text-xs">
+              צלם או העלה תמונה של רישיון הרכב — Claude AI יחלץ אוטומטית את כל הפרטים.
+            </p>
+            <input
+              ref={p.regInputRef as React.RefObject<HTMLInputElement>}
+              type="file"
+              accept="image/*,application/pdf"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void p.runRegistrationScan(file);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              type="button"
+              onClick={() => p.regInputRef.current?.click()}
+              disabled={p.regBusy}
+              aria-busy={p.regBusy || undefined}
+              variant="outline"
+              className="mt-sm"
+            >
+              {p.regBusy ? (
+                <>
+                  <Loader2 aria-hidden="true" className="animate-spin" />
+                  <span>סורק…</span>
+                </>
+              ) : (
+                <>
+                  <FileText aria-hidden="true" />
+                  <span>סרוק רישיון רכב</span>
+                </>
+              )}
+            </Button>
+            {p.regStatus ? (
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-muted mt-xs text-xs"
+                key={p.regStatus}
+              >
+                {p.regStatus}
+              </p>
+            ) : null}
+            {p.regError ? (
+              <Alert variant="destructive" className="mt-xs">
+                <TriangleAlert aria-hidden="true" />
+                <AlertDescription>{p.regError}</AlertDescription>
+              </Alert>
+            ) : null}
+          </TabsContent>
+
+          <TabsContent value="plate" className="mt-md">
+            <Label htmlFor="plate-lookup-input">מספר רכב</Label>
+            <p id="plate-lookup-hint" className="text-muted mt-xxs text-xs">
+              <span className="font-tabular">7</span> או <span className="font-tabular">8</span>{" "}
+              ספרות, עם או בלי מקפים
+            </p>
+            <div className="gap-xs mt-xs flex flex-col sm:flex-row">
+              <Input
+                id="plate-lookup-input"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={p.plate}
+                onChange={(e) => {
+                  p.setPlate(e.target.value);
+                  if (p.plateAutofilled) p.setPlateAutofilled(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void p.runPlateLookup();
+                  }
+                }}
+                aria-describedby={
+                  p.plateAutofilled ? "plate-lookup-hint plate-lookup-source" : "plate-lookup-hint"
+                }
+                className="font-tabular flex-1"
+              />
+              {p.plateAutofilled ? (
+                <span id="plate-lookup-source" className="sr-only">
+                  זוהה אוטומטית מהתמונה — ניתן לערוך
+                </span>
+              ) : null}
+              <Button
+                type="button"
+                onClick={() => void p.runPlateLookup()}
+                disabled={p.plateBusy}
+                aria-busy={p.plateBusy || undefined}
+              >
+                {p.plateBusy ? (
+                  <>
+                    <Loader2 aria-hidden="true" className="animate-spin" />
+                    <span>מחפש…</span>
+                  </>
+                ) : (
+                  "חפש"
+                )}
+              </Button>
+            </div>
+            {p.plateStatus ? (
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-accent gap-xxs mt-xs inline-flex items-center text-sm"
+              >
+                <Check aria-hidden="true" className="h-3.5 w-3.5" />
+                {p.plateStatus}
+              </p>
+            ) : null}
+            {p.plateError ? (
+              <Alert variant="destructive" className="mt-xs">
+                <TriangleAlert aria-hidden="true" />
+                <AlertDescription>{p.plateError}</AlertDescription>
+              </Alert>
+            ) : null}
+          </TabsContent>
+
+          <TabsContent value="image" className="mt-md">
+            <p className="text-muted text-xs">
+              צלם או בחר תמונה של הרכב — Claude AI יזהה יצרן, דגם, שנה וצבע.
+            </p>
+            <input
+              ref={p.imgInputRef as React.RefObject<HTMLInputElement>}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              capture="environment"
+              className="sr-only"
+              aria-label="צילום תמונת רכב במצלמה"
+              onChange={(e) => p.setImgFile(e.target.files?.[0] ?? null)}
+            />
+            <input
+              ref={p.imgGalleryRef as React.RefObject<HTMLInputElement>}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              className="sr-only"
+              aria-label="בחירת תמונת רכב מהגלריה"
+              onChange={(e) => p.setImgFile(e.target.files?.[0] ?? null)}
+            />
+            <div className="gap-xs mt-sm flex flex-col sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => p.imgInputRef.current?.click()}
+                className="flex-1"
+              >
+                <Camera aria-hidden="true" />
+                <span>צלם תמונה</span>
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => p.imgGalleryRef.current?.click()}
+                className="flex-1"
+              >
+                <ImageIcon aria-hidden="true" />
+                <span>בחר מהגלריה</span>
+              </Button>
+            </div>
+            {p.imgFile ? (
+              <p className="text-muted mt-xs font-tabular text-xs" key={p.imgFile.name}>
+                נבחר: {p.imgFile.name}
+              </p>
+            ) : null}
+            <Button
+              type="button"
+              onClick={() => void p.runImageLookup()}
+              disabled={!p.imgFile || p.imgBusy}
+              aria-busy={p.imgBusy || undefined}
+              className="mt-sm w-full"
+            >
+              {p.imgBusy ? (
+                <>
+                  <Loader2 aria-hidden="true" className="animate-spin" />
+                  <span>מזהה…</span>
+                </>
+              ) : (
+                "זהה רכב מתמונה"
+              )}
+            </Button>
+            {p.imgStatus ? (
+              <p
+                role="status"
+                aria-live="polite"
+                className="text-accent gap-xxs mt-xs inline-flex items-center text-sm"
+              >
+                <Check aria-hidden="true" className="h-3.5 w-3.5" />
+                {p.imgStatus}
+              </p>
+            ) : null}
+            {p.imgError ? (
+              <Alert variant="destructive" className="mt-xs">
+                <TriangleAlert aria-hidden="true" />
+                <AlertDescription>{p.imgError}</AlertDescription>
+              </Alert>
+            ) : null}
+          </TabsContent>
+        </Tabs>
+      </section>
+
+      {/* ── Manual entry ──────────────────────────────────────────── */}
+      <section aria-labelledby="vehicle-heading">
+        <p
+          id="vehicle-heading"
+          className="text-muted text-xs font-medium uppercase tracking-widest"
+        >
+          פרטי הרכב
+        </p>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        <div className="gap-md mt-lg grid sm:grid-cols-2">
+          <SearchableSelect
+            id="inv-make"
+            label="יצרן"
+            value={watchedMake}
+            onChange={(v) => {
+              p.setValue("make", v, { shouldValidate: true });
+              p.setValue("model", "", { shouldValidate: true });
+              p.clearAutofill("make");
+              p.clearAutofill("model");
+            }}
+            options={CAR_MAKES}
+            placeholder="בחר יצרן…"
+            required
+            autofilled={p.autofilledFields.has("make")}
+            error={p.errors.make?.message}
+            onBlurInvalid={() => p.setComboStatus("נא בחר יצרן מהרשימה — הוחזר לערך הקודם")}
+          />
+          <SearchableSelect
+            id="inv-model"
+            label="דגם"
+            value={watchedModel}
+            onChange={(v) => {
+              p.setValue("model", v, { shouldValidate: true });
+              p.clearAutofill("model");
+            }}
+            options={getModelsForMake(p.watchMake)}
+            placeholder="בחר דגם…"
+            required
+            disabled={!p.watchMake}
+            disabledHint="בחר יצרן תחילה"
+            autofilled={p.autofilledFields.has("model")}
+            error={p.errors.model?.message}
+            onBlurInvalid={() => p.setComboStatus("נא בחר דגם מהרשימה — הוחזר לערך הקודם")}
+          />
+          <HighlightedField
+            id="inv-year"
+            label="שנה"
+            required
+            hint="ארבע ספרות"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={4}
+            registration={p.register("year", {
+              onChange: () => p.clearAutofill("year"),
+            })}
+            error={p.errors.year?.message}
+            autofilled={p.autofilledFields.has("year")}
+          />
+          <SelectShadcn
+            id="inv-hand"
+            label="יד / סוג בעלות"
+            value={p.watch("hand_combo") ?? ""}
+            onChange={(v) => p.setValue("hand_combo", v, { shouldValidate: true })}
+            options={HAND_OPTIONS}
+            error={p.errors.hand_combo?.message}
+          />
+          <HighlightedField
+            id="inv-mileage"
+            label="קילומטראז׳"
+            required
+            inputMode="numeric"
+            autoComplete="off"
+            registration={p.register("mileage", {
+              onChange: () => p.clearAutofill("mileage"),
+            })}
+            error={p.errors.mileage?.message}
+          />
+          <HighlightedField
+            id="inv-color"
+            label="צבע"
+            autoComplete="off"
+            registration={p.register("color", {
+              onChange: () => p.clearAutofill("color"),
+            })}
+            error={p.errors.color?.message}
+            autofilled={p.autofilledFields.has("color")}
+          />
+          <SelectShadcn
+            id="inv-transmission"
+            label="תיבת הילוכים"
+            value={p.watch("transmission") ?? ""}
+            onChange={(v) =>
+              p.setValue("transmission", v as FormValues["transmission"], {
+                shouldValidate: true,
+              })
+            }
+            options={[
+              { value: "", label: "בחירה…" },
+              { value: "automatic", label: "אוטומט" },
+              { value: "manual", label: "ידני" },
+            ]}
+            error={p.errors.transmission?.message}
+          />
+          <SelectShadcn
+            id="inv-fuel"
+            label="סוג דלק"
+            value={p.watch("fuel_type") ?? ""}
+            onChange={(v) => {
+              p.setValue("fuel_type", v as FormValues["fuel_type"], { shouldValidate: true });
+              p.clearAutofill("fuel_type");
+            }}
+            options={[
+              { value: "", label: "בחירה…" },
+              { value: "petrol", label: "בנזין" },
+              { value: "diesel", label: "דיזל" },
+              { value: "electric", label: "חשמלי" },
+              { value: "hybrid", label: "היברידי" },
+            ]}
+            error={p.errors.fuel_type?.message}
+            autofilled={p.autofilledFields.has("fuel_type")}
+          />
+          {p.watchedFuel === "electric" ? (
+            <div>
+              <Label>נפח מנוע</Label>
+              <p className="border-hairline bg-muted/5 text-muted px-md mt-xs inline-flex h-10 w-full items-center rounded-md border text-sm">
+                חשמלי (ללא מנוע)
+              </p>
+            </div>
+          ) : (
+            <SelectShadcn
+              id="inv-engine"
+              label="נפח מנוע (ליטרים)"
+              value={p.watch("engine_volume") ?? ""}
+              onChange={(v) =>
+                p.setValue("engine_volume", v as FormValues["engine_volume"], {
+                  shouldValidate: true,
+                })
+              }
+              options={(() => {
+                const m = String(p.watch("make") ?? "");
+                const mo = String(p.watch("model") ?? "");
+                if (!m || !mo) return ENGINE_OPTIONS;
+                const allowed = MODEL_ENGINE_MAP[modelEngineKey(m, mo)];
+                if (!allowed) return ENGINE_OPTIONS;
+                const allowedSet = new Set(allowed);
+                return ENGINE_OPTIONS.filter((o) => o.value === "" || allowedSet.has(o.value));
+              })()}
+              error={p.errors.engine_volume?.message}
+            />
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+// ============================================================================
+// Step 2 — Commercial: price, AI hint, visibility, b2b/b2c, purchase_cost,
+// notes.
+// ============================================================================
+
+type Step2Props = {
+  register: ReturnType<typeof useForm<FormValues>>["register"];
+  errors: ReturnType<typeof useForm<FormValues>>["formState"]["errors"];
+  watchedVisibility: FormValues["visibility"];
+  priceEstimateBusy: boolean;
+  priceEstimate: {
+    price: number;
+    confidence: "high" | "medium" | "low";
+    breakdown: string;
+  } | null;
+  marketPriceHint: number | null;
+};
+
+function Step2(p: Step2Props) {
+  const confidenceLabel = p.priceEstimate
+    ? {
+        high: "ביטחון גבוה",
+        medium: "ביטחון בינוני",
+        low: "ביטחון נמוך",
+      }[p.priceEstimate.confidence]
+    : "";
+
+  return (
+    <div className="space-y-xl">
+      <section aria-labelledby="pricing-heading">
+        <p
+          id="pricing-heading"
+          className="text-muted text-xs font-medium uppercase tracking-widest"
+        >
+          פירוט מסחרי
+        </p>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        <div className="gap-md mt-lg grid sm:grid-cols-2">
+          <HighlightedField
+            id="inv-price"
+            label="מחיר מבוקש ₪"
+            required
+            inputMode="numeric"
+            autoComplete="off"
+            registration={p.register("price")}
+            error={p.errors.price?.message}
+            hint={
+              p.priceEstimateBusy ? (
+                <span className="gap-xxs inline-flex items-center">
+                  <Loader2 aria-hidden="true" className="h-3 w-3 animate-spin" />
+                  מחשב הערכת מחיר שוק…
+                </span>
+              ) : p.priceEstimate ? (
+                <span>
+                  <span className="gap-xxs text-accent inline-flex items-center font-medium">
+                    <Sparkles aria-hidden="true" className="h-3 w-3" />
+                    מחיר שוק משוער:{" "}
+                    <span className="font-tabular">
+                      ₪{p.priceEstimate.price.toLocaleString("he-IL")}
+                    </span>
+                  </span>
+                  <span className="text-muted"> · {confidenceLabel}</span>
+                  <span className="text-subtle mt-xxs block text-[11px]">
+                    {p.priceEstimate.breakdown}
+                  </span>
+                </span>
+              ) : p.marketPriceHint ? (
+                <span className="gap-xxs text-muted inline-flex items-center">
+                  <Lightbulb aria-hidden="true" className="h-3 w-3" />
+                  מחיר מחירון רכב חדש:{" "}
+                  <span className="font-tabular">
+                    ₪{p.marketPriceHint.toLocaleString("he-IL")}
+                  </span>{" "}
+                  (לצורך השוואה בלבד)
+                </span>
+              ) : undefined
+            }
+          />
+          <HighlightedField
+            id="inv-purchase-cost"
+            label="עלות קנייה ₪ (אופציונלי)"
+            inputMode="numeric"
+            autoComplete="off"
+            registration={p.register("purchase_cost")}
+            error={p.errors.purchase_cost?.message}
+            hint="לצורך חישוב רווח אוטומטי בעת המכירה"
+          />
+        </div>
+
+        <div className="mt-lg">
+          <Label htmlFor="inv-notes">הערות</Label>
+          <p id="inv-notes-hint" className="text-muted mt-xxs text-xs">
+            עד <span className="font-tabular">2000</span> תווים. ההערות אינן מופיעות לצרכנים.
+          </p>
+          <Textarea
+            id="inv-notes"
+            rows={4}
+            maxLength={2000}
+            aria-describedby={
+              p.errors.notes?.message ? "inv-notes-hint inv-notes-error" : "inv-notes-hint"
+            }
+            aria-invalid={p.errors.notes?.message ? true : undefined}
+            {...p.register("notes")}
+            className="mt-xs"
+          />
+          {p.errors.notes?.message ? (
+            <p id="inv-notes-error" className="text-danger-fg mt-xxs text-sm">
+              {p.errors.notes.message}
+            </p>
+          ) : null}
+        </div>
+      </section>
+
+      <section aria-labelledby="visibility-heading">
+        <p
+          id="visibility-heading"
+          className="text-muted text-xs font-medium uppercase tracking-widest"
+        >
+          חשיפת הרכב
+        </p>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        <div className="mt-lg space-y-2">
+          {(
+            [
+              ["private", "פרטי — רק אני רואה", false],
+              ["b2b", "B2B — סוחרים בלבד", false],
+              ["b2c", "B2C — לקוחות בלבד", true],
+              ["both", "שניהם — סוחרים + לקוחות", true],
+            ] as const
+          ).map(([v, label, locked]) => (
+            <label
+              key={v}
+              title={locked ? "בקרוב — שוק B2C עדיין לא פתוח" : undefined}
+              className={[
+                "border-hairline px-md py-sm gap-sm bg-paper flex min-h-11 items-center rounded-md border",
+                "duration-fast transition-colors",
+                "focus-within:outline-accent focus-within:outline-none focus-within:outline focus-within:outline-2 focus-within:outline-offset-2",
+                locked ? "cursor-not-allowed opacity-50" : "hover:bg-muted/5 cursor-pointer",
+              ].join(" ")}
+            >
+              <input
+                type="radio"
+                value={v}
+                disabled={locked}
+                aria-describedby={locked ? `vis-${v}-soon` : undefined}
+                {...p.register("visibility")}
+                className="accent-ink"
+              />
+              <span className="text-ink text-sm font-medium">{label}</span>
+              {locked ? (
+                <Badge id={`vis-${v}-soon`} variant="outline" className="ms-auto font-normal">
+                  בקרוב
+                </Badge>
+              ) : null}
+            </label>
+          ))}
+        </div>
+
+        {p.watchedVisibility === "b2b" || p.watchedVisibility === "both" ? (
+          <div className="mt-md">
+            <Label htmlFor="inv-b2b-price">מחיר B2B ₪ (אופציונלי)</Label>
+            <p id="inv-b2b-price-hint" className="text-muted mt-xxs text-xs">
+              אם לא הוזן — יוצג המחיר המבוקש הרגיל
+            </p>
+            <Input
+              id="inv-b2b-price"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              {...p.register("b2b_price")}
+              aria-describedby="inv-b2b-price-hint"
+              aria-invalid={p.errors.b2b_price?.message ? true : undefined}
+              className="font-tabular mt-xs"
+            />
+            {p.errors.b2b_price?.message ? (
+              <p className="text-danger-fg mt-xxs text-sm">{p.errors.b2b_price.message}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {p.watchedVisibility === "b2c" || p.watchedVisibility === "both" ? (
+          <div className="mt-md">
+            <Label htmlFor="inv-b2c-price">מחיר קמעונאי ₪ (אופציונלי)</Label>
+            <p id="inv-b2c-price-hint" className="text-muted mt-xxs text-xs">
+              המחיר המוצג ללקוחות הקצה
+            </p>
+            <Input
+              id="inv-b2c-price"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              {...p.register("b2c_price")}
+              aria-describedby="inv-b2c-price-hint"
+              aria-invalid={p.errors.b2c_price?.message ? true : undefined}
+              className="font-tabular mt-xs"
+            />
+            {p.errors.b2c_price?.message ? (
+              <p className="text-danger-fg mt-xxs text-sm">{p.errors.b2c_price.message}</p>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
+// ============================================================================
+// Step 3 — Warranty (optional) + images (link to manage on edit; drop zone
+// will be added in commit 5 for create mode).
+// ============================================================================
+
+type Step3Props = {
+  register: ReturnType<typeof useForm<FormValues>>["register"];
+  setValue: ReturnType<typeof useForm<FormValues>>["setValue"];
+  watch: ReturnType<typeof useForm<FormValues>>["watch"];
+  errors: ReturnType<typeof useForm<FormValues>>["formState"]["errors"];
+  mode: "create" | "edit";
+  initialId: string | undefined;
+  imageCount?: number;
+  onManageImages?: (vehicleId: string) => void;
+  /** Create-mode image queue — built locally, uploaded post-create. */
+  queuedFiles: File[];
+  onQueuePick: (files: File[]) => void;
+  onQueueRemove: (index: number) => void;
+  queueErrors: string[];
+};
+
+function Step3(p: Step3Props) {
+  return (
+    <div className="space-y-xl">
+      <section aria-labelledby="warranty-heading">
+        <p
+          id="warranty-heading"
+          className="text-muted text-xs font-medium uppercase tracking-widest"
+        >
+          אחריות (אופציונלי)
+        </p>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        <p className="text-muted mt-md text-sm">
+          מלא רק אם יש לרכב אחריות בתוקף — יוצג לקונים בשוק.
+        </p>
+
+        <div className="gap-md mt-lg grid sm:grid-cols-2">
+          <SelectShadcn
+            id="inv-warranty-type"
+            label="סוג אחריות"
+            value={p.watch("warranty_type") ?? ""}
+            onChange={(v) =>
+              p.setValue("warranty_type", v as FormValues["warranty_type"], {
+                shouldValidate: true,
+              })
+            }
+            options={[
+              { value: "", label: "בחר סוג אחריות…" },
+              { value: "manufacturer", label: "אחריות יצרן" },
+              { value: "dealer", label: "אחריות סוחר" },
+              { value: "extended", label: "אחריות מורחבת" },
+              { value: "none", label: "ללא אחריות" },
+            ]}
+            error={p.errors.warranty_type?.message}
+          />
+          <div>
+            <Label htmlFor="inv-warranty-until">תוקף האחריות</Label>
+            <Input
+              id="inv-warranty-until"
+              type="date"
+              dir="ltr"
+              {...p.register("warranty_until")}
+              aria-invalid={p.errors.warranty_until?.message ? true : undefined}
+              aria-describedby="inv-warranty-until-hint"
+              className="font-tabular mt-xs"
+            />
+            <p id="inv-warranty-until-hint" className="text-muted mt-xxs text-xs">
+              התאריך עד אליו האחריות בתוקף
+            </p>
+            {p.errors.warranty_until?.message ? (
+              <p className="text-danger-fg mt-xxs text-sm">{p.errors.warranty_until.message}</p>
+            ) : null}
+          </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="images-heading">
+        <p id="images-heading" className="text-muted text-xs font-medium uppercase tracking-widest">
+          תמונות
+        </p>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        {p.mode === "create" || !p.initialId ? (
+          <CreateModeImageQueue
+            queuedFiles={p.queuedFiles}
+            onQueuePick={p.onQueuePick}
+            onQueueRemove={p.onQueueRemove}
+            queueErrors={p.queueErrors}
+          />
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              if (p.initialId && p.onManageImages) p.onManageImages(p.initialId);
+            }}
+            className="mt-md"
+          >
+            <ImageIcon aria-hidden="true" />
+            <span>
+              ניהול תמונות
+              {p.imageCount != null ? (
+                <>
+                  {" "}
+                  (<span className="font-tabular">{p.imageCount}</span>)
+                </>
+              ) : null}
+            </span>
+          </Button>
+        )}
+      </section>
+    </div>
+  );
+}
+
+// ============================================================================
+// CreateModeImageQueue — drop zone + thumbnail previews for the create flow.
+// Files are uploaded fire-and-forget after the vehicle is created (the
+// parent's submit handler reads `queuedFiles` and POSTs to /images).
+// ============================================================================
+
+function CreateModeImageQueue({
+  queuedFiles,
+  onQueuePick,
+  onQueueRemove,
+  queueErrors,
+}: {
+  queuedFiles: File[];
+  onQueuePick: (files: File[]) => void;
+  onQueueRemove: (index: number) => void;
+  queueErrors: string[];
+}) {
+  // Build local object-URL previews and revoke when the file list changes
+  // or the component unmounts.
+  const [previews, setPreviews] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = queuedFiles.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [queuedFiles]);
+
+  const remaining = QUEUE_MAX_IMAGES - queuedFiles.length;
+
+  return (
+    <div className="mt-md">
+      {remaining > 0 ? (
+        <ImageDropZone
+          id="inv-create-images"
+          onPick={onQueuePick}
+          hint={
+            <>
+              נותרו <span className="text-ink font-medium">{remaining}</span> תמונות · JPEG / PNG /
+              WebP / HEIC · עד <span className="font-tabular">10MB</span>
+            </>
+          }
+        />
+      ) : (
+        <p className="border-hairline bg-muted/5 px-md py-md text-muted rounded-md border text-sm">
+          הגעת לגבול של <span className="font-tabular">{QUEUE_MAX_IMAGES}</span> תמונות. הסר תמונה
+          כדי להוסיף חדשה.
+        </p>
+      )}
+
+      {queueErrors.length > 0 ? (
+        <Alert variant="destructive" className="mt-sm">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>
+            <ul className="space-y-1">
+              {queueErrors.map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {queuedFiles.length > 0 ? (
+        <>
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-muted mt-md text-xs"
+            key={queuedFiles.length}
+          >
+            <span className="text-ink font-tabular font-medium">{queuedFiles.length}</span> מתוך{" "}
+            <span className="font-tabular">{QUEUE_MAX_IMAGES}</span> תמונות בתור — יועלו לאחר שמירת
+            הרכב
+          </p>
+          <ul className="gap-sm mt-sm grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
+            {queuedFiles.map((file, i) => (
+              <li
+                key={`${file.name}-${i}`}
+                className="border-hairline bg-paper group relative aspect-[4/3] overflow-hidden rounded-md border"
+              >
+                {previews[i] ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={previews[i]} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="text-subtle flex h-full w-full items-center justify-center">
+                    <ImageIcon aria-hidden="true" className="h-6 w-6" />
+                  </div>
+                )}
+                <span
+                  aria-hidden="true"
+                  className="bg-paper/85 text-ink font-tabular absolute bottom-1 start-1 inline-flex h-6 min-w-[24px] items-center justify-center rounded-md px-1.5 text-xs font-medium backdrop-blur"
+                >
+                  {i + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onQueueRemove(i)}
+                  aria-label={`הסר תמונה ${i + 1} מתוך ${queuedFiles.length}`}
+                  className="border-hairline bg-paper/95 text-danger-fg hover:bg-danger-bg focus-visible:outline-accent duration-fast absolute end-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-md border backdrop-blur transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  <X aria-hidden="true" className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+// ============================================================================
+// HighlightedField — wraps FormField with autofill accent border. Kept
+// because FormField has the existing label + error wiring; the wrapper adds
+// the data-autofilled border tone.
+// ============================================================================
 
 type HighlightedFieldProps = Omit<Parameters<typeof FormField>[0], "label"> & {
   label: string;
@@ -1696,64 +2261,88 @@ type HighlightedFieldProps = Omit<Parameters<typeof FormField>[0], "label"> & {
 };
 
 function HighlightedField({ autofilled, ...rest }: HighlightedFieldProps) {
-  // FormField doesn't accept `autofilled` today — emulate via a wrapper
-  // that paints the input border gold when the flag is set. We rely on
-  // FormField rendering an <input> inside a <div>.
   return (
     <div
       data-autofilled={autofilled ? "true" : undefined}
-      className="[&[data-autofilled=true]_input]:border-brand-gold [&[data-autofilled=true]_input]:ring-brand-gold/40 [&[data-autofilled=true]_input]:ring-1"
+      className="[&[data-autofilled=true]_input]:border-accent [&[data-autofilled=true]_input]:ring-accent/30 [&[data-autofilled=true]_input]:ring-1"
     >
       <FormField {...rest} />
     </div>
   );
 }
 
-function SelectField({
+// ============================================================================
+// SelectShadcn — shadcn Select wrapped with label + error wiring + optional
+// autofill accent. Supports two call patterns:
+//   (a) controlled via value + onChange
+//   (b) react-hook-form via registration prop (Select doesn't accept ref,
+//       so we read/write through the registration's onChange + the form's
+//       getValues/setValue when the caller provides registration)
+// ============================================================================
+
+function SelectShadcn({
   id,
   label,
   options,
   error,
-  registration,
   autofilled,
+  value,
+  onChange,
+  registration,
 }: {
   id: string;
   label: string;
   options: { value: string; label: string }[];
   error?: string;
-  registration: UseFormRegisterReturn;
   autofilled?: boolean;
-}) {
+  value?: string;
+  onChange?: (v: string) => void;
+  registration?: UseFormRegisterReturn;
+}): ReactNode {
   const errorId = `${id}-error`;
+
+  // When `registration` is passed (react-hook-form), we synthesize a controlled
+  // pattern that bridges to RHF's onChange handler. Native <select> change
+  // events are what RHF expects, so we fabricate a minimal event object on
+  // shadcn Select value change.
+  const handleChange = (next: string) => {
+    if (registration) {
+      const synth = {
+        target: { name: registration.name, value: next },
+      } as unknown as React.ChangeEvent<HTMLSelectElement>;
+      void registration.onChange(synth);
+    }
+    if (onChange) onChange(next);
+  };
+
   return (
-    <div>
-      <label htmlFor={id} className="text-brand-navy block text-sm font-medium">
-        {label}
-      </label>
-      <select
-        id={id}
-        dir="rtl"
-        aria-invalid={error ? true : undefined}
-        aria-describedby={error ? errorId : undefined}
-        {...registration}
-        className={[
-          "text-brand-ink mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base",
-          "focus-visible:outline-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2",
-          error
-            ? "border-danger-text"
-            : autofilled
-              ? "border-brand-gold ring-brand-gold/40 ring-1"
-              : "border-brand-navy/20",
-        ].join(" ")}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+    <div
+      data-autofilled={autofilled ? "true" : undefined}
+      className="[&[data-autofilled=true]_button]:border-accent [&[data-autofilled=true]_button]:ring-accent/30 [&[data-autofilled=true]_button]:ring-1"
+    >
+      <Label htmlFor={id}>{label}</Label>
+      <div className="mt-xs">
+        <Select value={value ?? ""} onValueChange={handleChange}>
+          <SelectTrigger
+            id={id}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+          >
+            <SelectValue placeholder={options.find((o) => o.value === "")?.label ?? "בחר…"} />
+          </SelectTrigger>
+          <SelectContent>
+            {options
+              .filter((o) => o.value !== "")
+              .map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+      </div>
       {error ? (
-        <p id={errorId} className="text-danger-text mt-1 text-sm">
+        <p id={errorId} className="text-danger-fg mt-xxs text-sm">
           {error}
         </p>
       ) : null}

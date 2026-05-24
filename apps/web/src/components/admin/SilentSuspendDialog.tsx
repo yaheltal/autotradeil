@@ -1,6 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -38,8 +39,8 @@ export function SilentSuspendDialog({
   token,
   onSuspended,
 }: Props) {
+  const qc = useQueryClient();
   const [adminPassword, setAdminPassword] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const errorRef = useRef<HTMLParagraphElement>(null);
@@ -57,26 +58,28 @@ export function SilentSuspendDialog({
     if (error) errorRef.current?.focus();
   }, [error]);
 
+  const suspendMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/suspend`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ silent: true, admin_password: adminPassword }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin", "dealers"] });
+      onSuspended();
+      onOpenChange(false);
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "שגיאה בהשעיה"),
+  });
+  const busy = suspendMutation.isPending;
   const canSubmit = adminPassword.length > 0 && !busy;
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canSubmit) return;
-    setBusy(true);
     setError(null);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealerId}/suspend`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ silent: true, admin_password: adminPassword }),
-      });
-      onSuspended();
-      onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "שגיאה בהשעיה");
-    } finally {
-      setBusy(false);
-    }
+    await suspendMutation.mutateAsync();
   };
 
   return (

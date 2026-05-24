@@ -2,6 +2,157 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+ * Design system CSS variables.
+ *
+ * Tokens are stored as **RGB triplets** (space-separated) so they
+ * compose with Tailwind's alpha modifier syntax. In tailwind.config.ts
+ * we wrap each color in `rgb(var(--X) / <alpha-value>)` — that lets
+ * classes like `bg-paper/10` or `border-ink/30` resolve to the
+ * correct alpha while the underlying hue still comes from the
+ * variable. Flip the variable in `.dark` and every consumer follows.
+ *
+ * Two palettes live here:
+ *   Editorial — ink / paper / muted / subtle / accent / hairline
+ *               + status (ok / warn / danger). These are the locked
+ *               tokens our pages reference via Tailwind classes.
+ *   shadcn    — background / foreground / card / popover / primary /
+ *               secondary / muted (bg) / accent (hover) / destructive /
+ *               border / input / ring. These are what the primitives
+ *               in components/ui/* reference. Both surfaces stay in
+ *               sync via overlapping values.
+ * ============================================================ */
+@layer base {
+  :root {
+    /* ---- Editorial palette (light) ---- */
+    --ink: 10 10 10; /* #0A0A0A */
+    --paper: 255 255 255; /* #FFFFFF */
+    --muted-color: 107 107 110; /* #6B6B6E — secondary body text */
+    --subtle-color: 154 154 157; /* #9A9A9D — tertiary / metadata */
+    --hairline-color: 10 10 10 / 0.08; /* tonal-ink divider */
+    --accent-color: 168 114 58; /* #A8723A — oxidized bronze CTA */
+    --accent-ink-color: 255 255 255; /* text on accent surfaces */
+    --accent-subtle-color: 244 236 223; /* #F4ECDF — accent-tinted callout */
+
+    /* ---- Status — light ---- */
+    --ok-color: 31 143 92;
+    --ok-fg-color: 14 59 38;
+    --ok-bg-color: 230 245 236;
+    --warn-color: 154 103 0;
+    --warn-fg-color: 63 42 0;
+    --warn-bg-color: 255 247 214;
+    --danger-color: 181 48 42;
+    --danger-fg-color: 90 24 21;
+    --danger-bg-color: 252 230 228;
+
+    /* ---- shadcn semantic — light ----
+     * Mapped to the editorial palette so primitives inherit the locked
+     * system. Stored as RGB triplets to match the editorial tokens. */
+    --background: 255 255 255;
+    --foreground: 10 10 10;
+    --card: 255 255 255;
+    --card-foreground: 10 10 10;
+    --popover: 255 255 255;
+    --popover-foreground: 10 10 10;
+    --primary: 10 10 10; /* ink button */
+    --primary-foreground: 255 255 255;
+    --secondary: 244 244 245; /* faint ink wash */
+    --secondary-foreground: 10 10 10;
+    --muted: 244 244 245; /* shadcn muted = subtle bg surface */
+    --muted-foreground: 107 107 110;
+    --accent: 168 114 58; /* hover surface for dropdown items, sheet close, etc. */
+    --accent-foreground: 255 255 255;
+    --destructive: 181 48 42;
+    --destructive-foreground: 255 255 255;
+    --border: 10 10 10 / 0.08;
+    --input: 10 10 10 / 0.12;
+    --ring: 168 114 58;
+
+    /* Radius — 10px standard (matches mobile radii.md for parity) */
+    --radius: 0.625rem;
+  }
+
+  /* ============================================================
+   * Dark theme — activates when next-themes places `.dark` on <html>.
+   * Surface palette inverts (near-black paper, off-white ink); accent
+   * brightens slightly to maintain contrast on dark surfaces. Status
+   * tints flip from light backgrounds with dark text to deep
+   * backgrounds with light text.
+   * ============================================================ */
+  .dark {
+    /* ---- Editorial palette (dark) ---- */
+    --ink: 244 244 245; /* zinc-100 — body text on dark paper */
+    --paper: 15 15 18; /* near-black, cooler than pure ink */
+    --muted-color: 161 161 170; /* zinc-400 — secondary text */
+    --subtle-color: 113 113 122; /* zinc-500 — tertiary */
+    --hairline-color: 255 255 255 / 0.1; /* tonal-paper divider */
+    --accent-color: 200 148 95; /* slightly brighter bronze for dark contrast */
+    --accent-ink-color: 15 15 18; /* dark text on accent in dark mode */
+    --accent-subtle-color: 60 41 21; /* deep bronze tint for callouts */
+
+    /* ---- Status — dark ---- */
+    --ok-color: 74 222 128;
+    --ok-fg-color: 187 247 208;
+    --ok-bg-color: 5 46 22;
+    --warn-color: 251 191 36;
+    --warn-fg-color: 254 240 138;
+    --warn-bg-color: 69 26 3;
+    --danger-color: 248 113 113;
+    --danger-fg-color: 254 202 202;
+    --danger-bg-color: 69 10 10;
+
+    /* ---- shadcn semantic — dark ---- */
+    --background: 15 15 18; /* paper */
+    --foreground: 244 244 245; /* ink */
+    --card: 24 24 27; /* zinc-900 — slightly lighter than paper for elevation */
+    --card-foreground: 244 244 245;
+    --popover: 24 24 27;
+    --popover-foreground: 244 244 245;
+    --primary: 244 244 245; /* primary CTA inverts — paper-on-ink */
+    --primary-foreground: 15 15 18;
+    --secondary: 39 39 42; /* zinc-800 */
+    --secondary-foreground: 244 244 245;
+    --muted: 39 39 42;
+    --muted-foreground: 161 161 170;
+    --accent: 200 148 95; /* hover surface — brighter bronze */
+    --accent-foreground: 15 15 18;
+    --destructive: 248 113 113;
+    --destructive-foreground: 15 15 18;
+    --border: 255 255 255 / 0.1;
+    --input: 255 255 255 / 0.15;
+    --ring: 200 148 95;
+  }
+
+  /* Editorial typography defaults — applied globally so any text inherits
+   * the locked feature set even before component-level styling. */
+  body {
+    /* Inter — enable contextual alternates (cv11 = single-storey 'a' in
+     * some sizes), stylistic set ss01 (open digits), and tabular nums
+     * across price-heavy surfaces. Subtle but unmistakable difference
+     * vs. default Inter. */
+    font-feature-settings: "cv11", "ss01", "ss03";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Headings inherit the Frank Ruhl Libre serif stack by default. The
+   * face covers Hebrew + Latin so a single font handles every heading
+   * regardless of script. Component code can still override with
+   * `font-sans` when an editorial heading would feel wrong (e.g., inside
+   * a chip).
+   *
+   * Frank Ruhl Libre exposes the standard `liga` ligatures and pulls
+   * fractions/superscripts/numerators via `tnum` when used alongside our
+   * `font-tabular` utility — no editorial-alternate feature flag needed. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-frank-ruhl), "Frank Ruhl Libre", ui-serif, Georgia, serif;
+    letter-spacing: -0.025em;
+  }
+}
+
 /* Prevent the document from becoming horizontally scrollable on mobile.
  * Without this, any element wider than the viewport (an overflowing card
  * title, an image, an unwrapped row of badges) makes the whole page scroll
@@ -91,19 +242,18 @@ header {
 }
 
 /* WebKit autofill overrides — Chrome / Safari / iOS apply a light
- * yellow/green background to fields they auto-fill (saved passwords,
- * email completions). The override below preserves our white field
- * background by placing a 30px white inset shadow that masks the
- * autofill tint, plus restores the brand-ink text color. The transition
- * delay is the long-standing trick to keep the override sticky for
- * multiple seconds (browsers re-apply autofill after focus events). */
+ * yellow/green tint to fields they auto-fill (saved passwords, email
+ * completions). The override masks that tint with the active paper
+ * background + ink text. CSS vars (set on :root + .dark) make the
+ * tint follow the theme automatically. The 9999s transition is the
+ * long-standing trick to keep the override sticky across focus events. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px white inset !important;
-  -webkit-text-fill-color: #1c2330 !important;
-  caret-color: #1c2330 !important;
+  -webkit-box-shadow: 0 0 0 30px rgb(var(--paper)) inset !important;
+  -webkit-text-fill-color: rgb(var(--ink)) !important;
+  caret-color: rgb(var(--ink)) !important;
   transition: background-color 9999s ease-out 0s;
 }
 

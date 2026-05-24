@@ -45,12 +45,27 @@ def register_exception_handlers(app: FastAPI) -> None:
             request.method,
             request.url.path,
         )
+        # Pydantic v2 puts the original ValueError instance into each error's
+        # `ctx` dict when a @field_validator raises one. ValueError isn't JSON-
+        # serializable, so a naive json.dumps cascades into a 500 from this
+        # very handler. Strip / stringify the `ctx` values defensively.
+        # The user-facing `msg` is preserved either way.
+        sanitized: list[dict[str, Any]] = []
+        for err in exc.errors():
+            cleaned = {k: v for k, v in err.items() if k != "ctx"}
+            ctx = err.get("ctx")
+            if isinstance(ctx, dict):
+                cleaned["ctx"] = {
+                    k: (v if isinstance(v, (str, int, float, bool, type(None))) else str(v))
+                    for k, v in ctx.items()
+                }
+            sanitized.append(cleaned)
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=_error_body(
                 "validation_error",
                 "Request payload is invalid.",
-                detail=exc.errors(),
+                detail=sanitized,
             ),
         )
 

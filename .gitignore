@@ -63,6 +63,8 @@ coverage/
 # One-off test / debug scripts that exercise real credentials
 apps/api/scripts/test_admin_auth.py
 apps/api/scripts/debug_jwt.py
+# One-off backfill scripts containing personal data — fill, run, delete
+apps/api/scripts/update_admin_personal_info.sql
 
 # IDE-created .env backups
 apps/api/.env.backup

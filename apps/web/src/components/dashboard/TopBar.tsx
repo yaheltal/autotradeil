@@ -2,7 +2,12 @@
 
 import { Bell, Search } from "lucide-react";
 
-import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
+// Dark mode infrastructure ready (Phase 1 complete — next-themes wired,
+// tailwind darkMode: "class" enabled, RGB-triplet CSS vars declared in
+// globals.css). Toggle hidden until Phase 2-3 add `dark:*` variants to
+// every page or migrate Tailwind config to consume the dark-aware vars.
+// TODO: restore <ThemeToggle /> render below once the dark palette ships.
+// import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
 
 /**
  * TopBar — desktop horizontal bar above the page content. Sticky at
@@ -50,7 +55,7 @@ export function TopBar({ rightSlot }: { rightSlot?: React.ReactNode }) {
           >
             <Bell className="h-5 w-5" aria-hidden />
           </button>
-          <ThemeToggle />
+          {/* <ThemeToggle /> — hidden, see import comment above */}
         </div>
       </div>
     </header>

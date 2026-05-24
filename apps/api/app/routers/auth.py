@@ -30,12 +30,12 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import _decode_supabase_jwt, _extract_bearer
+from app.core.auth import CurrentUser, _decode_supabase_jwt, _extract_bearer
 from app.core.logging import get_logger
 from app.database import get_db
 from app.models import Dealer, User
@@ -115,3 +115,32 @@ async def oauth_check(
         full_name=full_name,
         avatar_url=avatar_url,
     )
+
+
+class AdminLoginVerifyResponse(BaseModel):
+    ok: bool
+    user_type: str
+
+
+@router.post("/admin-login-verify", response_model=AdminLoginVerifyResponse)
+async def admin_login_verify(user: CurrentUser) -> AdminLoginVerifyResponse:
+    """Web /login (email+password break-glass) calls this immediately after
+    Supabase signInWithPassword to confirm the freshly-authenticated user is
+    an admin. Returns 200 if admin, 403 otherwise.
+
+    Why a server check (vs. trusting the JWT user_metadata)? user_type lives
+    in public.users, not in the Supabase JWT. The token only proves identity;
+    the role gate has to query our own DB.
+
+    Web flow:
+        1. supabase.auth.signInWithPassword({ email, password })
+        2. POST /api/v1/auth/admin-login-verify  (with the bearer token)
+        3. If 200 → continue to /admin
+        4. If 403 → supabase.auth.signOut() + show "use the mobile app"
+    """
+    if user.user_type != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="הכניסה דרך האתר מיועדת למנהלי מערכת בלבד. סוחרים — באפליקציה הניידת.",
+        )
+    return AdminLoginVerifyResponse(ok=True, user_type="admin")

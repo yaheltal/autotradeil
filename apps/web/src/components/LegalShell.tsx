@@ -4,14 +4,21 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 
 /**
- * Shared shell for legal/static pages (תנאי שימוש, פרטיות, יצירת קשר).
- * Provides the standard header/footer chrome plus a centered prose
- * container with consistent typography for headings, paragraphs, and
- * lists in Hebrew RTL.
+ * Shared shell for legal/static pages (תנאי שימוש, פרטיות).
  *
- * Use `<LegalShell title="..." updatedAt="...">{children}</LegalShell>`
- * — children should be a sequence of <section> blocks containing <h2>
- * + <p> / <ul>. The shell handles spacing and color tokens.
+ *   {title}                                      ← Frank Ruhl 4xl
+ *   ─────                                         ← hairline
+ *   עודכן לאחרונה: {date}                          ← muted dek (font-tabular)
+ *
+ *   <article> — prose with descendant selectors that map every
+ *   heading / paragraph / link / list element to ink/paper/muted/accent
+ *   tokens. No @tailwindcss/typography dependency; the rules sit
+ *   inline so the legal pages stay one self-contained component.
+ *
+ * Same masthead rhythm as the dashboard/admin editorial pattern.
+ * The previous "מסמך משפטי" eyebrow + gold-stroke decoration is
+ * dropped — the page title speaks for itself; the dek tells you
+ * when it was updated.
  */
 export function LegalShell({
   title,
@@ -26,26 +33,27 @@ export function LegalShell({
     <>
       <SiteHeader />
       <main id="main" tabIndex={-1} className="focus:outline-none">
-        <div className="mx-auto max-w-3xl px-4 pb-20 pt-12 sm:px-6 sm:pb-28 sm:pt-20">
+        <div className="px-md sm:px-lg pb-3xl pt-2xl sm:pt-3xl mx-auto max-w-3xl">
           <header>
-            <p className="text-brand-navy/70 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-              מסמך משפטי
-            </p>
-            <h1 className="text-brand-navy mt-5 font-serif text-[2rem] font-bold leading-[1.15] tracking-tight sm:text-5xl">
+            <h1 className="text-ink tracking-editorial font-serif text-4xl font-medium leading-tight sm:text-5xl">
               {title}
             </h1>
+            <div aria-hidden="true" className="bg-hairline mt-lg h-px w-full" />
             {updatedAt ? (
-              <p className="text-brand-ink/65 mt-3 text-sm">עודכן לאחרונה: {updatedAt}</p>
+              <p className="text-muted mt-lg text-sm">
+                עודכן לאחרונה: <span className="font-tabular">{updatedAt}</span>
+              </p>
             ) : null}
           </header>
 
           {/*
-           * Prose-style content. We don't use @tailwindcss/typography
-           * (not installed) — instead we apply targeted descendant
-           * selectors so the page reads cleanly with our brand tokens.
+           * Prose-style content. No @tailwindcss/typography (not
+           * installed) — targeted descendant selectors keep the legal
+           * pages reading cleanly with our locked tokens. The a-tag
+           * rule pairs ink text with an accent underline so the link
+           * affordance lives in the decoration, not in a color shift.
            */}
-          <article className="text-brand-ink [&_h2]:text-brand-navy [&_h3]:text-brand-navy [&_p]:text-brand-ink/85 [&_a]:text-brand-navy [&_a]:decoration-brand-gold [&_strong]:text-brand-navy [&_ul]:text-brand-ink/85 [&_ol]:text-brand-ink/85 mt-10 space-y-8 text-base leading-relaxed [&_a]:underline [&_a]:decoration-2 [&_a]:underline-offset-4 [&_h2]:font-serif [&_h2]:text-2xl [&_h2]:font-bold [&_h2]:tracking-tight [&_h2]:sm:text-3xl [&_h3]:font-serif [&_h3]:text-xl [&_h3]:font-bold [&_h3]:tracking-tight [&_li]:leading-relaxed [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pe-6 [&_section]:space-y-3 [&_strong]:font-bold [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pe-6">
+          <article className="text-ink mt-2xl space-y-2xl [&_a]:text-ink [&_a]:decoration-accent [&_a]:duration-fast [&_a:hover]:text-accent [&_h2]:text-ink [&_h3]:text-ink [&_ol]:text-muted [&_p]:text-muted [&_strong]:text-ink [&_ul]:text-muted text-base leading-relaxed [&_a]:underline [&_a]:decoration-2 [&_a]:underline-offset-4 [&_a]:transition-colors [&_h2]:font-serif [&_h2]:text-2xl [&_h2]:font-medium [&_h2]:tracking-tight [&_h2]:sm:text-3xl [&_h3]:font-serif [&_h3]:text-xl [&_h3]:font-medium [&_h3]:tracking-tight [&_li]:leading-relaxed [&_ol]:list-decimal [&_ol]:space-y-2 [&_ol]:pe-6 [&_section]:space-y-3 [&_strong]:font-medium [&_ul]:list-disc [&_ul]:space-y-2 [&_ul]:pe-6">
             {children}
           </article>
         </div>

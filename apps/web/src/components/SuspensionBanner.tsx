@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * SuspensionBanner — Phase 6.7. Shown at the top of dealer pages when a
@@ -22,26 +23,16 @@ type DealerMe = {
 };
 
 export function SuspensionBanner({ token }: { token: string | null }) {
-  const [info, setInfo] = useState<DealerMe | null>(null);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    apiFetch<DealerMe>("/api/v1/dealers/me", { token })
-      .then((d) => {
-        if (!cancelled) setInfo(d);
-      })
-      .catch(() => {
-        // /dealers/me returns 403 with the suspension reason in detail
-        // when the dealer is suspended with a reason. The banner only
-        // renders for verified-and-suspended dealers, so a fetch failure
-        // means we silently skip the banner — the page itself will show
-        // an error elsewhere.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  // /dealers/me returns 403 with the suspension reason in detail when the
+  // dealer is suspended with a reason. The banner only renders for
+  // verified-and-suspended dealers, so a query failure means we silently
+  // skip the banner — the page itself surfaces its own error elsewhere.
+  const { data: info } = useQuery({
+    queryKey: queryKeys.dealer.me(),
+    queryFn: () => apiFetch<DealerMe>("/api/v1/dealers/me", { token: token! }),
+    enabled: !!token,
+    retry: false,
+  });
 
   if (!info || !info.suspended_at) return null;
   // Silent suspends do NOT show a banner — that's the whole point.

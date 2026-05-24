@@ -1,22 +1,47 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { DialogCloseButton } from "@/components/DialogCloseButton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * Make-offer dialog for the marketplace vehicle detail page.
  *
+ *   שליחת הצעת מחיר
+ *   {vehicle label}
+ *   ─────
+ *   מחיר מבוקש: ₪…   ← asking-price strip, doubles as aria-describedby
+ *
+ *   מחיר מוצע ₪*    ← font-tabular Input
+ *   הודעה (optional textarea)
+ *
+ *   [ביטול]  [שלח הצעה]    ← shadcn Button + accent CTA on submit
+ *
  * A11y:
- *   - Radix Dialog: focus trap, return focus on close, Escape, scroll lock.
- *   - Title (`Dialog.Title`) + description (`Dialog.Description`) wired
- *     automatically to `aria-labelledby` / `aria-describedby`.
- *   - Visible asking-price inline doubles as describedby target for the
- *     "מחיר מוצע" input.
- *   - Submit errors surface via `role="alert"` at the top of the form.
+ *   - shadcn Dialog wraps Radix — focus trap, return focus on close,
+ *     Escape, scroll lock all inherited
+ *   - Title + description wired automatically to aria-labelledby /
+ *     aria-describedby
+ *   - Visible asking-price inline doubles as describedby for the price
+ *     input
+ *   - Submit errors surface via shadcn <Alert variant="destructive">
  */
 
 type Props = {
@@ -38,9 +63,9 @@ export function MakeOfferDialog({
   askingPrice,
   onSubmitted,
 }: Props) {
+  const qc = useQueryClient();
   const [price, setPrice] = useState("");
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,6 +78,22 @@ export function MakeOfferDialog({
 
   const askingF = formatPrice(askingPrice);
 
+  const submitMutation = useMutation({
+    mutationFn: ({ offered_price, msg }: { offered_price: number; msg: string | null }) =>
+      apiFetch(`/api/v1/marketplace/vehicles/${inventoryId}/offers`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ offered_price, message: msg }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      onSubmitted();
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "שגיאה בשליחת ההצעה"),
+  });
+  const busy = submitMutation.isPending;
+
   const submit = async () => {
     const n = parseInt(price.replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n <= 0) {
@@ -63,129 +104,104 @@ export function MakeOfferDialog({
       setError("הודעה ארוכה מדי (מקסימום 2000 תווים)");
       return;
     }
-    setBusy(true);
     setError(null);
-    try {
-      await apiFetch(`/api/v1/marketplace/vehicles/${inventoryId}/offers`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({
-          offered_price: n,
-          message: message.trim() || null,
-        }),
-      });
-      onSubmitted();
-      onOpenChange(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בשליחת ההצעה");
-    } finally {
-      setBusy(false);
-    }
+    await submitMutation.mutateAsync({ offered_price: n, msg: message.trim() || null });
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          aria-hidden="true"
-          className="bg-brand-navy/40 fixed inset-0 z-40 motion-reduce:transition-none"
-        />
-        <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
-          <div className="bg-brand-cream relative max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-xl">
-            <DialogCloseButton />
-            <Dialog.Title className="text-brand-navy pe-12 text-lg font-bold">
-              שליחת הצעת מחיר
-            </Dialog.Title>
-            <Dialog.Description className="text-brand-ink/70 mt-1 text-sm">
-              {vehicleLabel}
-            </Dialog.Description>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>שליחת הצעת מחיר</DialogTitle>
+          <DialogDescription>{vehicleLabel}</DialogDescription>
+        </DialogHeader>
 
-            <p
-              id="make-offer-asking"
-              className="border-brand-navy/10 text-brand-ink mt-4 rounded-md border bg-white px-3 py-2 text-sm"
-            >
-              <span className="text-brand-ink/60">מחיר מבוקש:&nbsp;</span>
-              <span aria-hidden="true" className="font-semibold">
-                {askingF.visual}
+        <div
+          id="make-offer-asking"
+          className="border-hairline bg-paper px-md py-sm mt-sm rounded-md border text-sm"
+        >
+          <span className="text-muted">מחיר מבוקש</span>
+          <span aria-hidden="true" className="text-subtle mx-xxs">
+            ·
+          </span>
+          <span className="text-ink font-tabular font-medium">
+            <span aria-hidden="true">{askingF.visual}</span>
+            <span className="sr-only">{askingF.sr}</span>
+          </span>
+        </div>
+
+        {error ? (
+          <Alert variant="destructive" className="mt-md">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="mt-md space-y-lg">
+          <div>
+            <Label htmlFor="offer-price">
+              מחיר מוצע ₪{" "}
+              <span aria-hidden="true" className="text-danger-fg">
+                *
               </span>
-              <span className="sr-only">{askingF.sr}</span>
-            </p>
-
-            {error ? (
-              <p
-                role="alert"
-                className="bg-danger-bg text-danger-text mt-4 rounded-md px-3 py-2 text-sm"
-              >
-                {error}
-              </p>
-            ) : null}
-
-            <div className="mt-4 space-y-4">
-              <div>
-                <label htmlFor="offer-price" className="text-brand-navy block text-sm font-medium">
-                  מחיר מוצע ₪
-                  <span aria-hidden="true" className="text-danger-text ms-1">
-                    *
-                  </span>
-                </label>
-                <input
-                  id="offer-price"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  aria-describedby="make-offer-asking"
-                  aria-required="true"
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="offer-message"
-                  className="text-brand-navy block text-sm font-medium"
-                >
-                  הודעה למוכר (אופציונלי)
-                </label>
-                <p id="offer-message-hint" className="text-brand-navy/70 mt-1 text-xs">
-                  עד 2000 תווים
-                </p>
-                <textarea
-                  id="offer-message"
-                  rows={3}
-                  maxLength={2000}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  aria-describedby="offer-message-hint"
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                />
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  disabled={busy}
-                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-                >
-                  ביטול
-                </button>
-              </Dialog.Close>
-              <button
-                type="button"
-                onClick={() => void submit()}
-                disabled={busy}
-                aria-busy={busy || undefined}
-                className="bg-brand-gold text-brand-navy hover:bg-brand-gold/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-              >
-                {busy ? "שולח…" : "שלח הצעה"}
-              </button>
-            </div>
+            </Label>
+            <Input
+              id="offer-price"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              aria-describedby="make-offer-asking"
+              aria-required="true"
+              className="font-tabular mt-xs"
+            />
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+
+          <div>
+            <Label htmlFor="offer-message">הודעה למוכר (אופציונלי)</Label>
+            <p id="offer-message-hint" className="text-muted mt-xxs text-xs">
+              עד <span className="font-tabular">2000</span> תווים
+            </p>
+            <Textarea
+              id="offer-message"
+              rows={3}
+              maxLength={2000}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              aria-describedby="offer-message-hint"
+              className="mt-xs"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            ביטול
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy}
+            aria-busy={busy || undefined}
+            className="bg-accent text-accent-ink hover:bg-accent/90"
+          >
+            {busy ? (
+              <>
+                <Loader2 aria-hidden="true" className="animate-spin" />
+                <span>שולח…</span>
+              </>
+            ) : (
+              "שלח הצעה"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

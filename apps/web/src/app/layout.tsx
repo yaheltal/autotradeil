@@ -1,19 +1,30 @@
 import type { Metadata, Viewport } from "next";
-import { Frank_Ruhl_Libre, Heebo } from "next/font/google";
+import { Frank_Ruhl_Libre, Inter } from "next/font/google";
 
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { QueryProvider } from "@/providers/query-provider";
+import { ThemeProvider } from "@/providers/theme-provider";
 
 import "./globals.css";
 
-const heebo = Heebo({
-  subsets: ["hebrew", "latin"],
-  variable: "--font-heebo",
+/**
+ * Typography stack — locked per CLAUDE.md §4.
+ *
+ *   Inter (body)        → all paragraph + UI copy, Latin + Hebrew.
+ *   Frank Ruhl Libre    → all headings (Hebrew + Latin). Single editorial
+ *                         face — the site is Hebrew-first so a separate
+ *                         Latin display font (Fraunces, previously paired)
+ *                         was over-engineering for negligible polish gain.
+ *
+ * No third font, ever. Monospace lives in the system stack only.
+ */
+const inter = Inter({
+  subsets: ["latin", "latin-ext"],
+  variable: "--font-inter",
   display: "swap",
 });
 
-// Editorial Hebrew serif — premium automotive trade-journal feel.
-// Used only for display headings via the `font-serif` Tailwind utility.
 const frankRuhl = Frank_Ruhl_Libre({
   subsets: ["hebrew", "latin"],
   weight: ["500", "700", "900"],
@@ -77,16 +88,6 @@ export const metadata: Metadata = {
       "זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית עם הצעות מתועדות, מלאי משותף, ואימות KYC.",
     images: ["/og-image.png"],
   },
-  // Static favicons + apple-touch-icon, generated from the brand logo via
-  // scripts/process_brand_logo.py. Keeping them as real /public files (not
-  // dynamic Next.js routes) so social-link validators and PWA installers
-  // see immutable URLs they can cache.
-  //
-  // Cache-busting: browsers (especially iOS Safari + Chrome desktop)
-  // hold favicons forever once cached. The ?v=N query string forces a
-  // fresh fetch when the brand logo changes. Bump the integer when you
-  // ship a new logo. Same idea applies to apple-touch-icon (iOS pins
-  // home-screen icons more aggressively still).
   icons: {
     icon: [
       { url: "/favicon.ico?v=3", sizes: "any" },
@@ -97,14 +98,12 @@ export const metadata: Metadata = {
     shortcut: ["/favicon.ico?v=3"],
   },
   manifest: "/manifest.json?v=3",
-  // iOS PWA — once "Add to Home Screen" the app launches without
-  // Safari chrome. status-bar-style: black-translucent renders the
-  // status bar over the page content with white glyphs (matches our
-  // navy header). title is what iOS shows under the icon.
+  // iOS PWA — the new system is light-only, so the standalone status bar
+  // shows dark glyphs over a paper-white background.
   appleWebApp: {
     capable: true,
     title: "AutoTradeIL",
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
   },
   robots: {
     index: true,
@@ -121,12 +120,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  // viewportFit: "cover" lets the page extend beneath iOS notched
-  // status bar / home indicator. Without it iOS leaves brown-cream
-  // bands on iPhone X+ in standalone PWA mode. Components that
-  // need to dodge those areas use env(safe-area-inset-*).
   viewportFit: "cover",
-  themeColor: "#1a1a2e",
+  // Paper white — matches the locked palette. Replaces the legacy navy chrome.
+  themeColor: "#FFFFFF",
 };
 
 export default function RootLayout({
@@ -137,24 +133,10 @@ export default function RootLayout({
   return (
     <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
-        {/* Theme init — runs before first paint, reads localStorage
-            and applies the `dark` class to <html> so dark-mode
-            users don't see a white flash before hydration. The
-            suppressHydrationWarning above silences the diff that
-            results from this server/client mismatch on <html>. */}
-        <script
-          // eslint-disable-next-line react/no-danger
-          dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}`,
-          }}
-        />
-        {/* Preconnect to origins we hit on every cold visit. Saves
-            ~100-300ms LCP because TLS+DNS happens in parallel with
-            HTML parsing instead of being serialized after the first
-            <img>/api call. Cloudinary serves vehicle photos +
-            inventory thumbs; Supabase serves auth + KYC signed
-            URLs. crossOrigin="anonymous" is required for fonts +
-            images that need credentials-free CORS. */}
+        {/* next-themes injects the active class onto <html> before first
+            paint (see <ThemeProvider> below). `suppressHydrationWarning`
+            on <html> silences the unavoidable client/server mismatch
+            that injection produces. */}
         <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://res.cloudinary.com" />
         {process.env.NEXT_PUBLIC_SUPABASE_URL ? (
@@ -175,18 +157,22 @@ export default function RootLayout({
         ) : null}
       </head>
       <body
-        className={`${heebo.variable} ${frankRuhl.variable} bg-brand-cream text-brand-ink dark:bg-brand-night dark:text-brand-cream font-sans antialiased transition-colors`}
+        className={`${inter.variable} ${frankRuhl.variable} bg-paper text-ink dark:bg-ink dark:text-paper font-sans antialiased`}
       >
-        {/* Skip link — always first focusable. Navy background + cream text ≥ 15:1 contrast. */}
+        {/* Skip link — paper bg, ink text, accent ring. */}
         <a
           href="#main"
-          className="focus:bg-brand-navy focus:text-brand-cream focus:ring-brand-gold sr-only focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50 focus:rounded-md focus:px-4 focus:py-2 focus:outline-none focus:ring-2"
+          className="focus:start-md focus:top-md focus:bg-ink focus:px-md focus:text-paper focus:outline-accent sr-only focus:not-sr-only focus:fixed focus:z-50 focus:rounded-md focus:py-8 focus:outline-none focus:outline-2 focus:outline-offset-2"
         >
           דלג לתוכן הראשי
         </a>
-        <ImpersonationBanner />
-        {children}
-        <PWAInstallPrompt />
+        <ThemeProvider>
+          <QueryProvider>
+            <ImpersonationBanner />
+            {children}
+            <PWAInstallPrompt />
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

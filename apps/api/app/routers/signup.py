@@ -15,7 +15,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,9 +93,10 @@ async def _delete_supabase_auth_user(user_id: str) -> None:
 async def _check_unique_dealer_fields(
     db: AsyncSession, payload: DealerSignupRequest
 ) -> None:
-    """Pre-flight: reject early with a specific Hebrew message if business_id
-    or license_number is already taken. Catches the most common signup failures
-    BEFORE we create a Supabase auth user, so we never leak orphans."""
+    """Pre-flight: reject early with a specific Hebrew message if business_id,
+    license_number, phone, or id_number is already taken. Catches the most
+    common signup failures BEFORE we create a Supabase auth user, so we never
+    leak orphans."""
     existing_biz = (
         await db.execute(
             select(Dealer.id).where(Dealer.business_id == payload.business_id).limit(1)
@@ -118,6 +119,33 @@ async def _check_unique_dealer_fields(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="מספר רישיון סוחר זה כבר רשום במערכת",
+        )
+
+    # phone and id_number must be unique on the users table — these two
+    # fields are the login factors in the new phone+ID flow, and a duplicate
+    # would make the lookup ambiguous. Phone is also enforced by the partial
+    # unique index `uq_users_phone`; the handler check just gives a clean
+    # Hebrew message ahead of the DB error.
+    existing_phone_user = (
+        await db.execute(
+            select(User.id).where(User.phone == payload.phone).limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing_phone_user is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="מספר טלפון זה כבר רשום במערכת",
+        )
+
+    existing_id = (
+        await db.execute(
+            select(User.id).where(User.id_number == payload.id_number).limit(1)
+        )
+    ).scalar_one_or_none()
+    if existing_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="תעודת זהות זו כבר רשומה במערכת",
         )
 
 
@@ -273,8 +301,11 @@ async def signup_dealer(
 
 forgot_password_rate_limit = rate_limit("5/hour", scope="forgot_password")
 login_rate_limit = rate_limit("20/hour", scope="auth_login")
-otp_request_rate_limit = rate_limit("5/hour", scope="auth_otp_request")
-otp_verify_rate_limit = rate_limit("20/hour", scope="auth_otp_verify")
+# DEV-RELAXED — production should use the original 5/hour. Bumped while
+# the team iterates on the mobile login flow so SMS attempts during a
+# debugging session don't lock anyone out for an hour.
+otp_request_rate_limit = rate_limit("60/hour", scope="auth_otp_request")
+otp_verify_rate_limit = rate_limit("120/hour", scope="auth_otp_verify")
 
 
 # ==========================================================================
@@ -531,10 +562,13 @@ async def _supabase_generate_recovery_link(
 async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
     """Trigger a password-reset email. Always returns 200 so callers can
     not enumerate valid emails."""
-    redirect_to = body.redirect_to or "http://localhost:3000/reset-password"
+    default_reset = f"{settings.frontend_url.rstrip('/')}/auth/reset-password"
+    redirect_to = body.redirect_to or default_reset
     # Basic allowlist so we don't turn this into an open redirect.
-    if not redirect_to.startswith(("http://localhost", "https://autotradeil.co.il")):
-        redirect_to = "https://autotradeil.co.il/reset-password"
+    if not redirect_to.startswith(
+        ("http://localhost", "https://autotradeil.com", "https://autotradeil.co.il")
+    ):
+        redirect_to = default_reset
 
     try:
         link = await _supabase_generate_recovery_link(body.email, redirect_to)
@@ -555,16 +589,25 @@ async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
 
 
 class OtpRequestBody(BaseModel):
-    # Identify the dealer by EITHER email or phone. At least one must be set;
-    # the frontend's "OTP via SMS" path posts `phone`, the "OTP via email"
-    # path posts `email`. If both arrive, `phone` wins (user is on the SMS
-    # tab and probably wants SMS).
+    # Identify the user by EITHER email or phone. At least one must be set.
+    # `id_number` is REQUIRED — it's the second factor in the phone+ID login
+    # flow (mobile dealers + admins login by proving they know both the phone
+    # and the teudat-zehut tied to the account).
     email: EmailStr | None = Field(default=None)
     phone: str | None = Field(default=None, max_length=30)
+    id_number: str = Field(pattern="^[0-9]{9}$")
     # 'email' or 'sms'. Server will downgrade to 'email' if SMS delivery
-    # fails or the dealer has no phone on file.
-    # Dealers use email OTP to reduce SMS costs
-    delivery: str = Field(default="email", pattern="^(email|sms)$")
+    # fails or the user has no phone on file.
+    delivery: str = Field(default="sms", pattern="^(email|sms)$")
+
+    @field_validator("id_number")
+    @classmethod
+    def _check_id_checksum(cls, v: str) -> str:
+        from app.core.israeli_id import is_valid_israeli_id
+
+        if not is_valid_israeli_id(v):
+            raise ValueError("תעודת זהות לא תקינה")
+        return v
 
 
 @router.post(
@@ -630,6 +673,13 @@ async def public_otp_request(
     if user is None or user.user_type not in ("admin", "dealer"):
         return {"message": generic, "delivery": body.delivery}
 
+    # Second factor: the caller must also know the teudat-zehut tied to the
+    # account. Generic message on mismatch — same shape as not-found so an
+    # attacker can't tell whether the phone exists but the ID is wrong, or
+    # the phone is unknown.
+    if not user.id_number or user.id_number != body.id_number:
+        return {"message": generic, "delivery": body.delivery}
+
     # Look up dealer row if applicable (admins won't have one).
     if dealer is None and user.user_type == "dealer":
         dealer = (
@@ -680,10 +730,22 @@ async def public_otp_request(
 
 class OtpVerifyBody(BaseModel):
     # Accept either email or phone — must match the channel the request was
-    # made on. Validated at the route level.
+    # made on. id_number is double-checked here (already verified at /request)
+    # so a leaked OTP code on its own can't unlock the account without the
+    # original ID.
     email: EmailStr | None = Field(default=None)
     phone: str | None = Field(default=None, max_length=30)
+    id_number: str = Field(pattern="^[0-9]{9}$")
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+    @field_validator("id_number")
+    @classmethod
+    def _check_id_checksum(cls, v: str) -> str:
+        from app.core.israeli_id import is_valid_israeli_id
+
+        if not is_valid_israeli_id(v):
+            raise ValueError("תעודת זהות לא תקינה")
+        return v
 
 
 @router.post(
@@ -740,6 +802,12 @@ async def public_otp_verify(
         ).scalar_one_or_none()
 
     if user is None or user.user_type not in ("admin", "dealer"):
+        raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")
+    # Re-verify id_number — defense in depth. If an attacker grabbed an OTP
+    # via SMS interception, they still need the teudat-zehut to verify.
+    # Same generic 401 wording as a wrong-code so we don't leak which factor
+    # failed.
+    if not user.id_number or user.id_number != body.id_number:
         raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")
     if user.otp_code_hash is None or user.otp_expires_at is None:
         raise HTTPException(status_code=401, detail="קוד שגוי או פג תוקף")

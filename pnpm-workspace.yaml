@@ -1,3 +1,13 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+# Force lucide-react to surface @types/react as a peer so pnpm builds a
+# per-React-types flavor. Without this, web (@types/react@18) and mobile
+# (@types/react@19) both pull the same hoisted lucide-react instance and
+# TS picks up the wrong ReactNode (React 19 includes `bigint`, 18 does not),
+# breaking JSX type-checks on every lucide icon in apps/web.
+packageExtensions:
+  lucide-react:
+    peerDependencies:
+      "@types/react": "*"

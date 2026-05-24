@@ -1,0 +1,49 @@
+{
+  "name": "@autotradeil/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "One TypeScript surface for every API + domain shape shared between apps/web and apps/mobile. Hand-written enums + branded IDs, plus types generated from the backend's /openapi.json.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./enums": {
+      "types": "./dist/enums.d.ts",
+      "import": "./dist/enums.js",
+      "default": "./dist/enums.js"
+    },
+    "./ids": {
+      "types": "./dist/ids.d.ts",
+      "import": "./dist/ids.js",
+      "default": "./dist/ids.js"
+    },
+    "./api": {
+      "types": "./dist/api.d.ts",
+      "import": "./dist/api.js",
+      "default": "./dist/api.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit",
+    "clean": "rimraf dist .tsbuildinfo",
+    "generate": "tsx scripts/generate.ts",
+    "generate:check": "tsx scripts/generate.ts --check"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.0.0",
+    "rimraf": "^6.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.5.0"
+  }
+}

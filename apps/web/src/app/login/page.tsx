@@ -1,39 +1,43 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { Apple, CheckCircle2, Eye, EyeOff, Loader2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { forwardRef, Suspense, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { OtpInput } from "@/components/auth/OtpInput";
-import { BrandMark } from "@/components/BrandMark";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Separator } from "@/components/ui/separator";
 import { apiFetch } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 
 /*
- * Login (mobile-first redesign).
+ * /login — editorial masthead.
  *
- * Three sequential layouts driven by state:
- *   1. PASSWORD STEP — email + password + remember-me + forgot-password
- *   2. TOTP STEP     — segmented 6-slot OTP for dealers with 2FA enabled
- *   3. OTP-LOGIN     — passwordless via SMS/email code (collapsed by default)
+ * Layout direction (locked per CLAUDE.md §4):
+ *   masthead  (eyebrow + serif H1 + hairline + subtitle, left-aligned)
+ *   ──────────
+ *   form      (Label + Input pairs, ghost icon for show/hide password)
+ *   ──────────
+ *   alt:      OAuth (outline) + OTP login (link → inline panel)
  *
- * Visual language: cream surface with a subtle navy dot-grid backdrop
- * (matches the landing page), navy serif H1, gold focus rings on
- * inputs, a tall navy primary button. No social buttons.
+ * No card, no border, no backdrop decoration, no framer-motion. Type
+ * on paper.
  *
- * Contrast (audited):
- *   bg-brand-cream + text-brand-ink    → 17:1  (AAA)
- *   bg-brand-navy  + text-brand-cream  → 15.9:1 (AAA)
- *   focus ring brand-gold on cream     → 3.6:1 (UI element minimum 3:1 ✓)
+ * Auth state machine preserved verbatim:
+ *   password  → optional TOTP  → whoami  → redirect
+ *                                          ├─ admin   → next || /admin
+ *                                          ├─ dealer verified → next || /dashboard
+ *                                          ├─ dealer rejected → /signup/dealer/rejected
+ *                                          └─ dealer pending  → /signup/dealer/pending
  *
- * a11y:
- *   - H1 focused on mount; error region focusable + role=alert
- *   - Floating-label inputs use real <label> + aria-describedby for hints
- *   - Password show/hide button has dynamic aria-label
- *   - "remember me" is real <input type=checkbox>; bash session is already
- *     persistent so this is informational + future-proofing
+ * Auth flows (login, whoami, OTP send/verify, OAuth) stay as raw
+ * apiFetch — Phase 4 explicitly skipped these because they're complex
+ * one-shot user flows where TanStack adds no caching value.
  */
 
 type Whoami = {
@@ -82,7 +86,6 @@ function LoginPageInner() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,8 +96,8 @@ function LoginPageInner() {
     headingRef.current?.focus();
   }, []);
 
-  // Surface OAuth callback failures (e.g. user closed Google popup)
-  // — set a Hebrew message in the form's error region.
+  // OAuth callback failures (e.g. user closed the Google popup) get
+  // surfaced as a destructive alert and the query param is wiped.
   useEffect(() => {
     if (!oauthError) return;
     setError("ההתחברות עם הספק החיצוני נכשלה. נסה שוב.");
@@ -233,21 +236,9 @@ function LoginPageInner() {
     <main
       id="main"
       tabIndex={-1}
-      className="bg-brand-cream relative min-h-[100dvh] focus:outline-none"
+      className="bg-paper text-ink py-3xl sm:py-4xl min-h-[100dvh] focus:outline-none"
     >
-      {/* Decorative dot grid backdrop — same idea as the landing hero */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 opacity-[0.06]"
-        style={{
-          backgroundImage: "radial-gradient(circle, #1B2B4B 1px, transparent 1px)",
-          backgroundSize: "24px 24px",
-        }}
-      />
-      {/* Top-edge gold accent stripe */}
-      <div aria-hidden="true" className="bg-brand-gold absolute inset-x-0 top-0 h-1" />
-
-      <div className="relative mx-auto flex min-h-[100dvh] max-w-md flex-col items-stretch justify-center px-4 py-10 sm:px-6 sm:py-16">
+      <div className="px-lg sm:px-2xl mx-auto w-full max-w-md">
         {partialToken ? (
           <TotpStep
             ref={totpHeadingRef}
@@ -265,33 +256,52 @@ function LoginPageInner() {
             email={email}
             password={password}
             showPassword={showPassword}
-            rememberMe={rememberMe}
             onEmailChange={setEmail}
             onPasswordChange={setPassword}
             onShowPasswordToggle={() => setShowPassword((v) => !v)}
-            onRememberMeChange={setRememberMe}
             onSubmit={onSubmit}
             busy={loading}
             error={error}
             errorRef={errorRef}
             signedOut={signedOut}
             resetToast={resetToast}
+            router={router}
+            next={next}
+            onOtpError={setError}
           />
         )}
-
-        {!partialToken ? (
-          <OtpLoginSection router={router} next={next} onError={setError} errorRef={errorRef} />
-        ) : null}
       </div>
     </main>
   );
 }
 
 // =============================================================================
-// PASSWORD STEP
+// MASTHEAD — eyebrow + serif H1 + hairline + subtitle.
+// The editorial signature for /login, /signup, and the auth-flow pages.
 // =============================================================================
 
-import { forwardRef } from "react";
+const Masthead = forwardRef<HTMLHeadingElement, { title: string; subtitle: string }>(
+  function MastheadImpl({ title, subtitle }, ref) {
+    return (
+      <header>
+        <p className="text-muted text-xs font-medium uppercase tracking-widest">AutoTradeIL</p>
+        <h1
+          ref={ref}
+          tabIndex={-1}
+          className="text-ink mt-sm tracking-editorial font-serif text-4xl font-medium leading-tight focus:outline-none"
+        >
+          {title}
+        </h1>
+        <div aria-hidden="true" className="bg-hairline mt-lg h-px w-full" />
+        <p className="text-muted mt-lg text-sm">{subtitle}</p>
+      </header>
+    );
+  },
+);
+
+// =============================================================================
+// PASSWORD STEP
+// =============================================================================
 
 const PasswordStep = forwardRef<
   HTMLHeadingElement,
@@ -299,187 +309,163 @@ const PasswordStep = forwardRef<
     email: string;
     password: string;
     showPassword: boolean;
-    rememberMe: boolean;
     onEmailChange: (v: string) => void;
     onPasswordChange: (v: string) => void;
     onShowPasswordToggle: () => void;
-    onRememberMeChange: (v: boolean) => void;
     onSubmit: (e: FormEvent<HTMLFormElement>) => void;
     busy: boolean;
     error: string | null;
-    errorRef: React.RefObject<HTMLDivElement>;
+    errorRef: React.RefObject<HTMLDivElement | null>;
     signedOut: boolean;
     resetToast: boolean;
+    router: ReturnType<typeof useRouter>;
+    next: string;
+    onOtpError: (s: string | null) => void;
   }
 >(function PasswordStepImpl(
   {
     email,
     password,
     showPassword,
-    rememberMe,
     onEmailChange,
     onPasswordChange,
     onShowPasswordToggle,
-    onRememberMeChange,
     onSubmit,
     busy,
     error,
     errorRef,
     signedOut,
     resetToast,
+    router,
+    next,
+    onOtpError,
   },
   ref,
 ) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
-      className="border-brand-navy/10 overflow-hidden rounded-3xl border bg-white shadow-xl"
-    >
-      {/* Card header — BrandMark + Hebrew title */}
-      <div className="flex flex-col items-center gap-4 px-6 pb-2 pt-9 sm:px-8">
-        <BrandMark />
-        <div className="space-y-1 text-center">
-          <h1
-            ref={ref}
-            tabIndex={-1}
-            className="text-brand-navy font-serif text-2xl font-bold leading-tight tracking-tight focus:outline-none"
-          >
-            ברוך שובך
-          </h1>
-          <p className="text-brand-ink/65 text-sm">היכנס עם פרטי החשבון שלך כדי להמשיך</p>
-        </div>
-      </div>
+    <>
+      <Masthead ref={ref} title="כניסה" subtitle="התחבר עם חשבון הסוחר או האדמין שלך." />
 
-      <div className="px-6 pb-6 pt-4 sm:px-8 sm:pb-8">
+      <div className="mt-3xl space-y-md">
         {signedOut ? (
-          <div
-            role="status"
-            aria-live="polite"
-            className="bg-ok-bg text-ok-text mb-4 rounded-md px-4 py-3 text-center text-sm"
-          >
-            התנתקת בהצלחה. היכנס שוב כדי להמשיך.
-          </div>
+          <Alert>
+            <CheckCircle2 aria-hidden="true" />
+            <AlertDescription>התנתקת בהצלחה. היכנס שוב כדי להמשיך.</AlertDescription>
+          </Alert>
         ) : null}
         {resetToast ? (
-          <p
-            role="status"
-            aria-live="polite"
-            className="bg-ok-bg text-ok-text mb-4 rounded-md px-4 py-3 text-center text-sm"
-          >
-            הסיסמה עודכנה — ניתן להתחבר עם הסיסמה החדשה
-          </p>
+          <Alert>
+            <CheckCircle2 aria-hidden="true" />
+            <AlertDescription>הסיסמה עודכנה — ניתן להתחבר עם הסיסמה החדשה.</AlertDescription>
+          </Alert>
         ) : null}
+        {error ? (
+          <Alert
+            variant="destructive"
+            ref={errorRef as React.RefObject<HTMLDivElement>}
+            tabIndex={-1}
+            className="focus:outline-none"
+          >
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+      </div>
 
-        {/* Social sign-in (OAuth) — Google + Apple. Both delegate to
-            Supabase, which handles the provider redirect dance and
-            sends the user to /auth/callback when done. */}
-        <SocialSignInButtons />
-
-        <div className="my-6 flex items-center gap-3">
-          <span className="bg-brand-navy/15 dark:bg-white/15 h-px flex-1" aria-hidden />
-          <span className="text-brand-ink/55 dark:text-brand-cream/55 text-xs font-medium uppercase">
-            או
-          </span>
-          <span className="bg-brand-navy/15 dark:bg-white/15 h-px flex-1" aria-hidden />
-        </div>
-
-        <form onSubmit={onSubmit} noValidate className="space-y-5">
-          {error ? (
-            <div
-              ref={errorRef}
-              tabIndex={-1}
-              role="alert"
-              className="bg-danger-bg text-danger-text rounded-md px-4 py-3 text-sm focus:outline-none"
-            >
-              {error}
-            </div>
-          ) : null}
-
-          {/* Email — floating label */}
-          <FloatingField
+      <form onSubmit={onSubmit} noValidate className="mt-2xl space-y-lg">
+        <div className="space-y-xs">
+          <Label htmlFor="email">אימייל</Label>
+          <Input
             id="email"
             type="email"
-            label="אימייל"
-            autoComplete="email"
             dir="ltr"
+            autoComplete="email"
             required
             value={email}
-            onChange={onEmailChange}
+            onChange={(e) => onEmailChange(e.target.value)}
           />
+        </div>
 
-          {/* Password — floating label + show/hide */}
-          <FloatingField
-            id="password"
-            type={showPassword ? "text" : "password"}
-            label="סיסמה"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={onPasswordChange}
-            trailing={
-              <button
-                type="button"
-                onClick={onShowPasswordToggle}
-                aria-label={showPassword ? "הסתרת סיסמה" : "הצגת סיסמה"}
-                aria-pressed={showPassword}
-                className="text-brand-navy/55 hover:text-brand-navy focus-visible:outline-brand-navy inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-1"
-              >
-                {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-              </button>
-            }
-          />
-
-          {/* Remember + forgot */}
-          <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <label className="text-brand-ink flex cursor-pointer select-none items-center gap-2">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => onRememberMeChange(e.target.checked)}
-                className="border-brand-navy/30 text-brand-navy focus-visible:outline-brand-navy h-4 w-4 rounded border focus-visible:outline-2 focus-visible:outline-offset-2"
-              />
-              <span>זכור אותי</span>
-            </label>
-            <Link
-              href="/forgot-password"
-              className="text-brand-navy decoration-brand-gold focus-visible:outline-brand-navy rounded-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+        <div className="space-y-xs">
+          <Label htmlFor="password">סיסמה</Label>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => onPasswordChange(e.target.value)}
+              className="pe-12"
+            />
+            <button
+              type="button"
+              onClick={onShowPasswordToggle}
+              aria-label={showPassword ? "הסתרת סיסמה" : "הצגת סיסמה"}
+              aria-pressed={showPassword}
+              className="text-muted duration-fast hover:text-ink focus-visible:outline-accent absolute end-1 top-1/2 inline-flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
             >
-              שכחתי סיסמה
-            </Link>
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
           </div>
+        </div>
 
-          {/* Primary submit */}
-          <button
-            type="submit"
-            disabled={busy}
-            aria-busy={busy || undefined}
-            className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/25 inline-flex min-h-[52px] w-full items-center justify-center rounded-lg px-5 py-3.5 text-base font-semibold shadow-md transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70 disabled:hover:translate-y-0"
-          >
-            {busy ? "מתחבר…" : "כניסה"}
-          </button>
-        </form>
-      </div>
-
-      {/* Card footer — sign-up link */}
-      <div className="border-brand-navy/10 bg-brand-cream/40 border-t px-6 py-4 text-center sm:px-8">
-        <p className="text-brand-ink/70 text-sm">
-          אין לך חשבון?{" "}
+        <div className="flex justify-start">
           <Link
-            href="/signup/dealer"
-            className="text-brand-navy decoration-brand-gold hover:text-brand-navy focus-visible:outline-brand-navy rounded-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+            href="/forgot-password"
+            className="text-muted duration-fast hover:text-ink focus-visible:outline-accent rounded-sm text-sm transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4"
           >
-            הירשם כסוחר
+            שכחתי סיסמה
           </Link>
-        </p>
+        </div>
+
+        <Button
+          type="submit"
+          size="lg"
+          disabled={busy}
+          aria-busy={busy || undefined}
+          className="w-full"
+        >
+          {busy ? (
+            <>
+              <Loader2 aria-hidden="true" className="animate-spin" />
+              <span>מתחבר…</span>
+            </>
+          ) : (
+            "כניסה"
+          )}
+        </Button>
+      </form>
+
+      <div className="my-2xl gap-md flex items-center">
+        <Separator className="flex-1" />
+        <span className="text-muted text-xs font-medium uppercase tracking-widest">או</span>
+        <Separator className="flex-1" />
       </div>
-    </motion.div>
+
+      <SocialSignInButtons />
+
+      <div className="mt-xl">
+        <OtpLoginSection router={router} next={next} onError={onOtpError} />
+      </div>
+
+      <p className="text-muted mt-3xl text-center text-sm">
+        אין לך חשבון?{" "}
+        <Link
+          href="/signup/dealer"
+          className="text-ink duration-fast hover:text-accent focus-visible:outline-accent rounded-sm font-medium underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4"
+        >
+          הירשם כסוחר
+        </Link>
+      </p>
+    </>
   );
 });
 
 // =============================================================================
-// TOTP STEP — segmented OTP for 2FA-enabled dealers
+// TOTP STEP — 6-slot one-time code for 2FA-enabled dealers.
+// Reuses the masthead so the page reads as the same surface, just a
+// different chapter.
 // =============================================================================
 
 const TotpStep = forwardRef<
@@ -491,60 +477,34 @@ const TotpStep = forwardRef<
     onCancel: () => void;
     busy: boolean;
     error: string | null;
-    errorRef: React.RefObject<HTMLDivElement>;
+    errorRef: React.RefObject<HTMLDivElement | null>;
   }
 >(function TotpStepImpl({ code, onCodeChange, onSubmit, onCancel, busy, error, errorRef }, ref) {
   return (
-    <motion.section
-      role="region"
-      aria-live="polite"
-      aria-label="שלב אימות דו-שלבי"
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: "easeOut" }}
-      className="border-brand-navy/10 overflow-hidden rounded-3xl border bg-white shadow-xl"
-    >
-      <div className="flex flex-col items-center gap-3 px-6 pb-2 pt-8 sm:px-8">
-        <div className="bg-brand-navy ring-brand-gold/30 flex h-14 w-14 items-center justify-center rounded-full ring-4">
-          <span aria-hidden="true" className="text-brand-cream text-xl">
-            🔐
-          </span>
-        </div>
-        <div className="space-y-1 text-center">
-          <h2
-            ref={ref}
-            tabIndex={-1}
-            className="text-brand-navy font-serif text-2xl font-bold tracking-tight focus:outline-none"
-          >
-            אימות דו-שלבי
-          </h2>
-          <p id="totp-hint" className="text-brand-ink/65 text-sm">
-            פתח את Google Authenticator והזן את הקוד בן 6 הספרות
-          </p>
-        </div>
-      </div>
+    <>
+      <Masthead
+        ref={ref}
+        title="אימות דו-שלבי"
+        subtitle="פתח את Google Authenticator והזן את הקוד בן 6 הספרות."
+      />
 
-      <form
-        onSubmit={onSubmit}
-        noValidate
-        className="flex flex-col gap-5 px-6 pb-6 pt-4 sm:px-8 sm:pb-8"
-      >
+      <form onSubmit={onSubmit} noValidate className="mt-3xl space-y-xl">
         {error ? (
-          <div
-            ref={errorRef}
+          <Alert
+            variant="destructive"
+            ref={errorRef as React.RefObject<HTMLDivElement>}
             tabIndex={-1}
-            role="alert"
-            className="bg-danger-bg text-danger-text rounded-md px-4 py-3 text-sm focus:outline-none"
+            className="focus:outline-none"
           >
-            {error}
-          </div>
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
         ) : null}
 
         <OtpInput
           value={code}
           onChange={(v) => onCodeChange(v.replace(/\D/g, "").slice(0, 6))}
           onComplete={(v) => {
-            // Auto-submit on full 6 digits — no extra tap needed
             if (v.length === 6 && !busy) {
               const form = (document.activeElement as HTMLElement)?.closest("form");
               form?.requestSubmit();
@@ -555,104 +515,35 @@ const TotpStep = forwardRef<
           autoFocus
         />
 
-        <button
+        <Button
           type="submit"
+          size="lg"
           disabled={busy || code.length !== 6}
           aria-busy={busy || undefined}
-          className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/20 inline-flex min-h-[52px] w-full items-center justify-center rounded-xl px-5 py-3.5 text-base font-semibold shadow-md transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          className="w-full"
         >
-          {busy ? "מאמת…" : "אמת והתחבר"}
-        </button>
+          {busy ? (
+            <>
+              <Loader2 aria-hidden="true" className="animate-spin" />
+              <span>מאמת…</span>
+            </>
+          ) : (
+            "אמת והתחבר"
+          )}
+        </Button>
 
-        <button
-          type="button"
-          onClick={onCancel}
-          className="text-brand-navy focus-visible:outline-brand-navy rounded text-center text-sm font-semibold underline focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
-          חזרה להתחברות
-        </button>
+        <div className="text-center">
+          <Button type="button" variant="link" onClick={onCancel}>
+            חזרה להתחברות
+          </Button>
+        </div>
       </form>
-    </motion.section>
+    </>
   );
 });
 
 // =============================================================================
-// FloatingField — input with floating label + optional trailing element
-// =============================================================================
-
-function FloatingField({
-  id,
-  type,
-  label,
-  value,
-  onChange,
-  autoComplete,
-  required,
-  dir,
-  trailing,
-}: {
-  id: string;
-  type: string;
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  autoComplete?: string;
-  required?: boolean;
-  dir?: "ltr" | "rtl";
-  trailing?: React.ReactNode;
-}) {
-  const hasValue = value.length > 0;
-  return (
-    <div className="border-brand-navy/15 focus-within:border-brand-gold focus-within:ring-brand-gold/25 group relative flex items-center gap-2 rounded-xl border bg-white transition-colors focus-within:ring-4">
-      <input
-        id={id}
-        type={type}
-        required={required}
-        autoComplete={autoComplete}
-        dir={dir}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        // peer enables the floating-label trick below
-        className="text-brand-navy peer min-h-[56px] flex-1 bg-transparent px-4 pb-2 pt-5 text-base placeholder-transparent focus:outline-none"
-        placeholder={label}
-      />
-      <label
-        htmlFor={id}
-        className={[
-          "text-brand-ink/55 pointer-events-none absolute start-4 transition-all duration-150",
-          // Floating: when input has value OR is focused, label shrinks up
-          hasValue
-            ? "text-brand-navy top-1.5 text-xs font-semibold"
-            : "peer-focus:text-brand-navy top-4 text-base peer-focus:top-1.5 peer-focus:text-xs peer-focus:font-semibold",
-        ].join(" ")}
-      >
-        {label}
-      </label>
-      {trailing ? <div className="me-2">{trailing}</div> : null}
-    </div>
-  );
-}
-
-function EyeIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-5 w-5"
-    >
-      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
-      <circle cx="12" cy="12" r="3" />
-    </svg>
-  );
-}
-
-// =============================================================================
-// SocialSignInButtons — Google + Apple OAuth via Supabase
+// SocialSignInButtons — Google + Apple via Supabase OAuth.
 // =============================================================================
 
 function SocialSignInButtons() {
@@ -674,9 +565,7 @@ function SocialSignInButtons() {
       // Supabase performs a full-page redirect; nothing else to do here.
     } catch (e) {
       // Translate the most common Supabase OAuth errors to Hebrew so the
-      // dealer-side message is actionable. The "provider is not enabled"
-      // string comes back verbatim from supabase-js when an admin hasn't
-      // turned the provider on in the dashboard yet.
+      // dealer-side message is actionable.
       const raw = e instanceof Error ? e.message : "";
       const lower = raw.toLowerCase();
       let hebrew: string;
@@ -691,8 +580,6 @@ function SocialSignInButtons() {
       } else {
         hebrew = raw || "שגיאה לא צפויה";
       }
-      // Console log helps debugging in DevTools — original message is
-      // visible there even though the user only sees the friendly Hebrew.
       // eslint-disable-next-line no-console
       console.error(`[oauth:${provider}]`, raw);
       setErr(hebrew);
@@ -701,31 +588,37 @@ function SocialSignInButtons() {
   };
 
   return (
-    <div className="space-y-3">
-      <button
+    <div className="space-y-sm">
+      <Button
         type="button"
+        variant="outline"
+        size="lg"
         onClick={() => void start("google")}
         disabled={busy !== null}
         aria-busy={busy === "google" || undefined}
-        className="border-brand-navy/15 text-brand-navy hover:bg-brand-cream focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center gap-3 rounded-lg border bg-white px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="w-full"
       >
         <GoogleIcon />
         <span>{busy === "google" ? "מתחבר עם Google…" : "המשך עם Google"}</span>
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        size="lg"
         onClick={() => void start("apple")}
         disabled={busy !== null}
         aria-busy={busy === "apple" || undefined}
-        className="bg-black text-white hover:bg-black/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center gap-3 rounded-lg px-4 py-2.5 text-sm font-semibold shadow-sm transition disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2"
+        // Apple's brand guidelines require black surface for Sign-in-with-Apple
+        // buttons. Documented deviation from the 2-color palette.
+        className="w-full bg-black text-white hover:bg-black/90"
       >
-        <AppleIcon />
+        <Apple aria-hidden="true" />
         <span>{busy === "apple" ? "מתחבר עם Apple…" : "המשך עם Apple"}</span>
-      </button>
+      </Button>
       {err ? (
-        <p className="bg-danger-bg text-danger-text rounded-md px-3 py-2 text-xs" role="alert">
-          {err}
-        </p>
+        <Alert variant="destructive">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{err}</AlertDescription>
+        </Alert>
       ) : null}
     </div>
   );
@@ -733,7 +626,9 @@ function SocialSignInButtons() {
 
 function GoogleIcon() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+    // lucide-react has no brand glyphs; the Google G stays as a small
+    // inline SVG (documented deviation in docs/<login>.md).
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4">
       <path
         fill="#4285F4"
         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
@@ -754,34 +649,10 @@ function GoogleIcon() {
   );
 }
 
-function AppleIcon() {
-  return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor" className="h-5 w-5">
-      <path d="M16.365 1.43c0 1.14-.41 2.207-1.232 3.085-.99 1.054-2.187 1.665-3.482 1.557a3.45 3.45 0 01-.024-.43c0-1.094.486-2.187 1.273-3.04C13.776 1.586 14.95.992 16.103.93c.131.142.262.341.262.5zM20.5 17.25c-.547 1.27-.81 1.838-1.515 2.96-1.013 1.6-2.435 3.589-4.198 3.605-1.57.016-1.974-1.022-4.103-1.011-2.13.012-2.575 1.029-4.144 1.013-1.764-.016-3.116-1.812-4.13-3.412-2.83-4.46-3.13-9.694-1.382-12.475 1.243-1.974 3.207-3.13 5.054-3.13 1.879 0 3.061 1.029 4.612 1.029 1.503 0 2.42-1.029 4.587-1.029 1.643 0 3.385.895 4.625 2.443-4.066 2.227-3.405 8.027.594 10.007z" />
-    </svg>
-  );
-}
-
-function EyeOffIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className="h-5 w-5"
-    >
-      <path d="M17.94 17.94A10.94 10.94 0 0112 19c-6.5 0-10-7-10-7a18.5 18.5 0 015.06-5.94M9.9 4.24A10.94 10.94 0 0112 4c6.5 0 10 7 10 7a18.5 18.5 0 01-3.21 4.71M1 1l22 22M9.88 9.88a3 3 0 104.24 4.24" />
-    </svg>
-  );
-}
-
 // =============================================================================
-// OTP login section (passwordless via SMS or email).
-// Uses the new <OtpInput> for the code step.
+// OTP login (passwordless via SMS or email) — inline panel toggled by a
+// quiet "link"-variant trigger. State machine unchanged from the previous
+// implementation; styling rebuilt against ink/paper/accent + shadcn.
 // =============================================================================
 
 type OtpChannel = "sms" | "email";
@@ -790,12 +661,10 @@ function OtpLoginSection({
   router,
   next,
   onError,
-  errorRef,
 }: {
   router: ReturnType<typeof useRouter>;
   next: string;
   onError: (s: string | null) => void;
-  errorRef: React.RefObject<HTMLDivElement>;
 }) {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<"identifier" | "code">("identifier");
@@ -807,16 +676,12 @@ function OtpLoginSection({
   const [busy, setBusy] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [stepAnnounce, setStepAnnounce] = useState("");
-  // Resend countdown — kicks off the moment a code is requested.
   const [resendIn, setResendIn] = useState(0);
 
   const panelHeadingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
-    if (open) {
-      queueMicrotask(() => panelHeadingRef.current?.focus());
-    }
+    if (open) queueMicrotask(() => panelHeadingRef.current?.focus());
   }, [open]);
 
   useEffect(() => {
@@ -837,10 +702,7 @@ function OtpLoginSection({
           : { email: otpEmail.trim(), delivery: "email" };
       const resp = await apiFetch<{ message: string; delivery: OtpChannel }>(
         "/api/v1/auth/otp/request",
-        {
-          method: "POST",
-          body: JSON.stringify(body),
-        },
+        { method: "POST", body: JSON.stringify(body) },
       );
       const finalChannel: OtpChannel = resp.delivery === "sms" ? "sms" : "email";
       setActualChannel(finalChannel);
@@ -850,9 +712,6 @@ function OtpLoginSection({
           : "אם הכתובת קיימת במערכת, נשלח אליה קוד באימייל.",
       );
       setStep("code");
-      setStepAnnounce(
-        finalChannel === "sms" ? "הזן את הקוד שהתקבל ב-SMS" : "הזן את הקוד שהתקבל באימייל",
-      );
       setResendIn(60);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "שגיאה בשליחת הקוד");
@@ -874,10 +733,7 @@ function OtpLoginSection({
       const resp = await apiFetch<{
         access_token: string;
         refresh_token: string | null;
-      }>("/api/v1/auth/otp/verify", {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
+      }>("/api/v1/auth/otp/verify", { method: "POST", body: JSON.stringify(body) });
       const supabase = createClient();
       if (resp.refresh_token) {
         await supabase.auth.setSession({
@@ -898,14 +754,11 @@ function OtpLoginSection({
             const me = await apiFetch<DealerMe>("/api/v1/dealers/me", {
               token: resp.access_token,
             });
-            if (me.verified) {
-              router.push(next || "/dashboard");
-            } else if (me.rejected_at) {
+            if (me.verified) router.push(next || "/dashboard");
+            else if (me.rejected_at) {
               const reason = encodeURIComponent(me.rejection_reason ?? "other");
               router.push(`/signup/dealer/rejected?reason=${reason}`);
-            } else {
-              router.push("/signup/dealer/pending");
-            }
+            } else router.push("/signup/dealer/pending");
             return;
           } catch {
             router.push("/signup/dealer/pending");
@@ -931,238 +784,217 @@ function OtpLoginSection({
     setInfo(null);
   };
 
-  // Surface OTP errors to the parent so its error region focuses
+  // Surface OTP errors to the parent so its alert region focuses.
   useEffect(() => {
     if (err) onError(err);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [err]);
 
+  if (!open) {
+    return (
+      <div className="text-center">
+        <Button
+          type="button"
+          variant="link"
+          onClick={() => setOpen(true)}
+          aria-expanded={false}
+          aria-controls="otp-panel"
+        >
+          כניסה עם קוד חד-פעמי
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <section aria-labelledby="alt-login-heading" className="mt-5">
-      <h2 id="alt-login-heading" className="sr-only">
-        דרכי כניסה נוספות
+    <section
+      id="otp-panel"
+      aria-labelledby="otp-heading"
+      className="border-hairline pt-xl mt-xl border-t"
+    >
+      <h2
+        id="otp-heading"
+        ref={panelHeadingRef}
+        tabIndex={-1}
+        className="text-ink font-serif text-xl font-medium focus:outline-none"
+      >
+        כניסה עם קוד חד-פעמי
       </h2>
 
-      <div className="flex items-center gap-3 px-1 pb-3">
-        <span className="bg-brand-navy/15 h-px flex-1" aria-hidden="true" />
-        <span className="text-brand-ink/55 text-xs font-medium">או</span>
-        <span className="bg-brand-navy/15 h-px flex-1" aria-hidden="true" />
+      <div className="mt-md space-y-md">
+        {err ? (
+          <Alert variant="destructive">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{err}</AlertDescription>
+          </Alert>
+        ) : null}
+        {info && step === "code" ? (
+          <Alert>
+            <CheckCircle2 aria-hidden="true" />
+            <AlertDescription>{info}</AlertDescription>
+          </Alert>
+        ) : null}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-controls="otp-panel"
-        aria-expanded={open}
-        className="border-brand-navy/20 text-brand-navy hover:border-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-lg border-2 bg-white px-4 py-3 text-sm font-semibold shadow-sm transition focus-visible:outline-2 focus-visible:outline-offset-2"
-      >
-        <span aria-hidden="true">🔐</span>
-        כניסה עם קוד חד פעמי (ללא סיסמה)
-      </button>
-
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            key="otp-panel"
-            id="otp-panel"
-            role="region"
-            aria-labelledby="otp-heading"
-            initial={{ opacity: 0, y: -8, height: 0 }}
-            animate={{ opacity: 1, y: 0, height: "auto" }}
-            exit={{ opacity: 0, y: -8, height: 0 }}
-            transition={{ duration: 0.25, ease: "easeOut" }}
-            className="border-brand-navy/15 mt-3 overflow-hidden rounded-3xl border bg-white p-6 shadow-md sm:p-7"
-          >
-          <div className="flex items-center justify-between gap-3">
-            <h3
-              id="otp-heading"
-              ref={panelHeadingRef}
-              tabIndex={-1}
-              className="text-brand-navy font-serif text-xl font-bold tracking-tight focus:outline-none"
-            >
-              כניסה עם קוד חד פעמי
-            </h3>
-            <span
-              aria-hidden="true"
-              className="bg-brand-gold/15 text-brand-navy inline-flex h-8 w-8 items-center justify-center rounded-full text-base"
-            >
-              🔐
-            </span>
-          </div>
-
-          {stepAnnounce ? (
-            <p role="status" aria-live="polite" className="sr-only" key={stepAnnounce}>
-              {stepAnnounce}
-            </p>
-          ) : null}
-
-          {err ? (
-            <p
-              role="alert"
-              className="bg-danger-bg text-danger-text mt-4 rounded-md px-3 py-2 text-sm"
-            >
-              {err}
-            </p>
-          ) : null}
-          {info && step === "code" ? (
-            <p className="bg-ok-bg text-ok-text mt-4 rounded-md px-3 py-2 text-sm">{info}</p>
-          ) : null}
-
-          {step === "identifier" ? (
-            <form onSubmit={requestCode} noValidate className="mt-5 space-y-4">
-              <fieldset>
-                <legend className="text-brand-navy mb-2 block text-sm font-semibold">
-                  באיזה ערוץ לקבל את הקוד?
-                </legend>
-                <div className="grid grid-cols-2 gap-2">
-                  {(
-                    [
-                      ["sms", "📱", "SMS"],
-                      ["email", "📧", "אימייל"],
-                    ] as const
-                  ).map(([value, icon, label]) => {
-                    const selected = channel === value;
-                    return (
-                      <label
-                        key={value}
-                        className={[
-                          "inline-flex min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-xl border-2 px-3 py-2 text-sm font-semibold transition",
-                          "has-[:focus-visible]:outline-brand-navy has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2",
-                          selected
-                            ? "border-brand-navy bg-brand-navy text-brand-cream"
-                            : "border-brand-navy/25 text-brand-navy hover:bg-brand-navy/5 bg-white",
-                        ].join(" ")}
-                      >
-                        <input
-                          type="radio"
-                          name="otp-channel"
-                          value={value}
-                          checked={selected}
-                          onChange={() => setChannel(value)}
-                          className="sr-only"
-                        />
-                        <span aria-hidden="true">{icon}</span>
-                        {label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-
-              {channel === "sms" ? (
-                <FloatingField
-                  id="otp-login-phone"
-                  type="tel"
-                  label="מספר טלפון"
-                  autoComplete="tel"
-                  dir="ltr"
-                  required
-                  value={otpPhone}
-                  onChange={setOtpPhone}
-                />
-              ) : (
-                <FloatingField
-                  id="otp-login-email"
-                  type="email"
-                  label="אימייל"
-                  autoComplete="email"
-                  dir="ltr"
-                  required
-                  value={otpEmail}
-                  onChange={setOtpEmail}
-                />
-              )}
-
-              <button
-                type="submit"
-                disabled={busy || (channel === "sms" ? !otpPhone.trim() : !otpEmail.trim())}
-                aria-busy={busy || undefined}
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] w-full items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-              >
-                {busy ? "שולח…" : channel === "sms" ? "שלח קוד ב-SMS" : "שלח קוד באימייל"}
-              </button>
-            </form>
-          ) : (
-            <div className="mt-6 space-y-5">
-              <p
-                id="otp-login-code-hint"
-                className="text-brand-ink/70 text-center text-sm leading-relaxed"
-              >
-                {actualChannel === "sms" ? (
-                  <>
-                    שלחנו קוד בן 6 ספרות ב-SMS אל
-                    <br />
-                    <span className="text-brand-navy font-semibold" dir="ltr">
-                      {otpPhone}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    שלחנו קוד בן 6 ספרות לכתובת
-                    <br />
-                    <span className="text-brand-navy font-semibold" dir="ltr">
-                      {otpEmail}
-                    </span>
-                  </>
-                )}
-              </p>
-              <OtpInput
-                value={otpCode}
-                onChange={(v) => setOtpCode(v.replace(/\D/g, "").slice(0, 6))}
-                onComplete={(v) => void verifyCode(v)}
-                state={err ? "error" : "idle"}
-                aria-describedby="otp-login-code-hint"
-                autoFocus
-              />
-
-              <div className="text-center text-sm">
-                <span className="text-brand-ink/65">לא קיבלת קוד? </span>
-                {resendIn > 0 ? (
-                  <span className="text-brand-ink/50">שליחה חוזרת בעוד {resendIn} שניות</span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      // Resend by re-firing the request flow.
-                      const fakeEvent = {
-                        preventDefault: () => undefined,
-                      } as unknown as FormEvent<HTMLFormElement>;
-                      void requestCode(fakeEvent);
-                    }}
-                    disabled={busy}
-                    className="text-brand-navy decoration-brand-gold focus-visible:outline-brand-navy rounded-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+      {step === "identifier" ? (
+        <form onSubmit={requestCode} noValidate className="mt-lg space-y-lg">
+          <fieldset>
+            <legend className="text-ink text-sm font-medium">באיזה ערוץ לקבל את הקוד?</legend>
+            <div className="gap-sm mt-sm grid grid-cols-2">
+              {(
+                [
+                  ["sms", "SMS"],
+                  ["email", "אימייל"],
+                ] as const
+              ).map(([value, label]) => {
+                const selected = channel === value;
+                return (
+                  <label
+                    key={value}
+                    className={[
+                      "inline-flex h-11 cursor-pointer items-center justify-center rounded-md border text-sm font-medium transition-colors",
+                      "duration-fast",
+                      "has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2",
+                      selected
+                        ? "border-ink bg-ink text-paper"
+                        : "border-hairline bg-paper text-ink hover:border-ink",
+                    ].join(" ")}
                   >
-                    שלח לי שוב
-                  </button>
-                )}
-              </div>
+                    <input
+                      type="radio"
+                      name="otp-channel"
+                      value={value}
+                      checked={selected}
+                      onChange={() => setChannel(value)}
+                      className="sr-only"
+                    />
+                    {label}
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => void verifyCode()}
-                  disabled={busy || otpCode.length !== 6}
-                  aria-busy={busy || undefined}
-                  className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-[48px] flex-1 items-center justify-center rounded-xl px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-                >
-                  {busy ? "מאמת…" : "התחבר"}
-                </button>
-                <button
-                  type="button"
-                  onClick={goBack}
-                  className="border-brand-navy/25 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-[48px] items-center justify-center rounded-xl border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  חזרה
-                </button>
-              </div>
+          {channel === "sms" ? (
+            <div className="space-y-xs">
+              <Label htmlFor="otp-login-phone">מספר טלפון</Label>
+              <Input
+                id="otp-login-phone"
+                type="tel"
+                dir="ltr"
+                autoComplete="tel"
+                required
+                value={otpPhone}
+                onChange={(e) => setOtpPhone(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="space-y-xs">
+              <Label htmlFor="otp-login-email">אימייל</Label>
+              <Input
+                id="otp-login-email"
+                type="email"
+                dir="ltr"
+                autoComplete="email"
+                required
+                value={otpEmail}
+                onChange={(e) => setOtpEmail(e.target.value)}
+              />
             </div>
           )}
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-      {/* Reference is reserved so parent's error focus can target this region.
-          The actual error markup lives inside the panel above. */}
-      <div ref={errorRef} className="sr-only" tabIndex={-1} aria-hidden="true" />
+
+          <Button
+            type="submit"
+            size="lg"
+            disabled={busy || (channel === "sms" ? !otpPhone.trim() : !otpEmail.trim())}
+            aria-busy={busy || undefined}
+            className="w-full"
+          >
+            {busy ? (
+              <>
+                <Loader2 aria-hidden="true" className="animate-spin" />
+                <span>שולח…</span>
+              </>
+            ) : channel === "sms" ? (
+              "שלח קוד ב-SMS"
+            ) : (
+              "שלח קוד באימייל"
+            )}
+          </Button>
+        </form>
+      ) : (
+        <div className="mt-lg space-y-lg">
+          <p id="otp-login-code-hint" className="text-muted text-center text-sm leading-relaxed">
+            {actualChannel === "sms" ? (
+              <>
+                שלחנו קוד בן 6 ספרות ב-SMS אל
+                <br />
+                <span className="text-ink font-tabular font-medium" dir="ltr">
+                  {otpPhone}
+                </span>
+              </>
+            ) : (
+              <>
+                שלחנו קוד בן 6 ספרות לכתובת
+                <br />
+                <span className="text-ink font-medium" dir="ltr">
+                  {otpEmail}
+                </span>
+              </>
+            )}
+          </p>
+          <OtpInput
+            value={otpCode}
+            onChange={(v) => setOtpCode(v.replace(/\D/g, "").slice(0, 6))}
+            onComplete={(v) => void verifyCode(v)}
+            state={err ? "error" : "idle"}
+            aria-describedby="otp-login-code-hint"
+            autoFocus
+          />
+          <div className="text-center text-sm">
+            <span className="text-muted">לא קיבלת קוד? </span>
+            {resendIn > 0 ? (
+              <span className="text-muted font-tabular">שליחה חוזרת בעוד {resendIn} שניות</span>
+            ) : (
+              <Button
+                type="button"
+                variant="link"
+                onClick={() => {
+                  const fakeEvent = {
+                    preventDefault: () => undefined,
+                  } as unknown as FormEvent<HTMLFormElement>;
+                  void requestCode(fakeEvent);
+                }}
+                disabled={busy}
+              >
+                שלח לי שוב
+              </Button>
+            )}
+          </div>
+          <div className="gap-sm flex flex-col sm:flex-row">
+            <Button
+              type="button"
+              size="lg"
+              onClick={() => void verifyCode()}
+              disabled={busy || otpCode.length !== 6}
+              aria-busy={busy || undefined}
+              className="flex-1"
+            >
+              {busy ? (
+                <>
+                  <Loader2 aria-hidden="true" className="animate-spin" />
+                  <span>מאמת…</span>
+                </>
+              ) : (
+                "התחבר"
+              )}
+            </Button>
+            <Button type="button" variant="outline" size="lg" onClick={goBack}>
+              חזרה
+            </Button>
+          </div>
+        </div>
+      )}
     </section>
   );
 }

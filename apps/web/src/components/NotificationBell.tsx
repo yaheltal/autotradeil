@@ -1,11 +1,13 @@
 "use client";
 
 import { Menu, MenuButton, MenuItem, MenuItems } from "@headlessui/react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Dealer notification bell for the dashboard header.
@@ -56,45 +58,36 @@ function hrefForNotification(n: Notification): string {
 }
 
 export function NotificationBell({ token }: Props) {
-  const [data, setData] = useState<ListResponse | null>(null);
+  const qc = useQueryClient();
   const [status, setStatus] = useState<string>("");
   const lastUnreadRef = useRef<number>(0);
 
+  const notifQuery = useQuery({
+    queryKey: queryKeys.notifications.list(),
+    queryFn: () => apiFetch<ListResponse>(`/api/v1/notifications?limit=${LIMIT}`, { token }),
+    enabled: !!token,
+    // Background poll — TanStack handles the interval + tab-visibility
+    // gating that this component used to do by hand.
+    refetchInterval: POLL_MS,
+    refetchIntervalInBackground: false,
+    staleTime: 0,
+  });
+  const data = notifQuery.data ?? null;
+
+  // Announce ONLY on increase AND when the page is visible — avoids
+  // shouting on tab-focus re-fetches.
   useEffect(() => {
-    if (!token) return;
-
-    let cancelled = false;
-
-    const fetchNow = async () => {
-      try {
-        const res = await apiFetch<ListResponse>(`/api/v1/notifications?limit=${LIMIT}`, { token });
-        if (cancelled) return;
-        setData(res);
-
-        // Announce ONLY on increase AND when the page is visible — avoids
-        // shouting on tab-focus re-fetches.
-        if (
-          res.unread_count > lastUnreadRef.current &&
-          typeof document !== "undefined" &&
-          document.visibilityState === "visible"
-        ) {
-          const delta = res.unread_count - lastUnreadRef.current;
-          const noun = delta === 1 ? "התראה חדשה" : `${delta} התראות חדשות`;
-          setStatus(noun);
-        }
-        lastUnreadRef.current = res.unread_count;
-      } catch {
-        // Silently ignore — the bell is non-critical
-      }
-    };
-
-    void fetchNow();
-    const t = setInterval(() => void fetchNow(), POLL_MS);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, [token]);
+    if (!data) return;
+    if (
+      data.unread_count > lastUnreadRef.current &&
+      typeof document !== "undefined" &&
+      document.visibilityState === "visible"
+    ) {
+      const delta = data.unread_count - lastUnreadRef.current;
+      setStatus(delta === 1 ? "התראה חדשה" : `${delta} התראות חדשות`);
+    }
+    lastUnreadRef.current = data.unread_count;
+  }, [data]);
 
   // Clear the status message a few seconds after announcement so the
   // live region doesn't hold stale text.
@@ -107,13 +100,15 @@ export function NotificationBell({ token }: Props) {
   const unread = data?.unread_count ?? 0;
   const items = data?.items ?? [];
 
-  const markRead = async (id: string) => {
-    try {
-      await apiFetch(`/api/v1/notifications/${id}/read`, {
-        method: "POST",
-        token,
-      });
-      setData((prev) =>
+  const markReadMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/v1/notifications/${id}/read`, { method: "POST", token }),
+    onMutate: async (id) => {
+      // Optimistic update — the previous code already mutated local state
+      // before the network round-trip, so preserve that snappy feedback.
+      await qc.cancelQueries({ queryKey: queryKeys.notifications.list() });
+      const previous = qc.getQueryData<ListResponse>(queryKeys.notifications.list());
+      qc.setQueryData<ListResponse | undefined>(queryKeys.notifications.list(), (prev) =>
         prev
           ? {
               ...prev,
@@ -124,20 +119,21 @@ export function NotificationBell({ token }: Props) {
             }
           : prev,
       );
-      // Sync the ref so we don't re-announce on the next poll
       lastUnreadRef.current = Math.max(0, lastUnreadRef.current - 1);
-    } catch {
-      /* best-effort */
-    }
-  };
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKeys.notifications.list(), ctx.previous);
+    },
+  });
+  const markRead = (id: string) => markReadMutation.mutate(id);
 
-  const markAllRead = async () => {
-    try {
-      await apiFetch(`/api/v1/notifications/read-all`, {
-        method: "POST",
-        token,
-      });
-      setData((prev) =>
+  const markAllReadMutation = useMutation({
+    mutationFn: () => apiFetch(`/api/v1/notifications/read-all`, { method: "POST", token }),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: queryKeys.notifications.list() });
+      const previous = qc.getQueryData<ListResponse>(queryKeys.notifications.list());
+      qc.setQueryData<ListResponse | undefined>(queryKeys.notifications.list(), (prev) =>
         prev
           ? {
               ...prev,
@@ -149,10 +145,13 @@ export function NotificationBell({ token }: Props) {
           : prev,
       );
       lastUnreadRef.current = 0;
-    } catch {
-      /* best-effort */
-    }
-  };
+      return { previous };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(queryKeys.notifications.list(), ctx.previous);
+    },
+  });
+  const markAllRead = () => markAllReadMutation.mutate();
 
   const buttonLabel = unread > 0 ? `התראות, ${unread} חדשות` : "התראות";
 

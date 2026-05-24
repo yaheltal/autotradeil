@@ -1,12 +1,14 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { useEffect, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
 
 import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { useDialogScrollReset } from "@/hooks/useDialogScrollReset";
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * VehicleFullDetailsDialog — read-only "registration card" view.
@@ -123,33 +125,28 @@ export function VehicleFullDetailsDialog({
   vehicleId,
   endpoint,
 }: Props) {
-  const [data, setData] = useState<Vehicle | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   useDialogScrollReset(cardRef, open);
 
-  useEffect(() => {
-    if (!open) {
-      setData(null);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    const path =
+  const path =
+    endpoint === "admin"
+      ? `/api/v1/admin/inventory/${vehicleId}`
+      : `/api/v1/inventory/${vehicleId}`;
+  const detailQuery = useQuery({
+    queryKey:
       endpoint === "admin"
-        ? `/api/v1/admin/inventory/${vehicleId}`
-        : `/api/v1/inventory/${vehicleId}`;
-    apiFetch<Vehicle>(path, { token })
-      .then((res) => {
-        if (!cancelled) setData(res);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "שגיאה בטעינה");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [open, token, vehicleId, endpoint]);
+        ? queryKeys.admin.inventoryDetail(vehicleId)
+        : queryKeys.inventory.detail(vehicleId),
+    queryFn: () => apiFetch<Vehicle>(path, { token }),
+    enabled: open && !!vehicleId,
+  });
+  const data = detailQuery.data ?? null;
+  const error =
+    detailQuery.error instanceof Error
+      ? detailQuery.error.message
+      : detailQuery.error
+        ? "שגיאה בטעינה"
+        : null;
 
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>

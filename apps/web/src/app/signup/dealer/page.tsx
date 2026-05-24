@@ -1,46 +1,49 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { CheckCircle2, FileText, Loader2, TriangleAlert } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { forwardRef, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
-import { BrandMark } from "@/components/BrandMark";
-import { FormField } from "@/components/FormField";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { apiFetch } from "@/lib/api";
+import { createClient } from "@/lib/supabase";
 
 /*
  * SmartCameraCapture is camera + canvas + Hebrew bidi fallback — only
  * needed when a doc slot is active. Lazy load saves ~15kB on the
- * signup page.
+ * signup page. Its own visual language is unchanged in this commit;
+ * it lives in a modal layer above this page.
  */
 const SmartCameraCapture = dynamic(
   () => import("@/components/SmartCameraCapture").then((m) => m.SmartCameraCapture),
   { ssr: false },
 );
-import { apiFetch } from "@/lib/api";
-import { createClient } from "@/lib/supabase";
 
 /*
- * Dealer signup — Phase 6.6 wizard.
+ * /signup/dealer — editorial TOC wizard.
  *
- * Step 1 (capture):  3 SmartCameraCapture slots (id_front, id_back, license).
- *                    "המשך" runs POST /security/kyc/extract → pre-fills step 2.
- * Step 2 (form):     Existing fieldsets, defaults pre-filled from extraction.
- *                    Submit creates the account + auto-login + uploads the 3
- *                    captured blobs to /security/kyc/upload (best-effort).
+ *   AutoTradeIL
+ *   הרשמה כסוחר
+ *   ──────────
+ *   01 — צילום מסמכים · 02 — אישור פרטים
  *
- * A11y notes (per accessibility-lead bundle review):
- *   - Step indicator <ol aria-label> with aria-current="step"
- *   - Slot list as <ul role="list"> + <li> + plain <button> (NOT <details>)
- *   - Captured thumbnail has meaningful alt ("תצוגה מקדימה: ת״ז קדמי")
- *   - "המשך" disabled uses aria-disabled (focusable so SR users hear why)
- *   - aria-busy on "המשך" while extracting; aria-live "מנתח..." region
- *   - On step 1→2: focus moves to the page <h1> (announces context)
- *   - All existing form a11y patterns kept (FormField, role=alert summary)
+ * Step 1 (capture)  3 SmartCameraCapture slots → POST /security/kyc/extract
+ *                   pre-fills the form.
+ * Step 2 (form)     4 numbered sections (account / personal / business /
+ *                   contact). Submit creates account → auto-login →
+ *                   best-effort blob uploads → /signup/dealer/pending.
+ *
+ * Auth + validation behaviour preserved verbatim from the prior
+ * implementation; only the surface is rebuilt.
  */
 
 const IL_MOBILE = /^(\+972|0)5\d{8}$/;
@@ -255,39 +258,13 @@ export default function DealerSignupPage() {
   });
 
   return (
-    <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
-      <div className="mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24">
-        <div className="flex justify-center">
-          <BrandMark />
-        </div>
-
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-brand-navy mt-10 text-center text-3xl font-bold tracking-tight focus:outline-none"
-        >
-          הרשמה כסוחר
-        </h1>
-
-        {/* Step indicator */}
-        <ol
-          aria-label="שלבי הרשמה"
-          className="text-brand-ink/70 mt-4 flex justify-center gap-2 text-sm"
-        >
-          <li
-            aria-current={step === "capture" ? "step" : undefined}
-            className={step === "capture" ? "text-brand-navy font-bold" : ""}
-          >
-            1. צילום מסמכים
-          </li>
-          <li aria-hidden="true">›</li>
-          <li
-            aria-current={step === "form" ? "step" : undefined}
-            className={step === "form" ? "text-brand-navy font-bold" : ""}
-          >
-            2. אישור פרטים
-          </li>
-        </ol>
+    <main
+      id="main"
+      tabIndex={-1}
+      className="bg-paper text-ink py-3xl sm:py-4xl min-h-[100dvh] focus:outline-none"
+    >
+      <div className="px-lg sm:px-2xl mx-auto w-full max-w-xl">
+        <Masthead ref={headingRef} title="הרשמה כסוחר" step={step} />
 
         {step === "capture" ? (
           <CaptureStep
@@ -301,193 +278,22 @@ export default function DealerSignupPage() {
             allCaptured={allCaptured}
           />
         ) : (
-          <>
-            {extractWarning ? (
-              <p
-                role="status"
-                className="mt-6 rounded-md border-2 border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
-              >
-                {extractWarning}
-              </p>
-            ) : null}
-            {submitError ? (
-              <div
-                ref={errorRef}
-                tabIndex={-1}
-                role="alert"
-                className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3 text-sm focus:outline-none"
-              >
-                {submitError}
-              </div>
-            ) : null}
-
-            <form onSubmit={onSubmit} noValidate className="mt-6 space-y-8">
-              <fieldset className="border-brand-navy/15 rounded-lg border bg-white p-5">
-                <legend className="text-brand-navy px-2 text-sm font-semibold">פרטי חשבון</legend>
-                <div className="space-y-5">
-                  <FormField
-                    id="email"
-                    label="אימייל"
-                    type="email"
-                    autoComplete="email"
-                    required
-                    registration={register("email")}
-                    error={errors.email?.message}
-                  />
-                  <FormField
-                    id="password"
-                    label="סיסמה"
-                    hint="לפחות 8 תווים"
-                    type="password"
-                    autoComplete="new-password"
-                    required
-                    registration={register("password")}
-                    error={errors.password?.message}
-                  />
-                </div>
-              </fieldset>
-
-              <fieldset className="border-brand-navy/15 rounded-lg border bg-white p-5">
-                <legend className="text-brand-navy px-2 text-sm font-semibold">
-                  פרטים אישיים (חולץ אוטומטית מהת״ז — ניתן לערוך)
-                </legend>
-                <div className="space-y-5">
-                  <FormField
-                    id="first_name"
-                    label="שם פרטי"
-                    autoComplete="given-name"
-                    registration={register("first_name")}
-                    error={errors.first_name?.message}
-                  />
-                  <FormField
-                    id="last_name"
-                    label="שם משפחה"
-                    autoComplete="family-name"
-                    registration={register("last_name")}
-                    error={errors.last_name?.message}
-                  />
-                  <FormField
-                    id="id_number"
-                    label="מספר תעודת זהות"
-                    hint="9 ספרות"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    maxLength={9}
-                    registration={register("id_number")}
-                    error={errors.id_number?.message}
-                  />
-                  <FormField
-                    id="birth_date"
-                    label="תאריך לידה"
-                    type="date"
-                    autoComplete="bday"
-                    registration={register("birth_date")}
-                    error={errors.birth_date?.message}
-                  />
-                </div>
-              </fieldset>
-
-              <fieldset className="border-brand-navy/15 rounded-lg border bg-white p-5">
-                <legend className="text-brand-navy px-2 text-sm font-semibold">פרטי העסק</legend>
-                <div className="space-y-5">
-                  <FormField
-                    id="business_name"
-                    label="שם העסק"
-                    autoComplete="organization"
-                    required
-                    registration={register("business_name")}
-                    error={errors.business_name?.message}
-                  />
-                  <FormField
-                    id="business_id"
-                    label="ח.פ / ע.מ"
-                    hint="9 ספרות"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    required
-                    maxLength={9}
-                    registration={register("business_id")}
-                    error={errors.business_id?.message}
-                  />
-                  <FormField
-                    id="license_number"
-                    label="מספר רישיון סחר ברכב"
-                    required
-                    registration={register("license_number")}
-                    error={errors.license_number?.message}
-                  />
-                  <FormField
-                    id="license_until"
-                    label="תוקף רישיון סוחר"
-                    type="date"
-                    registration={register("license_until")}
-                    error={errors.license_until?.message}
-                  />
-                  <FormField
-                    id="city"
-                    label="עיר"
-                    autoComplete="address-level2"
-                    required
-                    registration={register("city")}
-                    error={errors.city?.message}
-                  />
-                  <FormField
-                    id="lot_size"
-                    label="גודל החצר — כמה רכבים בו-זמנית"
-                    hint="מספר בין 1 ל-1000"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    required
-                    registration={register("lot_size")}
-                    error={errors.lot_size?.message}
-                  />
-                </div>
-              </fieldset>
-
-              <fieldset className="border-brand-navy/15 rounded-lg border bg-white p-5">
-                <legend className="text-brand-navy px-2 text-sm font-semibold">
-                  פרטי יצירת קשר
-                </legend>
-                <div className="space-y-5">
-                  <FormField
-                    id="contact_name"
-                    label="שם איש קשר"
-                    autoComplete="name"
-                    required
-                    registration={register("contact_name")}
-                    error={errors.contact_name?.message}
-                  />
-                  <FormField
-                    id="phone"
-                    label="טלפון"
-                    hint="טלפון נייד ישראלי, דוגמה: 0501234567"
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel-national"
-                    required
-                    registration={register("phone")}
-                    error={errors.phone?.message}
-                  />
-                </div>
-              </fieldset>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                aria-busy={isSubmitting || undefined}
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-3 text-base font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-              >
-                {isSubmitting ? "שולח…" : "שלח הרשמה"}
-              </button>
-            </form>
-          </>
+          <FormStep
+            register={register}
+            errors={errors}
+            isSubmitting={isSubmitting}
+            extractWarning={extractWarning}
+            submitError={submitError}
+            errorRef={errorRef}
+            onSubmit={onSubmit}
+          />
         )}
 
-        <p className="text-brand-ink/70 mt-8 text-center text-sm">
+        <p className="text-muted mt-3xl text-center text-sm">
           כבר יש לך חשבון?{" "}
           <Link
             href="/login"
-            className="text-brand-navy decoration-brand-gold focus-visible:outline-brand-navy rounded-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="text-ink duration-fast hover:text-accent focus-visible:outline-accent rounded-sm font-medium underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4"
           >
             כנס
           </Link>
@@ -498,7 +304,51 @@ export default function DealerSignupPage() {
 }
 
 // =============================================================================
-// CaptureStep — step 1: 3 SmartCameraCapture slots + Continue.
+// Masthead — eyebrow + serif H1 + hairline + TOC step strip.
+// Shared visual language with /login; the step strip is signup-specific.
+// =============================================================================
+
+const Masthead = forwardRef<HTMLHeadingElement, { title: string; step: "capture" | "form" }>(
+  function MastheadImpl({ title, step }, ref) {
+    return (
+      <header>
+        <p className="text-muted text-xs font-medium uppercase tracking-widest">AutoTradeIL</p>
+        <h1
+          ref={ref}
+          tabIndex={-1}
+          className="text-ink mt-sm tracking-editorial font-serif text-4xl font-medium leading-tight focus:outline-none"
+        >
+          {title}
+        </h1>
+        <div aria-hidden="true" className="bg-hairline mt-lg h-px w-full" />
+        <ol aria-label="שלבי הרשמה" className="gap-md mt-lg flex items-center text-sm">
+          <li
+            aria-current={step === "capture" ? "step" : undefined}
+            className={step === "capture" ? "text-ink font-medium" : "text-subtle"}
+          >
+            <span className="font-tabular">01</span>
+            <span className="mx-xxs">—</span>
+            צילום מסמכים
+          </li>
+          <li aria-hidden="true" className="text-subtle">
+            ·
+          </li>
+          <li
+            aria-current={step === "form" ? "step" : undefined}
+            className={step === "form" ? "text-ink font-medium" : "text-subtle"}
+          >
+            <span className="font-tabular">02</span>
+            <span className="mx-xxs">—</span>
+            אישור פרטים
+          </li>
+        </ol>
+      </header>
+    );
+  },
+);
+
+// =============================================================================
+// Step 1 — capture: 3 SmartCameraCapture slots + Continue.
 // =============================================================================
 
 function CaptureStep({
@@ -522,18 +372,22 @@ function CaptureStep({
 }) {
   const slots: DocSlot[] = ["id_front", "id_back", "license"];
   return (
-    <>
-      <p className="text-brand-ink/70 mt-4 text-center text-sm">
-        צלם את שלושת המסמכים — נמלא לך את שאר הפרטים אוטומטית.
-      </p>
+    <section aria-labelledby="capture-heading" className="mt-3xl">
+      <h2 id="capture-heading" className="sr-only">
+        צילום מסמכים
+      </h2>
+      <p className="text-muted text-sm">צלם את שלושת המסמכים. נמלא את שאר הפרטים אוטומטית.</p>
 
-      <ul role="list" className="mt-6 space-y-3">
-        {slots.map((slot) => {
+      <ul role="list" className="mt-xl">
+        {slots.map((slot, i) => {
           const blob = docs[slot];
           return (
             <li
               key={slot}
-              className="border-brand-navy/15 flex items-center gap-3 rounded-lg border bg-white p-4"
+              className={[
+                "gap-md py-md flex items-center",
+                i > 0 ? "border-hairline border-t" : "",
+              ].join(" ")}
             >
               {blob ? (
                 <Image
@@ -542,45 +396,50 @@ function CaptureStep({
                   width={96}
                   height={64}
                   unoptimized
-                  className="border-brand-navy/10 h-16 w-24 rounded border object-cover"
+                  className="border-hairline h-16 w-24 shrink-0 rounded-md border object-cover"
                 />
               ) : (
                 <div
                   aria-hidden="true"
-                  className="bg-brand-navy/5 border-brand-navy/10 flex h-16 w-24 items-center justify-center rounded border text-2xl"
+                  className="border-hairline bg-paper text-subtle flex h-16 w-24 shrink-0 items-center justify-center rounded-md border"
                 >
-                  📄
+                  <FileText className="h-5 w-5" />
                 </div>
               )}
-              <div className="flex-1">
-                <p className="text-brand-navy text-sm font-semibold">{SLOT_LABELS[slot]}</p>
+              <div className="min-w-0 flex-1">
+                <p className="text-ink text-sm font-medium">{SLOT_LABELS[slot]}</p>
                 {blob ? (
-                  <p className="text-ok-text text-xs">צולם בהצלחה ✓</p>
+                  <p className="text-ok-fg gap-xxs mt-xxs inline-flex items-center text-xs">
+                    <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    צולם בהצלחה
+                  </p>
                 ) : (
-                  <p className="text-brand-ink/60 text-xs">טרם צולם</p>
+                  <p className="text-subtle mt-xxs text-xs">טרם צולם</p>
                 )}
               </div>
-              <button
+              <Button
                 ref={(el) => {
                   slotBtnRefs.current[slot] = el;
                 }}
                 type="button"
+                size="sm"
+                variant={blob ? "outline" : "default"}
                 onClick={() => setActiveSlot(slot)}
-                className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
               >
                 {blob ? "צלם שוב" : "צלם"}
-              </button>
+              </Button>
             </li>
           );
         })}
       </ul>
 
-      <p id="continue-hint" className="text-brand-ink/60 mt-4 text-center text-xs">
+      <p id="continue-hint" className="text-subtle mt-lg text-xs">
         {allCaptured ? "מוכן להמשך — לחץ ״המשך״ להמשך הרשמה" : "צלם את כל 3 המסמכים כדי להמשיך"}
       </p>
 
-      <button
+      <Button
         type="button"
+        size="lg"
         onClick={onContinue}
         aria-disabled={!allCaptured || extracting}
         aria-busy={extracting || undefined}
@@ -592,19 +451,26 @@ function CaptureStep({
           }
         }}
         className={[
-          "bg-brand-navy text-brand-cream mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-3 text-base font-semibold",
-          "focus-visible:outline-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2",
-          allCaptured && !extracting ? "hover:bg-brand-navy/90" : "cursor-not-allowed opacity-50",
+          "mt-sm w-full",
+          allCaptured && !extracting ? "" : "cursor-not-allowed opacity-50",
         ].join(" ")}
       >
-        {extracting ? "מנתח את המסמכים…" : "המשך"}
-      </button>
+        {extracting ? (
+          <>
+            <Loader2 aria-hidden="true" className="animate-spin" />
+            <span>מנתח את המסמכים…</span>
+          </>
+        ) : (
+          "המשך"
+        )}
+      </Button>
 
       <p role="status" aria-live="polite" className="sr-only" key={String(extracting)}>
         {extracting ? "מנתח את המסמכים, אנא המתן" : ""}
       </p>
 
-      {/* SmartCameraCapture mounts whenever a slot is active */}
+      {/* SmartCameraCapture mounts whenever a slot is active. Its own visual
+          language is unchanged in this commit; lives in a modal layer above. */}
       {activeSlot ? (
         <SmartCameraCapture
           open={activeSlot !== null}
@@ -621,6 +487,317 @@ function CaptureStep({
           }}
         />
       ) : null}
-    </>
+    </section>
+  );
+}
+
+// =============================================================================
+// Step 2 — form: 4 numbered sections (account / personal / business / contact).
+// =============================================================================
+
+function FormStep({
+  register,
+  errors,
+  isSubmitting,
+  extractWarning,
+  submitError,
+  errorRef,
+  onSubmit,
+}: {
+  register: ReturnType<typeof useForm<FormValues>>["register"];
+  errors: ReturnType<typeof useForm<FormValues>>["formState"]["errors"];
+  isSubmitting: boolean;
+  extractWarning: string | null;
+  submitError: string | null;
+  errorRef: React.RefObject<HTMLDivElement | null>;
+  onSubmit: (e: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} noValidate className="mt-3xl">
+      <div className="space-y-md mb-xl">
+        {extractWarning ? (
+          <Alert>
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{extractWarning}</AlertDescription>
+          </Alert>
+        ) : null}
+        {submitError ? (
+          <Alert
+            variant="destructive"
+            ref={errorRef as React.RefObject<HTMLDivElement>}
+            tabIndex={-1}
+            className="focus:outline-none"
+          >
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{submitError}</AlertDescription>
+          </Alert>
+        ) : null}
+      </div>
+
+      <div className="space-y-3xl">
+        <FormSection number="01" title="פרטי חשבון">
+          <Field
+            id="email"
+            label="אימייל"
+            type="email"
+            dir="ltr"
+            autoComplete="email"
+            required
+            registration={register("email")}
+            error={errors.email?.message}
+          />
+          <Field
+            id="password"
+            label="סיסמה"
+            hint="לפחות 8 תווים"
+            type="password"
+            autoComplete="new-password"
+            required
+            registration={register("password")}
+            error={errors.password?.message}
+          />
+        </FormSection>
+
+        <FormSection number="02" title="פרטים אישיים" subtitle="חולץ אוטומטית מהת״ז — ניתן לערוך">
+          <div className="gap-lg grid grid-cols-1 sm:grid-cols-2">
+            <Field
+              id="first_name"
+              label="שם פרטי"
+              autoComplete="given-name"
+              registration={register("first_name")}
+              error={errors.first_name?.message}
+            />
+            <Field
+              id="last_name"
+              label="שם משפחה"
+              autoComplete="family-name"
+              registration={register("last_name")}
+              error={errors.last_name?.message}
+            />
+          </div>
+          <div className="gap-lg grid grid-cols-1 sm:grid-cols-2">
+            <Field
+              id="id_number"
+              label="מספר תעודת זהות"
+              hint="9 ספרות"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={9}
+              registration={register("id_number")}
+              error={errors.id_number?.message}
+            />
+            <Field
+              id="birth_date"
+              label="תאריך לידה"
+              type="date"
+              autoComplete="bday"
+              registration={register("birth_date")}
+              error={errors.birth_date?.message}
+            />
+          </div>
+        </FormSection>
+
+        <FormSection number="03" title="פרטי העסק">
+          <Field
+            id="business_name"
+            label="שם העסק"
+            autoComplete="organization"
+            required
+            registration={register("business_name")}
+            error={errors.business_name?.message}
+          />
+          <Field
+            id="business_id"
+            label="ח.פ / ע.מ"
+            hint="9 ספרות"
+            inputMode="numeric"
+            autoComplete="off"
+            required
+            maxLength={9}
+            registration={register("business_id")}
+            error={errors.business_id?.message}
+          />
+          <div className="gap-lg grid grid-cols-1 sm:grid-cols-2">
+            <Field
+              id="license_number"
+              label="מספר רישיון סחר"
+              required
+              registration={register("license_number")}
+              error={errors.license_number?.message}
+            />
+            <Field
+              id="license_until"
+              label="תוקף רישיון"
+              type="date"
+              registration={register("license_until")}
+              error={errors.license_until?.message}
+            />
+          </div>
+          <Field
+            id="city"
+            label="עיר"
+            autoComplete="address-level2"
+            required
+            registration={register("city")}
+            error={errors.city?.message}
+          />
+          <Field
+            id="lot_size"
+            label="גודל החצר — כמה רכבים בו-זמנית"
+            hint="מספר בין 1 ל-1000"
+            inputMode="numeric"
+            autoComplete="off"
+            required
+            registration={register("lot_size")}
+            error={errors.lot_size?.message}
+          />
+        </FormSection>
+
+        <FormSection number="04" title="פרטי יצירת קשר">
+          <Field
+            id="contact_name"
+            label="שם איש קשר"
+            autoComplete="name"
+            required
+            registration={register("contact_name")}
+            error={errors.contact_name?.message}
+          />
+          <Field
+            id="phone"
+            label="טלפון"
+            hint="טלפון נייד ישראלי, דוגמה: 0501234567"
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel-national"
+            required
+            registration={register("phone")}
+            error={errors.phone?.message}
+          />
+        </FormSection>
+      </div>
+
+      <Button
+        type="submit"
+        size="lg"
+        disabled={isSubmitting}
+        aria-busy={isSubmitting || undefined}
+        className="mt-3xl w-full"
+      >
+        {isSubmitting ? (
+          <>
+            <Loader2 aria-hidden="true" className="animate-spin" />
+            <span>שולח…</span>
+          </>
+        ) : (
+          "שלח הרשמה"
+        )}
+      </Button>
+    </form>
+  );
+}
+
+// =============================================================================
+// Section header pattern — used inside FormStep. Numbered eyebrow ("01"),
+// title, optional subtitle, and a hairline rule that anchors the section.
+// =============================================================================
+
+function FormSection({
+  number,
+  title,
+  subtitle,
+  children,
+}: {
+  number: string;
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <header>
+        <p className="gap-sm text-muted flex items-baseline text-xs font-medium uppercase tracking-widest">
+          <span className="font-tabular">{number}</span>
+          <span className="text-ink normal-case tracking-normal" style={{ fontSize: "0.875rem" }}>
+            {title}
+          </span>
+        </p>
+        {subtitle ? <p className="text-muted mt-xxs text-xs">{subtitle}</p> : null}
+        <div aria-hidden="true" className="bg-hairline mt-md h-px w-full" />
+      </header>
+      <div className="mt-lg space-y-lg">{children}</div>
+    </section>
+  );
+}
+
+// =============================================================================
+// Field — single text input with Label + optional hint + optional error.
+// Local to this page (replacing the brand-* FormField helper inline rather
+// than retokening that file, since FormField also serves InventoryFormDialog).
+// =============================================================================
+
+function Field({
+  id,
+  label,
+  hint,
+  error,
+  type = "text",
+  inputMode,
+  autoComplete,
+  required,
+  dir,
+  maxLength,
+  registration,
+}: {
+  id: string;
+  label: string;
+  hint?: string;
+  error?: string;
+  type?: string;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  autoComplete?: string;
+  required?: boolean;
+  dir?: "ltr" | "rtl";
+  maxLength?: number;
+  registration: ReturnType<ReturnType<typeof useForm<FormValues>>["register"]>;
+}) {
+  const hintId = `${id}-hint`;
+  const errorId = `${id}-error`;
+  const describedBy =
+    [hint ? hintId : null, error ? errorId : null].filter(Boolean).join(" ") || undefined;
+
+  return (
+    <div className="space-y-xs">
+      <Label htmlFor={id}>
+        {label}
+        {required ? (
+          <span aria-hidden="true" className="text-danger-fg ms-1">
+            *
+          </span>
+        ) : null}
+      </Label>
+      {hint ? (
+        <p id={hintId} className="text-muted text-xs">
+          {hint}
+        </p>
+      ) : null}
+      <Input
+        id={id}
+        type={type}
+        inputMode={inputMode}
+        autoComplete={autoComplete}
+        required={required}
+        maxLength={maxLength}
+        dir={dir}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={describedBy}
+        className={error ? "border-danger" : undefined}
+        {...registration}
+      />
+      {error ? (
+        <p id={errorId} className="text-danger-fg text-xs">
+          {error}
+        </p>
+      ) : null}
+    </div>
   );
 }

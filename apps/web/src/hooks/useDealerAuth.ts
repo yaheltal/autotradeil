@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
@@ -16,48 +17,53 @@ import { createClient } from "@/lib/supabase";
  * dealer-scoped lists). The mirror redirect (dealer → /admin → /dashboard)
  * already lives in useAdminAuth.
  *
- * Callers get `{ token }` once the session is resolved. Until then the
- * token is `null` and UI should render a neutral "טוען…" state.
+ * Callers get `{ token }` once the session is resolved AND the role
+ * check has passed. Until then the token is `null` and UI should
+ * render a neutral "טוען…" state.
+ *
+ * The whoami call routes through TanStack (key ["auth","whoami"]) so
+ * pages that mount alongside this hook share the cache.
  */
 export function useDealerAuth(nextPath: string) {
   const router = useRouter();
-  const [token, setToken] = useState<string | null>(null);
+  const [session, setSession] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    void (async () => {
       const supabase = createClient();
       const {
-        data: { session },
+        data: { session: s },
       } = await supabase.auth.getSession();
-      if (!session) {
+      if (cancelled) return;
+      if (!s) {
         router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
         return;
       }
-
-      // Role check before exposing the token. If whoami fails (network,
-      // 401, etc.) we still expose the token so the page can attempt
-      // its own load — failing closed here would create an unrecoverable
-      // boot loop when the API is briefly down.
-      try {
-        const who = await apiFetch<{ user_type: string }>("/api/v1/auth/whoami", {
-          token: session.access_token,
-        });
-        if (cancelled) return;
-        if (who.user_type === "admin") {
-          router.replace("/admin");
-          return;
-        }
-      } catch {
-        // proceed — page will surface its own error if relevant
-      }
-
-      if (!cancelled) setToken(session.access_token);
+      setSession(s.access_token);
     })();
     return () => {
       cancelled = true;
     };
   }, [router, nextPath]);
 
-  return { token };
+  const whoami = useQuery({
+    queryKey: ["auth", "whoami"],
+    queryFn: () => apiFetch<{ user_type: string }>("/api/v1/auth/whoami", { token: session! }),
+    enabled: !!session,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (whoami.data?.user_type === "admin") router.replace("/admin");
+  }, [whoami.data, router]);
+
+  // Failing closed (refusing to expose the token) would create an
+  // unrecoverable boot loop when the API is briefly down. Mirror the
+  // pre-TanStack behaviour: expose the token when whoami either succeeds
+  // as a non-admin OR errors out completely.
+  const passedRoleCheck =
+    whoami.data?.user_type === "admin" ? false : whoami.isFetched || whoami.isError;
+
+  return { token: passedRoleCheck ? session : null };
 }

@@ -1,15 +1,41 @@
 "use client";
 
+import { Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 /**
- * Contact page. Server-side contact endpoint isn't shipped yet, so the
- * form composes a mailto: with all fields prefilled — opens the user's
- * native mail client on submit. Once a /api/v1/contact endpoint exists
- * we can swap the handler without changing the UI.
+ * /contact — editorial contact form.
+ *
+ *   דברו איתנו
+ *   ─────
+ *   {dek copy}                              ← masthead
+ *
+ *   שם · אימייל · טלפון · נושא               ← 4-field grid
+ *   הודעה (textarea)
+ *   [שלח מייל ישירות] [שליחה]                ← form actions
+ *
+ *   אימייל                  שעות פעילות      ← hairline-separated rows
+ *   support@…              א-ה 09-18
+ *
+ * The server-side /api/v1/contact endpoint isn't shipped yet, so
+ * the form composes a mailto: with all fields prefilled — opens the
+ * user's native mail client on submit. Once the endpoint exists we
+ * can swap the handler without changing the UI.
  *
  * A11y:
  *   - H1 focused on mount
@@ -19,12 +45,20 @@ import { SiteHeader } from "@/components/SiteHeader";
  */
 const SUPPORT_EMAIL = "support@autotradeil.com";
 
+const TOPICS = [
+  "שאלה כללית",
+  "בעיה טכנית",
+  "שאלה על אימות סוחר",
+  "פנייה משפטית / פרטיות",
+  "הצעה לשיפור",
+] as const;
+
 export default function ContactPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [topic, setTopic] = useState("שאלה כללית");
+  const [topic, setTopic] = useState<string>(TOPICS[0]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -59,11 +93,9 @@ export default function ContactPage() {
       subject,
     )}&body=${encodeURIComponent(body)}`;
 
-    // Open the user's mail client. window.location.href is used (not
-    // window.open) so iOS Safari opens the Mail app correctly.
+    // window.location.href (not window.open) so iOS Safari opens
+    // the Mail app correctly.
     window.location.href = mailto;
-    // Don't reset busy — we want the button disabled while the mail
-    // client takes over. If the user comes back, refreshing resets state.
     setTimeout(() => setBusy(false), 1500);
   };
 
@@ -71,67 +103,61 @@ export default function ContactPage() {
     <>
       <SiteHeader />
       <main id="main" tabIndex={-1} className="focus:outline-none">
-        <div className="mx-auto max-w-3xl px-4 pb-20 pt-12 sm:px-6 sm:pb-28 sm:pt-20">
-          <p className="text-brand-navy/70 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-            <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
-            יצירת קשר
-          </p>
+        <div className="px-md sm:px-lg pb-3xl pt-2xl sm:pt-3xl mx-auto max-w-3xl">
           <h1
             ref={headingRef}
             tabIndex={-1}
-            className="text-brand-navy mt-5 font-serif text-[2rem] font-bold leading-[1.15] tracking-tight focus:outline-none sm:text-5xl"
+            className="text-ink tracking-editorial font-serif text-4xl font-medium leading-tight focus:outline-none sm:text-5xl"
           >
             דברו איתנו
           </h1>
-          <p className="text-brand-ink/80 mt-5 max-w-2xl text-base leading-relaxed sm:text-lg">
-            צוות התמיכה שלנו זמין ימים א׳-ה׳ בין השעות 09:00-18:00. נשתדל לחזור אליך תוך יום עסקים
-            אחד. ניתן לפנות אלינו ישירות במייל{" "}
+          <div aria-hidden="true" className="bg-hairline mt-lg h-px w-full" />
+          <p className="text-muted mt-lg max-w-2xl text-base leading-relaxed sm:text-lg">
+            צוות התמיכה זמין ימים א׳-ה׳ בין השעות <span className="font-tabular">09:00–18:00</span>.
+            נשתדל לחזור אליך תוך יום עסקים אחד. ניתן לפנות ישירות במייל{" "}
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
-              className="text-brand-navy decoration-brand-gold underline decoration-2 underline-offset-4"
+              className="text-ink duration-fast decoration-accent hover:text-accent underline decoration-2 underline-offset-4 transition-colors"
             >
               {SUPPORT_EMAIL}
             </a>{" "}
             או למלא את הטופס מטה.
           </p>
 
-          <form
-            onSubmit={onSubmit}
-            noValidate
-            className="border-brand-navy/15 mt-10 rounded-2xl border bg-white p-5 shadow-sm sm:p-8"
-          >
+          <form onSubmit={onSubmit} noValidate className="mt-3xl space-y-lg">
             {error ? (
-              <div
-                role="alert"
-                className="bg-danger-bg text-danger-text mb-5 rounded-md px-4 py-3 text-sm"
-              >
-                {error}
-              </div>
+              <Alert variant="destructive">
+                <TriangleAlert aria-hidden="true" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
             ) : null}
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="gap-lg grid sm:grid-cols-2">
               <div>
-                <label htmlFor="contact-name" className="text-brand-navy block text-sm font-medium">
-                  שם מלא <span aria-hidden="true">*</span>
-                </label>
-                <input
+                <Label htmlFor="contact-name">
+                  שם מלא{" "}
+                  <span aria-hidden="true" className="text-danger-fg">
+                    *
+                  </span>
+                </Label>
+                <Input
                   id="contact-name"
                   type="text"
                   required
                   autoComplete="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block min-h-[44px] w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                  className="mt-xs"
                 />
               </div>
               <div>
-                <label
-                  htmlFor="contact-email"
-                  className="text-brand-navy block text-sm font-medium"
-                >
-                  אימייל <span aria-hidden="true">*</span>
-                </label>
-                <input
+                <Label htmlFor="contact-email">
+                  אימייל{" "}
+                  <span aria-hidden="true" className="text-danger-fg">
+                    *
+                  </span>
+                </Label>
+                <Input
                   id="contact-email"
                   type="email"
                   required
@@ -139,17 +165,14 @@ export default function ContactPage() {
                   dir="ltr"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block min-h-[44px] w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                  className="mt-xs"
                 />
               </div>
               <div>
-                <label
-                  htmlFor="contact-phone"
-                  className="text-brand-navy block text-sm font-medium"
-                >
-                  טלפון <span className="text-brand-ink/60 text-xs">(אופציונלי)</span>
-                </label>
-                <input
+                <Label htmlFor="contact-phone">
+                  טלפון <span className="text-muted text-xs">(אופציונלי)</span>
+                </Label>
+                <Input
                   id="contact-phone"
                   type="tel"
                   autoComplete="tel"
@@ -158,96 +181,98 @@ export default function ContactPage() {
                   placeholder="052-1234567"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block min-h-[44px] w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
+                  className="mt-xs"
                 />
               </div>
               <div>
-                <label
-                  htmlFor="contact-topic"
-                  className="text-brand-navy block text-sm font-medium"
-                >
-                  נושא הפנייה
-                </label>
-                <select
-                  id="contact-topic"
-                  dir="rtl"
-                  value={topic}
-                  onChange={(e) => setTopic(e.target.value)}
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block min-h-[44px] w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  <option>שאלה כללית</option>
-                  <option>בעיה טכנית</option>
-                  <option>שאלה על אימות סוחר</option>
-                  <option>פנייה משפטית / פרטיות</option>
-                  <option>הצעה לשיפור</option>
-                </select>
+                <Label htmlFor="contact-topic">נושא הפנייה</Label>
+                <Select value={topic} onValueChange={setTopic}>
+                  <SelectTrigger id="contact-topic" className="mt-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TOPICS.map((t) => (
+                      <SelectItem key={t} value={t}>
+                        {t}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
-            <div className="mt-5">
-              <label
-                htmlFor="contact-message"
-                className="text-brand-navy block text-sm font-medium"
-              >
-                הודעה <span aria-hidden="true">*</span>
-              </label>
-              <textarea
+            <div>
+              <Label htmlFor="contact-message">
+                הודעה{" "}
+                <span aria-hidden="true" className="text-danger-fg">
+                  *
+                </span>
+              </Label>
+              <Textarea
                 id="contact-message"
                 required
                 rows={6}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full resize-y rounded-md border bg-white px-3 py-2 text-base leading-relaxed focus-visible:outline-2 focus-visible:outline-offset-2"
+                className="mt-xs"
               />
-              <p className="text-brand-ink/60 mt-2 text-xs">
+              <p className="text-muted mt-xs text-xs">
                 בלחיצה על שליחה ייפתח אצלך אפליקציית המייל עם כל הפרטים מוכנים.
               </p>
             </div>
 
-            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-              <a
-                href={`mailto:${SUPPORT_EMAIL}`}
-                className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-[44px] items-center justify-center rounded-md border bg-white px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                שלח מייל ישירות
-              </a>
-              <button
-                type="submit"
-                disabled={busy}
-                aria-busy={busy || undefined}
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-[44px] items-center justify-center rounded-md px-6 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-              >
-                {busy ? "פותח אפליקציית מייל…" : "שליחה"}
-              </button>
+            <div className="gap-sm flex flex-col-reverse sm:flex-row sm:justify-end">
+              <Button asChild variant="outline">
+                <a href={`mailto:${SUPPORT_EMAIL}`}>שלח מייל ישירות</a>
+              </Button>
+              <Button type="submit" disabled={busy} aria-busy={busy || undefined}>
+                {busy ? (
+                  <>
+                    <Loader2 aria-hidden="true" className="animate-spin" />
+                    <span>פותח אפליקציית מייל…</span>
+                  </>
+                ) : (
+                  "שליחה"
+                )}
+              </Button>
             </div>
           </form>
 
-          {/* Quick contact alternatives below the form */}
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
-            <div className="border-brand-navy/15 rounded-lg border bg-white p-5">
-              <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
-                אימייל
-              </p>
-              <p className="text-brand-navy mt-2 font-serif text-lg font-bold">תמיכה כללית</p>
-              <a
-                href={`mailto:${SUPPORT_EMAIL}`}
-                className="text-brand-navy decoration-brand-gold mt-1 inline-block break-all text-sm underline decoration-2 underline-offset-4"
-              >
-                {SUPPORT_EMAIL}
-              </a>
-            </div>
-            <div className="border-brand-navy/15 rounded-lg border bg-white p-5">
-              <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
-                שעות פעילות
-              </p>
-              <p className="text-brand-navy mt-2 font-serif text-lg font-bold">תמיכה אנושית</p>
-              <p className="text-brand-ink/85 mt-1 text-sm leading-relaxed">
-                ימים א׳-ה׳ · 09:00-18:00
-                <br />
-                מענה תוך יום עסקים אחד.
-              </p>
-            </div>
-          </div>
+          {/* Quick contact alternatives — hairline rows, not bordered cards */}
+          <section aria-labelledby="alts-heading" className="mt-3xl">
+            <p className="text-muted text-xs font-medium uppercase tracking-widest">
+              ערוצים נוספים
+            </p>
+            <h2 id="alts-heading" className="sr-only">
+              ערוצי תמיכה נוספים
+            </h2>
+            <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+            <dl className="mt-lg gap-y-md sm:gap-x-2xl grid sm:grid-cols-2">
+              <div>
+                <dt className="text-muted text-xs font-medium uppercase tracking-widest">אימייל</dt>
+                <dd className="mt-xs">
+                  <a
+                    href={`mailto:${SUPPORT_EMAIL}`}
+                    className="text-ink duration-fast decoration-accent hover:text-accent break-all text-base font-medium underline decoration-2 underline-offset-4 transition-colors"
+                  >
+                    {SUPPORT_EMAIL}
+                  </a>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted text-xs font-medium uppercase tracking-widest">
+                  שעות פעילות
+                </dt>
+                <dd className="text-ink mt-xs text-base font-medium">
+                  <span className="font-tabular">א׳–ה׳ · 09:00–18:00</span>
+                  <span className="text-muted mt-xxs block text-sm font-normal">
+                    מענה תוך יום עסקים אחד
+                  </span>
+                </dd>
+              </div>
+            </dl>
+          </section>
         </div>
       </main>
       <SiteFooter />

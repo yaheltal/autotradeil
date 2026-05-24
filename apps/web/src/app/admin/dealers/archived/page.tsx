@@ -1,18 +1,33 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { TriangleAlert } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
+import { AdminMasthead } from "@/components/admin/AdminMasthead";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
-/**
- * /admin/dealers/archived — Phase 6.7. List of soft-deleted dealers
- * with their archive metadata + a restore button.
+/*
+ * /admin/dealers/archived — editorial archive view.
  *
- * Restore is a 2-click prompt for the admin password (uses /unarchive).
- * The auth user was deleted on archive, so a restored dealer would still
- * need to re-register with their email — this page restores the row only.
+ *   ארכיון סוחרים
+ *   ──────────
+ *   סוחרים שנמחקו ע"י אדמין · ההיסטוריה נשמרת · {N} סוחרים
+ *
+ *   ── שם עסק                                      [שחזר]
+ *   ── ארכוב 12 מאי 2025 · סיבה
+ *   ── איש קשר · עיר · email                       [שחזר]
+ *
+ * Hairline-separated rows, NOT cards. Restore is gated behind a
+ * window.prompt for the admin password — preserved verbatim from
+ * the legacy implementation since changing the prompt to a dialog
+ * is behavior change, not visual rework, and the operator team
+ * relies on the current confirmation cadence.
  */
 
 type ArchivedItem = {
@@ -36,133 +51,173 @@ type ListResponse = {
 
 export default function ArchivedDealersPage() {
   const { token, loading: authLoading } = useAdminAuth();
+  const qc = useQueryClient();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  const [data, setData] = useState<ListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<ListResponse>("/api/v1/admin/dealers/archived?per_page=50", {
-        token,
-      });
-      setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת ארכיון הסוחרים");
-    }
-  }, [token]);
+  const archivedQuery = useQuery({
+    queryKey: queryKeys.admin.dealersArchived(),
+    queryFn: () =>
+      apiFetch<ListResponse>("/api/v1/admin/dealers/archived?per_page=50", { token: token! }),
+    enabled: !!token,
+  });
+  const data = archivedQuery.data ?? null;
 
   useEffect(() => {
-    if (token) void load();
-  }, [token, load]);
+    if (archivedQuery.error) {
+      setError(
+        archivedQuery.error instanceof Error
+          ? archivedQuery.error.message
+          : "שגיאה בטעינת ארכיון הסוחרים",
+      );
+    }
+  }, [archivedQuery.error]);
 
   useEffect(() => {
     if (data) headingRef.current?.focus();
   }, [data]);
 
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 3500);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  const restoreMutation = useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      apiFetch(`/api/v1/admin/dealers/${id}/unarchive`, {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ admin_password: password }),
+      }),
+    onSuccess: () => {
+      setToast("הסוחר שוחזר מהארכיון");
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.dealersArchived() });
+      void qc.invalidateQueries({ queryKey: ["admin", "dealers"] });
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "שגיאה בשחזור"),
+  });
+  const restoringId = restoreMutation.isPending ? (restoreMutation.variables?.id ?? null) : null;
+
   const restore = async (id: string) => {
     if (!token) return;
     const pw = window.prompt("סיסמת המנהל שלך לשחזור הסוחר מהארכיון:");
     if (!pw) return;
-    setRestoringId(id);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${id}/unarchive`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({ admin_password: pw }),
-      });
-      setToast("הסוחר שוחזר מהארכיון");
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בשחזור");
-    } finally {
-      setRestoringId(null);
-    }
+    await restoreMutation.mutateAsync({ id, password: pw });
   };
 
   if (authLoading) return null;
 
   return (
-    <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
-      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6">
-        <nav aria-label="ניווט פנימי" className="text-sm">
-          <Link
-            href="/admin/dealers"
-            className="text-brand-navy decoration-brand-gold underline decoration-2 underline-offset-4"
-          >
-            ← חזרה לרשימת הסוחרים
-          </Link>
-        </nav>
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-brand-navy mt-6 text-3xl font-bold focus:outline-none"
-        >
-          ארכיון סוחרים
-        </h1>
-        <p className="text-brand-ink/70 mt-2">
-          סוחרים שנמחקו ע&quot;י אדמין. ההיסטוריה שלהם (מלאי, הצעות, עסקאות) נשמרת.
+    <div className="px-lg sm:px-2xl py-2xl mx-auto max-w-5xl">
+      <AdminMasthead
+        title="ארכיון סוחרים"
+        dek={<span>סוחרים שנמחקו ע&quot;י אדמין. ההיסטוריה שלהם נשמרת</span>}
+        loading={!data}
+        count={data ? `${data.total.toLocaleString("he-IL")} סוחרים` : undefined}
+        headingRef={headingRef}
+      />
+
+      {toast ? (
+        <p role="status" aria-live="polite" className="sr-only" key={toast}>
+          {toast}
         </p>
+      ) : null}
 
-        {toast ? (
-          <p
-            role="status"
-            aria-live="polite"
-            className="bg-ok-bg text-ok-text mt-4 rounded-md px-4 py-3 text-sm"
-            key={toast}
-          >
-            {toast}
-          </p>
-        ) : null}
-        {error ? (
-          <p
-            role="alert"
-            className="bg-danger-bg text-danger-text mt-4 rounded-md px-4 py-3 text-sm"
-          >
-            {error}
-          </p>
-        ) : null}
+      {error ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        {data?.items.length === 0 ? (
-          <p className="text-brand-ink/60 mt-8">אין סוחרים בארכיון כרגע.</p>
+      <section aria-labelledby="archive-heading" className="mt-2xl">
+        <h2 id="archive-heading" className="sr-only">
+          רשימת סוחרים בארכיון
+        </h2>
+
+        {!data ? (
+          <ArchiveSkeleton />
+        ) : data.items.length === 0 ? (
+          <p className="text-muted py-3xl text-center text-sm" role="status">
+            אין סוחרים בארכיון כרגע.
+          </p>
         ) : (
-          <ul className="mt-6 space-y-3">
-            {data?.items.map((d) => (
-              <li key={d.id} className="border-brand-navy/10 rounded-lg border bg-white p-5">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h2 className="text-brand-navy text-lg font-bold">{d.business_name}</h2>
-                    <p className="text-brand-ink/70 mt-1 text-sm">
-                      {d.contact_name} · {d.city} · <span dir="ltr">{d.email}</span>
+          <ul>
+            {data.items.map((d) => (
+              <li
+                key={d.id}
+                className="border-hairline py-lg flex flex-col gap-3 border-b last:border-b-0 sm:flex-row sm:items-start sm:justify-between"
+              >
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-ink font-serif text-lg font-medium">{d.business_name}</h3>
+                  <p className="text-muted mt-xxs text-sm">
+                    {d.contact_name}
+                    <span aria-hidden="true" className="text-subtle mx-xxs">
+                      ·
+                    </span>
+                    {d.city}
+                    <span aria-hidden="true" className="text-subtle mx-xxs">
+                      ·
+                    </span>
+                    <span dir="ltr">{d.email}</span>
+                  </p>
+                  {d.archived_at ? (
+                    <p className="text-subtle mt-xs text-xs">
+                      ארכוב:{" "}
+                      <time dateTime={d.archived_at} className="font-tabular">
+                        {new Date(d.archived_at).toLocaleString("he-IL")}
+                      </time>
+                      {d.archived_reason ? (
+                        <>
+                          <span aria-hidden="true" className="text-subtle mx-xxs">
+                            ·
+                          </span>
+                          {d.archived_reason}
+                        </>
+                      ) : null}
                     </p>
-                    {d.archived_at ? (
-                      <p className="text-brand-ink/60 mt-2 text-xs">
-                        ארכוב:{" "}
-                        <time dateTime={d.archived_at}>
-                          {new Date(d.archived_at).toLocaleString("he-IL")}
-                        </time>
-                        {d.archived_reason ? ` — ${d.archived_reason}` : ""}
-                      </p>
-                    ) : null}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void restore(d.id)}
-                    disabled={restoringId === d.id}
-                    aria-busy={restoringId === d.id || undefined}
-                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-                  >
-                    {restoringId === d.id ? "משחזר…" : "שחזר"}
-                  </button>
+                  ) : null}
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void restore(d.id)}
+                  disabled={restoringId === d.id}
+                  aria-busy={restoringId === d.id || undefined}
+                  className="shrink-0"
+                >
+                  {restoringId === d.id ? "משחזר…" : "שחזר"}
+                </Button>
               </li>
             ))}
           </ul>
         )}
-      </div>
-    </main>
+      </section>
+    </div>
+  );
+}
+
+function ArchiveSkeleton() {
+  return (
+    <div role="status" aria-live="polite">
+      <span className="sr-only">טוען ארכיון סוחרים…</span>
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          className="border-hairline py-lg flex items-center justify-between gap-3 border-b last:border-b-0"
+        >
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-48" />
+            <Skeleton className="h-3 w-64" />
+            <Skeleton className="h-3 w-32" />
+          </div>
+          <Skeleton className="h-10 w-20" />
+        </div>
+      ))}
+    </div>
   );
 }

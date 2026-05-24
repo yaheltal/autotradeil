@@ -1,10 +1,12 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Pause-inventory dialog (Phase 4.3).
@@ -46,10 +48,10 @@ export function PauseDialog({
   vehicleLabel,
   onDone,
 }: Props) {
+  const qc = useQueryClient();
   const [duration, setDuration] = useState<string>("");
   const [reason, setReason] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -59,30 +61,33 @@ export function PauseDialog({
     }
   }, [open]);
 
+  const pauseMutation = useMutation({
+    mutationFn: ({ hours, reasonText }: { hours: number | null; reasonText: string | null }) =>
+      apiFetch(`/api/v1/inventory/${inventoryId}/pause`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ hours, reason: reasonText }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.inventory.root() });
+      onDone();
+      onOpenChange(false);
+    },
+    onError: (e) => setErr(e instanceof Error ? e.message : "שגיאה בהשהיית הרכב"),
+  });
+  const busy = pauseMutation.isPending;
+
   const submit = async () => {
     const chosen = DURATIONS.find((d) => d.value === duration);
     if (!chosen) {
       setErr("יש לבחור משך השהיה");
       return;
     }
-    setBusy(true);
     setErr(null);
-    try {
-      await apiFetch(`/api/v1/inventory/${inventoryId}/pause`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({
-          hours: chosen.hours,
-          reason: reason.trim() || null,
-        }),
-      });
-      onDone();
-      onOpenChange(false);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "שגיאה בהשהיית הרכב");
-    } finally {
-      setBusy(false);
-    }
+    await pauseMutation.mutateAsync({
+      hours: chosen.hours,
+      reasonText: reason.trim() || null,
+    });
   };
 
   const remaining = 100 - reason.length;

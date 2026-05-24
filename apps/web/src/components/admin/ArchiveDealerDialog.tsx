@@ -1,11 +1,13 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * ArchiveDealerDialog — Phase 6.7. Soft-delete a dealer.
@@ -38,16 +40,23 @@ export function ArchiveDealerDialog({
   token,
   onArchived,
 }: Props) {
-  const [reasons, setReasons] = useState<ReasonTemplate[]>([]);
+  const qc = useQueryClient();
   const [picked, setPicked] = useState<string>("");
   const [otherText, setOtherText] = useState("");
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const errorRef = useRef<HTMLParagraphElement>(null);
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
+
+  const reasonsQuery = useQuery({
+    queryKey: ["admin", "suspension-reasons", "archive"] as const,
+    queryFn: () =>
+      apiFetch<ReasonTemplate[]>("/api/v1/admin/suspension-reasons?kind=archive", { token }),
+    enabled: open,
+  });
+  const reasons = reasonsQuery.data ?? [];
 
   useEffect(() => {
     if (open) {
@@ -56,12 +65,9 @@ export function ArchiveDealerDialog({
       setSaveAsTemplate(false);
       setAdminPassword("");
       setError(null);
-      void apiFetch<ReasonTemplate[]>("/api/v1/admin/suspension-reasons?kind=archive", { token })
-        .then(setReasons)
-        .catch(() => setReasons([]));
       queueMicrotask(() => fieldsetRef.current?.focus());
     }
-  }, [open, token]);
+  }, [open]);
 
   useEffect(() => {
     if (error) errorRef.current?.focus();
@@ -69,39 +75,38 @@ export function ArchiveDealerDialog({
 
   const finalReason =
     picked === OTHER ? otherText.trim() : (reasons.find((r) => r.id === picked)?.text_he ?? "");
+
+  const archiveMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/archive`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ reason: finalReason, admin_password: adminPassword }),
+      }),
+    onSuccess: () => {
+      if (picked === OTHER && saveAsTemplate && otherText.trim()) {
+        // Fire-and-forget template save; failure shouldn't block close.
+        void apiFetch("/api/v1/admin/suspension-reasons", {
+          method: "POST",
+          token,
+          body: JSON.stringify({ text_he: otherText.trim(), kind: "archive" }),
+        }).catch(() => {});
+      }
+      void qc.invalidateQueries({ queryKey: ["admin", "dealers"] });
+      void qc.invalidateQueries({ queryKey: queryKeys.admin.dealersArchived() });
+      onArchived();
+      onOpenChange(false);
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "שגיאה בארכוב"),
+  });
+  const busy = archiveMutation.isPending;
   const canSubmit = finalReason.length > 0 && adminPassword.length > 0 && !busy;
 
   const submit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!canSubmit) return;
-    setBusy(true);
     setError(null);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealerId}/archive`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({
-          reason: finalReason,
-          admin_password: adminPassword,
-        }),
-      });
-      if (picked === OTHER && saveAsTemplate && otherText.trim()) {
-        void apiFetch("/api/v1/admin/suspension-reasons", {
-          method: "POST",
-          token,
-          body: JSON.stringify({
-            text_he: otherText.trim(),
-            kind: "archive",
-          }),
-        }).catch(() => {});
-      }
-      onArchived();
-      onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "שגיאה בארכוב");
-    } finally {
-      setBusy(false);
-    }
+    await archiveMutation.mutateAsync();
   };
 
   return (

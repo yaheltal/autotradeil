@@ -1,10 +1,43 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
+import { TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { BackLink } from "@/components/BackLink";
+import { AdminMasthead } from "@/components/admin/AdminMasthead";
+import { TablePagination } from "@/components/admin/TablePagination";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
+
+/*
+ * /admin/audit-log — editorial admin action log.
+ *
+ *   לוג פעולות מנהל
+ *   ──────────
+ *   כל פעולה של מנהל במערכת נרשמת כאן · {total} רשומות
+ *
+ *   ┌── מי פעל · פעולה · יעד · מתי ──────────────────────┐
+ *   │  hairline-separated rows, font-tabular timestamps   │
+ *   └─────────────────────────────────────────────────────┘
+ *
+ *   הקודם · עמוד N מתוך M · הבא      ← TablePagination primitive
+ *
+ * Validates the masthead + shadcn Table + TablePagination contract
+ * with the lightest payload. Every later list page follows the same
+ * shape. No filters / no search — the log is append-only and the
+ * page is operator-read-only.
+ */
 
 type AuditItem = {
   id: string;
@@ -23,140 +56,134 @@ const PER_PAGE = 50;
 
 export default function AuditLogPage() {
   const { token, loading } = useAdminAuth();
-  const [data, setData] = useState<AuditResponse | null>(null);
   const [page, setPage] = useState(1);
-  const [error, setError] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiFetch<AuditResponse>(
-          `/api/v1/admin/audit-log?page=${page}&per_page=${PER_PAGE}`,
-          { token },
-        );
-        if (!cancelled) setData(res);
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "שגיאה בטעינת הלוג");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, page]);
+  const auditQuery = useQuery({
+    queryKey: queryKeys.admin.auditLog({ page, per_page: PER_PAGE }),
+    queryFn: () =>
+      apiFetch<AuditResponse>(`/api/v1/admin/audit-log?page=${page}&per_page=${PER_PAGE}`, {
+        token: token!,
+      }),
+    enabled: !!token,
+  });
+  const data = auditQuery.data ?? null;
+  const error =
+    auditQuery.error instanceof Error
+      ? auditQuery.error.message
+      : auditQuery.error
+        ? "שגיאה בטעינת הלוג"
+        : null;
 
   useEffect(() => {
     if (data) headingRef.current?.focus();
   }, [data]);
 
-  if (loading || (!data && !error)) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="status" className="text-brand-ink/70 p-10">
-          טוען…
-        </p>
-      </main>
-    );
-  }
-
   const pages = data ? Math.max(1, Math.ceil(data.total / PER_PAGE)) : 1;
 
   return (
-    <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <BackLink href="/admin" label="חזרה ללוח ניהול" />
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-brand-navy mt-3 text-3xl font-bold tracking-tight focus:outline-none"
-        >
-          לוג פעולות מנהל
-        </h1>
-        <p className="text-brand-ink/70 mt-2">כל פעולה של מנהל במערכת נרשמת כאן.</p>
+    <div className="px-lg sm:px-2xl py-2xl mx-auto max-w-6xl">
+      <AdminMasthead
+        title="לוג פעולות מנהל"
+        dek={<span>כל פעולה של מנהל במערכת נרשמת כאן</span>}
+        loading={loading || !data}
+        count={data ? `${data.total.toLocaleString("he-IL")} רשומות` : undefined}
+        headingRef={headingRef}
+      />
 
-        {error ? (
-          <p role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
-            {error}
+      {error ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      <section aria-labelledby="log-heading" className="mt-2xl">
+        <h2 id="log-heading" className="sr-only">
+          רשומות הלוג
+        </h2>
+
+        {!data ? (
+          <LogSkeleton />
+        ) : data.items.length === 0 ? (
+          <p className="text-muted py-3xl text-center text-sm" role="status">
+            אין עדיין רשומות בלוג.
           </p>
-        ) : null}
-
-        <div className="border-brand-navy/10 mt-8 overflow-x-auto rounded-lg border bg-white">
-          <table className="w-full min-w-[640px] text-start text-sm">
+        ) : (
+          <Table>
             <caption className="sr-only">רשומות לוג של פעולות מנהל</caption>
-            <thead className="bg-brand-navy/5 text-brand-navy">
-              <tr>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  מי פעל
-                </th>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  פעולה
-                </th>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  יעד
-                </th>
-                <th scope="col" className="px-4 py-3 text-start font-semibold">
-                  מתי
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data && data.items.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="text-brand-ink/60 px-4 py-10 text-center">
-                    <span role="status">אין עדיין רשומות בלוג.</span>
-                  </td>
-                </tr>
-              ) : (
-                data?.items.map((row) => (
-                  <tr key={row.id} className="border-brand-navy/10 hover:bg-brand-navy/5 border-t">
-                    <td className="px-4 py-3">{row.actor_email ?? "—"}</td>
-                    <td className="px-4 py-3 font-mono text-xs" lang="en">
+            <TableHeader>
+              <TableRow className="border-hairline">
+                <TableHead>מי פעל</TableHead>
+                <TableHead>פעולה</TableHead>
+                <TableHead>יעד</TableHead>
+                <TableHead>מתי</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.items.map((row) => (
+                <TableRow
+                  key={row.id}
+                  className="border-hairline hover:bg-muted/5 duration-fast transition-colors"
+                >
+                  <TableCell className="text-ink text-sm">{row.actor_email ?? "—"}</TableCell>
+                  <TableCell>
+                    <span lang="en" className="font-tabular text-ink text-xs">
                       {row.action}
-                    </td>
-                    <td className="text-brand-ink/80 px-4 py-3">
-                      {row.target_type
-                        ? `${row.target_type} · ${row.target_id?.slice(0, 8) ?? ""}`
-                        : "—"}
-                    </td>
-                    <td className="text-brand-ink/70 px-4 py-3">
+                    </span>
+                  </TableCell>
+                  <TableCell className="text-muted text-sm">
+                    {row.target_type ? (
+                      <>
+                        <span>{row.target_type}</span>
+                        <span aria-hidden="true" className="text-subtle mx-xxs">
+                          ·
+                        </span>
+                        <span className="font-tabular">{row.target_id?.slice(0, 8) ?? ""}</span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted text-xs">
+                    <time dateTime={row.created_at} className="font-tabular">
                       {new Date(row.created_at).toLocaleString("he-IL")}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                    </time>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </section>
 
-        {data && pages > 1 ? (
-          <nav aria-label="עימוד" className="mt-6 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              הקודם
-            </button>
-            <p className="text-brand-ink/70 text-sm">
-              עמוד <span className="text-brand-navy font-semibold">{page}</span> מתוך{" "}
-              <span className="text-brand-navy font-semibold">{pages}</span>
-            </p>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(pages, p + 1))}
-              disabled={page >= pages}
-              className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              הבא
-            </button>
-          </nav>
-        ) : null}
-      </div>
-    </main>
+      {data && pages > 1 ? (
+        <TablePagination
+          page={page}
+          pages={pages}
+          onGo={(p) => setPage(Math.max(1, Math.min(pages, p)))}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function LogSkeleton() {
+  return (
+    <div role="status" aria-live="polite">
+      <span className="sr-only">טוען רשומות לוג…</span>
+      {[0, 1, 2, 3, 4, 5, 6].map((i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          className="border-hairline gap-md py-md flex items-center border-b last:border-b-0"
+        >
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-4 w-48" />
+          <Skeleton className="ms-auto h-4 w-28" />
+        </div>
+      ))}
+    </div>
   );
 }
