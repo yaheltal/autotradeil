@@ -185,16 +185,21 @@ function DashboardPageInner() {
   // Fetch ALL statuses, not just `active`. The hero metric is "סך שווי
   // המלאי" — the total value of inventory the dealer currently owns,
   // which is everything except `sold`. Filtering server-side to `active`
-  // would exclude `draft` / `reserved` / hidden listings the dealer
+  // would exclude `draft` / `reserved` / `hidden` listings the dealer
   // still has on the lot and produce a misleading ₪0 when those are
-  // the only statuses present (the originally-reported bug).
+  // the only statuses present.
   //
-  // per_page=500 is a safety bump from 200 — most dealers have far
-  // fewer; a single page covers ~all practical cases.
+  // per_page=100 because the backend caps it at 100 (Pydantic
+  // Query(le=100) on apps/api/app/routers/inventory.py). The
+  // previous value of 500 was rejected with 422 → the query threw
+  // silently → data was undefined → sum was 0 → "₪0 even though I
+  // have vehicles". Dealers with >100 items will undercount the
+  // hero; we'll revisit with a dedicated stats endpoint when that
+  // case becomes real.
   const inventoryQuery = useQuery({
-    queryKey: queryKeys.inventory.list({ per_page: 500 }),
+    queryKey: queryKeys.inventory.list({ per_page: 100 }),
     queryFn: () =>
-      apiFetch<InventoryListResponse>("/api/v1/inventory?per_page=500", {
+      apiFetch<InventoryListResponse>("/api/v1/inventory?per_page=100", {
         token: token!,
       }),
     enabled: !!token && whoami.isFetched && !isAdmin,

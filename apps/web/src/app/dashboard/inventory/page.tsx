@@ -280,13 +280,15 @@ function InventoryPageInner() {
   });
 
   // For the dek + tab tallies we need the unfiltered counts across all
-  // statuses. The list endpoint accepts no `status` to return everything,
-  // but the dealer might have 1000s of vehicles — query the count-only
-  // stat endpoint instead. Falls back to recomputing from `data.items`
-  // when the stat endpoint isn't reachable.
+  // statuses. per_page is capped at 100 by the backend (Pydantic
+  // Query(le=100) on apps/api/app/routers/inventory.py) — a previous
+  // value of 1000 was rejected with 422 and silently zeroed the dek.
+  // Dealers with >100 items will undercount; we'll move to a dedicated
+  // /inventory/stats-like aggregation endpoint when that case becomes
+  // real.
   const tallyQuery = useQuery({
     queryKey: ["inventory", "tallies"] as const,
-    queryFn: () => apiFetch<ListResponse>("/api/v1/inventory?per_page=1000", { token: token! }),
+    queryFn: () => apiFetch<ListResponse>("/api/v1/inventory?per_page=100", { token: token! }),
     enabled: !!token,
     staleTime: 30_000,
   });
