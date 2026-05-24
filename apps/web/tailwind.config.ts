@@ -16,8 +16,10 @@ import type { Config } from "tailwindcss";
  * retired — a single Hebrew-first editorial face covers both scripts.
  */
 const config: Config = {
-  // Light-only. No darkMode strategy → no `dark:` utility ever triggers.
-  darkMode: ["class", '[data-theme="never"]'],
+  // Class-based dark mode — `dark:*` utilities activate when `<html class="dark">`
+  // is set. next-themes (wired in app/layout.tsx) owns the toggle; the
+  // legacy ThemeToggle component writes the same class + localStorage key.
+  darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",

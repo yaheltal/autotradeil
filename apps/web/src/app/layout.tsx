@@ -4,6 +4,7 @@ import { Frank_Ruhl_Libre, Inter } from "next/font/google";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { QueryProvider } from "@/providers/query-provider";
+import { ThemeProvider } from "@/providers/theme-provider";
 
 import "./globals.css";
 
@@ -130,11 +131,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="he" dir="rtl">
+    <html lang="he" dir="rtl" suppressHydrationWarning>
       <head>
-        {/* Theme init removed — the system is light-only (no dark-mode
-            bootstrap script). Any `dark:*` utilities in legacy components
-            compile but never trigger. */}
+        {/* next-themes injects the active class onto <html> before first
+            paint (see <ThemeProvider> below). `suppressHydrationWarning`
+            on <html> silences the unavoidable client/server mismatch
+            that injection produces. */}
         <link rel="preconnect" href="https://res.cloudinary.com" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://res.cloudinary.com" />
         {process.env.NEXT_PUBLIC_SUPABASE_URL ? (
@@ -155,7 +157,7 @@ export default function RootLayout({
         ) : null}
       </head>
       <body
-        className={`${inter.variable} ${frankRuhl.variable} bg-paper text-ink font-sans antialiased`}
+        className={`${inter.variable} ${frankRuhl.variable} bg-paper text-ink dark:bg-ink dark:text-paper font-sans antialiased`}
       >
         {/* Skip link — paper bg, ink text, accent ring. */}
         <a
@@ -164,11 +166,13 @@ export default function RootLayout({
         >
           דלג לתוכן הראשי
         </a>
-        <QueryProvider>
-          <ImpersonationBanner />
-          {children}
-          <PWAInstallPrompt />
-        </QueryProvider>
+        <ThemeProvider>
+          <QueryProvider>
+            <ImpersonationBanner />
+            {children}
+            <PWAInstallPrompt />
+          </QueryProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
