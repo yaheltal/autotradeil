@@ -1,33 +1,34 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, TriangleAlert } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { BackLink } from "@/components/BackLink";
+import { AdminMasthead } from "@/components/admin/AdminMasthead";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 
 /*
- * /admin/transactions — admin escort screen for deals in flight.
+ * /admin/transactions — editorial escort screen for deals in flight.
  *
- * A deal lands here when both buyer and seller have clicked
- * "אשר עסקה" on /dashboard/offers — the vehicle's
- * inventory.status flips to "in_transaction" and the deal sits
- * here until an admin verifies payment + paperwork and clicks
- * "סמן כהושלם". That call moves the vehicle to "sold" and
- * recalculates trust scores for both sides.
+ *   עסקאות בתהליך
+ *   ──────────
+ *   רכבים שעוברים בין סוחרים · {N} בתהליך
  *
- * a11y plan:
- *   - <main id="main" tabIndex={-1}>; H1 focusable on data-ready
- *   - Each transaction row is an <article aria-labelledby> with
- *     a sr-only "עסקה {n} מתוך {total}" anchor for SR navigation
- *   - The complete button is wrapped in a ConfirmDialog so the
- *     admin can't accidentally close a deal — destructive double-tap
- *   - Action result announced via a single role=status region
- *   - Skeleton loader during fetch (3 placeholder rows)
+ *   ── BMW X3 · 2018                                    ₪450,000
+ *   ── plate · idx of total
+ *   ── מוכר: TalCars · קונה: AvramAuto                   [סמן כהושלם]
+ *   ── חתימות דיגיטליות (collapsible)
+ *
+ * Hairline-separated deal rows replace the bordered "border-brand-
+ * gold/40" cards. The accent moment moves into the small "בתהליך"
+ * eyebrow at the row start instead of the entire row border.
  */
 
 type DealerInfo = {
@@ -66,6 +67,13 @@ type Transaction = {
 
 type Resp = { items: Transaction[]; total: number };
 
+const TIER_LABEL: Record<string, string> = {
+  bronze: "ברונזה",
+  silver: "כסף",
+  gold: "זהב",
+  platinum: "פלטינום",
+};
+
 export default function AdminTransactionsPage() {
   const { token, loading } = useAdminAuth();
   const qc = useQueryClient();
@@ -80,6 +88,7 @@ export default function AdminTransactionsPage() {
     enabled: !!token,
   });
   const data = txQuery.data ?? null;
+
   useEffect(() => {
     if (txQuery.error) {
       setError(
@@ -118,141 +127,118 @@ export default function AdminTransactionsPage() {
     return completeMutation.mutateAsync(t);
   };
 
-  if (loading || !token) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="status" className="text-brand-ink/70 p-10">
-          טוען…
-        </p>
-      </main>
-    );
-  }
-
   return (
-    <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <BackLink href="/admin" label="חזרה ללוח ניהול" />
+    <div className="px-lg sm:px-2xl py-2xl mx-auto max-w-5xl">
+      <AdminMasthead
+        title="עסקאות בתהליך"
+        dek={<span>רכבים שעוברים בין סוחרים — אמת תשלום והעברה</span>}
+        loading={loading || (data === null && !error)}
+        count={data ? `${data.total} ${data.total === 1 ? "בתהליך" : "בתהליך"}` : undefined}
+        headingRef={headingRef}
+      />
 
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-brand-navy mt-3 text-3xl font-bold tracking-tight focus:outline-none"
-        >
-          עסקאות בתהליך
-        </h1>
-        <p className="text-brand-ink/70 mt-2">
-          רכבים שעוברים בין סוחרים — מאשרים תשלום והעברה ואז מסמנים כהושלם.
+      {toast ? (
+        <p role="status" aria-live="polite" className="sr-only" key={toast}>
+          {toast}
         </p>
+      ) : null}
 
-        {toast ? (
-          <p role="status" aria-live="polite" className="sr-only" key={toast}>
-            {toast}
-          </p>
-        ) : null}
+      {error ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
-        {error ? (
-          <p role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
-            {error}
-          </p>
-        ) : null}
+      <section aria-labelledby="tx-list-heading" className="mt-2xl">
+        <h2 id="tx-list-heading" className="sr-only">
+          רשימת עסקאות בתהליך
+        </h2>
 
         {data === null && !error ? (
-          <ul className="mt-6 space-y-4" aria-busy="true" aria-label="טוען עסקאות">
-            {[0, 1, 2].map((i) => (
-              <li key={i} className="border-brand-navy/10 rounded-lg border bg-white p-5">
-                <div className="bg-brand-navy/10 h-5 w-1/2 rounded motion-safe:animate-pulse" />
-                <div className="bg-brand-navy/10 mt-3 h-4 w-1/3 rounded motion-safe:animate-pulse" />
-                <div className="bg-brand-navy/10 mt-4 h-4 w-2/3 rounded motion-safe:animate-pulse" />
-              </li>
-            ))}
-          </ul>
+          <TxSkeleton />
         ) : data && data.items.length === 0 ? (
-          <div className="border-brand-navy/15 mt-6 rounded-lg border bg-white p-10 text-center">
-            <p aria-hidden="true" className="text-brand-ink/30 mx-auto text-5xl">
-              ✓
-            </p>
-            <p className="text-brand-navy mt-3 font-bold">אין עסקאות בתהליך כרגע</p>
-            <p className="text-brand-ink/65 mt-2 text-sm">
-              כשעסקה תאושר ע״י שני הצדדים היא תופיע כאן עד להשלמתה.
-            </p>
-          </div>
+          <p className="text-muted py-3xl text-center text-sm" role="status">
+            אין עסקאות בתהליך כרגע. כשעסקה תאושר ע״י שני הצדדים היא תופיע כאן עד להשלמתה.
+          </p>
         ) : data ? (
-          <ul className="mt-6 space-y-4">
+          <ul>
             {data.items.map((t, idx) => {
               const titleId = `tx-${t.deal_id}-title`;
               const veh = `${t.vehicle.make} ${t.vehicle.model} ${t.vehicle.year}`;
               const priceF = formatPrice(t.final_price);
               const isBusy = completing === t.deal_id;
               return (
-                <li
-                  key={t.deal_id}
-                  className="border-brand-gold/40 bg-brand-cream/30 rounded-lg border-2 bg-white p-5 sm:p-6"
-                >
+                <li key={t.deal_id} className="border-hairline py-xl border-b last:border-b-0">
                   <article aria-labelledby={titleId}>
-                    <header className="flex flex-wrap items-start justify-between gap-3">
+                    <header className="gap-md flex flex-wrap items-start justify-between">
                       <div className="min-w-0">
-                        <span className="bg-brand-gold/15 text-brand-navy inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider">
+                        <span className="text-accent gap-xxs inline-flex items-center text-[11px] font-medium uppercase tracking-widest">
                           <span
                             aria-hidden="true"
-                            className="bg-brand-gold inline-block h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
+                            className="bg-accent inline-block h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
                           />
-                          בתהליך · {idx + 1} מתוך {data.total}
+                          בתהליך · <span className="font-tabular">{idx + 1}</span> מתוך{" "}
+                          <span className="font-tabular">{data.total}</span>
                         </span>
-                        <h2
+                        <h3
                           id={titleId}
-                          className="text-brand-navy mt-2 font-serif text-xl font-bold sm:text-2xl"
+                          className="text-ink mt-xs font-serif text-xl font-medium leading-tight"
                         >
                           {veh}
-                        </h2>
+                        </h3>
                         {t.vehicle.plate_number ? (
-                          <p className="text-brand-ink/65 mt-0.5 font-mono text-sm" dir="ltr">
+                          <p className="text-muted font-tabular mt-xxs text-sm" dir="ltr">
                             {t.vehicle.plate_number}
                           </p>
                         ) : null}
                       </div>
                       <div className="text-end">
-                        <p className="text-brand-ink/55 text-xs uppercase tracking-wider">
+                        <p className="text-muted text-[11px] font-medium uppercase tracking-widest">
                           מחיר סופי
                         </p>
-                        <p className="text-brand-navy text-2xl font-bold">
+                        <p className="text-ink font-tabular mt-xxs font-serif text-2xl font-medium">
                           <span aria-hidden="true">{priceF.visual}</span>
                           <span className="sr-only">{priceF.sr}</span>
                         </p>
                       </div>
                     </header>
 
-                    <dl className="mt-5 grid gap-4 sm:grid-cols-2">
-                      <DealerCard role="seller" dealer={t.seller} />
-                      <DealerCard role="buyer" dealer={t.buyer} />
+                    <dl className="gap-lg mt-xl grid grid-cols-1 sm:grid-cols-2">
+                      <DealerBlock role="seller" dealer={t.seller} />
+                      <DealerBlock role="buyer" dealer={t.buyer} />
                     </dl>
 
                     {t.confirmed_at ? (
-                      <p className="text-brand-ink/60 mt-4 text-xs">
+                      <p className="text-muted mt-md text-xs">
                         אישור משני הצדדים:{" "}
-                        <time dateTime={t.confirmed_at}>
+                        <time dateTime={t.confirmed_at} className="font-tabular">
                           {new Date(t.confirmed_at).toLocaleString("he-IL")}
                         </time>
                       </p>
                     ) : null}
 
-                    {/* Digital agreement audit (A.3) — both signatures
-                        with timestamp + IP. Mono font + dir=ltr on the
-                        IP keeps the dotted-octet readable in RTL. */}
+                    {/* Digital agreement audit — both signatures with
+                        timestamp + IP. Mono-ish font-tabular + dir=ltr on
+                        the IP keeps the dotted-octet readable in RTL. */}
                     {t.agreements.buyer_signed_at || t.agreements.seller_signed_at ? (
-                      <details className="border-brand-navy/10 mt-3 rounded-md border bg-white p-3 text-xs">
-                        <summary className="text-brand-navy cursor-pointer font-semibold">
+                      <details className="border-hairline px-md py-sm mt-md rounded-md border text-xs">
+                        <summary className="text-ink cursor-pointer font-medium">
                           חתימות דיגיטליות
                         </summary>
-                        <dl className="text-brand-ink/70 mt-2 grid gap-1.5">
+                        <dl className="text-muted gap-xxs mt-sm grid">
                           {t.agreements.buyer_signed_at ? (
                             <div>
                               <dt className="inline">קונה חתם:</dt>{" "}
                               <dd className="inline">
-                                <time dateTime={t.agreements.buyer_signed_at}>
+                                <time
+                                  dateTime={t.agreements.buyer_signed_at}
+                                  className="font-tabular"
+                                >
                                   {new Date(t.agreements.buyer_signed_at).toLocaleString("he-IL")}
                                 </time>
                                 {t.agreements.buyer_signed_ip ? (
-                                  <span className="ms-2 font-mono" dir="ltr">
+                                  <span className="font-tabular ms-2" dir="ltr">
                                     ({t.agreements.buyer_signed_ip})
                                   </span>
                                 ) : null}
@@ -263,11 +249,14 @@ export default function AdminTransactionsPage() {
                             <div>
                               <dt className="inline">מוכר חתם:</dt>{" "}
                               <dd className="inline">
-                                <time dateTime={t.agreements.seller_signed_at}>
+                                <time
+                                  dateTime={t.agreements.seller_signed_at}
+                                  className="font-tabular"
+                                >
                                   {new Date(t.agreements.seller_signed_at).toLocaleString("he-IL")}
                                 </time>
                                 {t.agreements.seller_signed_ip ? (
-                                  <span className="ms-2 font-mono" dir="ltr">
+                                  <span className="font-tabular ms-2" dir="ltr">
                                     ({t.agreements.seller_signed_ip})
                                   </span>
                                 ) : null}
@@ -278,18 +267,18 @@ export default function AdminTransactionsPage() {
                       </details>
                     ) : null}
 
-                    <div className="mt-5 flex flex-wrap gap-2">
-                      <button
+                    <div className="mt-lg">
+                      <Button
                         type="button"
                         onClick={() => setConfirmTarget(t)}
                         disabled={isBusy}
                         aria-busy={isBusy || undefined}
                         aria-label={`סמן את העסקה של ${veh} כהושלמה`}
-                        className="bg-ok hover:bg-ok/90 focus-visible:outline-ok inline-flex min-h-11 items-center justify-center gap-1.5 rounded-md px-5 py-2 text-sm font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
+                        className="bg-accent text-accent-ink hover:bg-accent/90"
                       >
-                        <span aria-hidden="true">✓</span>
-                        {isBusy ? "סוגר…" : "סמן כהושלם"}
-                      </button>
+                        <Check aria-hidden="true" />
+                        <span>{isBusy ? "סוגר…" : "סמן כהושלם"}</span>
+                      </Button>
                     </div>
                   </article>
                 </li>
@@ -297,7 +286,7 @@ export default function AdminTransactionsPage() {
             })}
           </ul>
         ) : null}
-      </div>
+      </section>
 
       <ConfirmDialog
         open={confirmTarget !== null}
@@ -314,40 +303,64 @@ export default function AdminTransactionsPage() {
           if (confirmTarget) await completeDeal(confirmTarget);
         }}
       />
-    </main>
+    </div>
   );
 }
 
-const TIER_LABEL: Record<string, string> = {
-  bronze: "ברונזה",
-  silver: "כסף",
-  gold: "זהב",
-  platinum: "פלטינום",
-};
-
-function DealerCard({ role, dealer }: { role: "buyer" | "seller"; dealer: DealerInfo }) {
+function DealerBlock({ role, dealer }: { role: "buyer" | "seller"; dealer: DealerInfo }) {
   const roleLabel = role === "buyer" ? "קונה" : "מוכר";
   return (
-    <div className="border-brand-navy/10 rounded-md border bg-white p-4">
-      <p className="text-brand-ink/55 text-xs font-semibold uppercase tracking-wider">
-        {roleLabel}
-      </p>
-      <p className="text-brand-navy mt-1 text-base font-bold">{dealer.business_name}</p>
-      <p className="text-brand-ink/70 text-sm">
+    <div>
+      <p className="text-muted text-[11px] font-medium uppercase tracking-widest">{roleLabel}</p>
+      <p className="text-ink mt-xxs text-base font-medium">{dealer.business_name}</p>
+      <p className="text-muted mt-xxs text-sm">
         {dealer.city ?? "—"}
-        {" · "}
+        <span aria-hidden="true" className="text-subtle mx-xxs">
+          ·
+        </span>
         <span lang="en">{TIER_LABEL[dealer.tier] ?? dealer.tier}</span>
       </p>
       {dealer.phone ? (
-        <p className="text-brand-ink/65 mt-1 text-sm" dir="ltr">
+        <p className="mt-xxs text-sm" dir="ltr">
           <a
             href={`tel:${dealer.phone}`}
-            className="text-brand-navy decoration-brand-gold underline decoration-2 underline-offset-4"
+            className="text-ink font-tabular duration-fast hover:text-accent focus-visible:outline-accent underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
           >
             {dealer.phone}
           </a>
         </p>
       ) : null}
+    </div>
+  );
+}
+
+function TxSkeleton() {
+  return (
+    <div className="mt-2xl" role="status" aria-live="polite">
+      <span className="sr-only">טוען עסקאות בתהליך…</span>
+      {[0, 1].map((i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          className="border-hairline py-xl space-y-3 border-b last:border-b-0"
+        >
+          <Skeleton className="h-3 w-32" />
+          <Skeleton className="h-6 w-1/2" />
+          <div className="gap-lg grid grid-cols-2">
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-16" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-3 w-24" />
+            </div>
+          </div>
+          <Skeleton className="h-10 w-40" />
+        </div>
+      ))}
     </div>
   );
 }
