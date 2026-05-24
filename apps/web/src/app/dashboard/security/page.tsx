@@ -7,7 +7,6 @@ import { useEffect, useRef, useState } from "react";
 import { NotificationPrefs } from "@/components/NotificationPrefs";
 import { PushNotificationsToggle } from "@/components/PushNotificationsToggle";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
