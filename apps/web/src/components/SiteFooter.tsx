@@ -2,18 +2,24 @@ import Image from "next/image";
 import Link from "next/link";
 
 /**
- * Public-site footer. Mirrors the structure used on the landing page
- * so /terms, /privacy, /contact share the same chrome.
+ * Public-site footer. Mirrors the structure used on the landing
+ * page so /terms, /privacy, /contact share the same chrome.
+ *
+ * Dark ink surface — visual break from the paper body. The thin
+ * accent hairline at the top is the only color moment; everything
+ * else is paper-tinted ink. Inside the column headers the eyebrow
+ * uses the muted accent tone (text-accent) to echo the landing
+ * page's section eyebrows.
  */
 export function SiteFooter() {
   return (
-    <footer className="bg-brand-navy text-brand-cream relative">
+    <footer className="bg-ink text-paper relative">
       <div
         aria-hidden="true"
-        className="bg-brand-gold pointer-events-none absolute inset-x-0 top-0 h-px opacity-60"
+        className="bg-accent pointer-events-none absolute inset-x-0 top-0 h-px opacity-60"
       />
-      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
-        <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+      <div className="px-md sm:px-lg py-2xl sm:py-3xl mx-auto max-w-6xl">
+        <div className="gap-2xl grid sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div>
             <Image
               src="/logo-full-white.png"
@@ -22,114 +28,71 @@ export function SiteFooter() {
               height={361}
               className="h-12 w-auto sm:h-14"
             />
-            <p className="text-brand-cream/75 mt-5 max-w-xs text-sm leading-relaxed">
+            <p className="text-paper/70 mt-lg max-w-xs text-sm leading-relaxed">
               זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית עם הצעות מתועדות, מלאי משותף
               ואימות KYC.
             </p>
           </div>
 
-          <nav aria-label="קישורי פלטפורמה">
-            <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
-              פלטפורמה
-            </p>
-            <ul className="mt-4 space-y-2">
-              <li>
-                <Link
-                  href="/#why"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  יתרונות
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/#trust"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  אמון ובטחון
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/#consumer"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  לקונה הפרטי
-                </Link>
-              </li>
-            </ul>
-          </nav>
+          <FooterColumn
+            title="פלטפורמה"
+            links={[
+              { href: "/#why", label: "יתרונות" },
+              { href: "/#trust", label: "אמון ובטחון" },
+              { href: "/#consumer", label: "לקונה הפרטי" },
+            ]}
+          />
 
-          <nav aria-label="חשבון">
-            <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
-              חשבון
-            </p>
-            <ul className="mt-4 space-y-2">
-              <li>
-                <Link
-                  href="/login"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  כניסה
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/signup/dealer"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  הרשמת סוחר
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/forgot-password"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  שחזור סיסמה
-                </Link>
-              </li>
-            </ul>
-          </nav>
+          <FooterColumn
+            title="חשבון"
+            links={[
+              { href: "/login", label: "כניסה" },
+              { href: "/signup/dealer", label: "הרשמת סוחר" },
+              { href: "/forgot-password", label: "שחזור סיסמה" },
+            ]}
+          />
 
-          <nav aria-label="חוקי">
-            <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
-              חוקי
-            </p>
-            <ul className="mt-4 space-y-2">
-              <li>
-                <Link
-                  href="/terms"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  תנאי שימוש
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/privacy"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  פרטיות
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/contact"
-                  className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  יצירת קשר
-                </Link>
-              </li>
-            </ul>
-          </nav>
+          <FooterColumn
+            title="חוקי"
+            links={[
+              { href: "/terms", label: "תנאי שימוש" },
+              { href: "/privacy", label: "פרטיות" },
+              { href: "/contact", label: "יצירת קשר" },
+            ]}
+          />
         </div>
 
-        <div className="border-brand-cream/15 mt-12 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-brand-cream/60 text-xs">© 2026 AutoTradeIL · כל הזכויות שמורות</p>
-          <p className="text-brand-cream/60 text-xs">נבנה בישראל · גרסה 1.0</p>
+        <div className="border-paper/15 mt-2xl pt-lg gap-sm flex flex-col border-t sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-paper/55 text-xs">© 2026 AutoTradeIL · כל הזכויות שמורות</p>
+          <p className="text-paper/55 text-xs">נבנה בישראל · גרסה 1.0</p>
         </div>
       </div>
     </footer>
+  );
+}
+
+function FooterColumn({
+  title,
+  links,
+}: {
+  title: string;
+  links: Array<{ href: string; label: string }>;
+}) {
+  return (
+    <nav aria-label={title}>
+      <p className="text-accent text-xs font-medium uppercase tracking-widest">{title}</p>
+      <ul className="mt-md space-y-2">
+        {links.map((l) => (
+          <li key={l.href}>
+            <Link
+              href={l.href}
+              className="text-paper/80 hover:text-paper focus-visible:outline-accent duration-fast inline-flex min-h-11 items-center rounded-sm text-sm transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {l.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
   );
 }
