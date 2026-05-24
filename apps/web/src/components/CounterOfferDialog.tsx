@@ -1,10 +1,22 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2, TriangleAlert } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { DialogCloseButton } from "@/components/DialogCloseButton";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
@@ -14,12 +26,21 @@ import { queryKeys } from "@/lib/query-keys";
  * countering a buyer) and the "offers sent" list when the offer is already
  * countered by the seller (buyer re-countering).
  *
+ *   שליחת הצעה נגדית
+ *   {vehicle label}
+ *   ─────
+ *   {originalSideLabel}: ₪…   ← context strip
+ *
+ *   מחיר נגדי ₪*    ← font-tabular Input
+ *   הודעה (optional textarea)
+ *
+ *   [ביטול]  [שלח הצעה נגדית]
+ *
  * A11y:
- *   - Original price shown as a VISIBLE inline `<p>` (not sr-only) that
- *     doubles as the `aria-describedby` target for the counter-price
- *     input (per the a11y-lead's preferred pattern — sighted users get
- *     context too).
- *   - Submit errors surface via `role="alert"`.
+ *   - Original price shown as a visible inline strip that doubles as the
+ *     aria-describedby target for the counter-price input (sighted users
+ *     get context too)
+ *   - Submit errors surface via shadcn <Alert variant="destructive">
  */
 
 type Props = {
@@ -28,8 +49,8 @@ type Props = {
   token: string;
   offerId: string;
   vehicleLabel: string;
-  originalPrice: number; // the price the counter is responding to
-  originalSideLabel: string; // "ההצעה שלך הייתה" / "הסוחר ביקש"
+  originalPrice: number;
+  originalSideLabel: string;
   onSubmitted: () => void;
 };
 
@@ -57,6 +78,7 @@ export function CounterOfferDialog({
   }, [open]);
 
   const originalF = formatPrice(originalPrice);
+  const ctxId = `counter-ctx-${offerId}`;
 
   const submitMutation = useMutation({
     mutationFn: ({
@@ -98,111 +120,98 @@ export function CounterOfferDialog({
   };
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          aria-hidden="true"
-          className="bg-brand-navy/40 fixed inset-0 z-40 motion-reduce:transition-none"
-        />
-        <Dialog.Content className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4">
-          <div className="bg-brand-cream relative max-h-[95dvh] w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-xl">
-            <DialogCloseButton />
-            <Dialog.Title className="text-brand-navy pe-12 text-lg font-bold">
-              שליחת הצעה נגדית
-            </Dialog.Title>
-            <Dialog.Description className="text-brand-ink/70 mt-1 text-sm">
-              {vehicleLabel}
-            </Dialog.Description>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>שליחת הצעה נגדית</DialogTitle>
+          <DialogDescription>{vehicleLabel}</DialogDescription>
+        </DialogHeader>
 
-            <p
-              id={`counter-ctx-${offerId}`}
-              className="border-brand-navy/10 text-brand-ink mt-4 rounded-md border bg-white px-3 py-2 text-sm"
-            >
-              <span className="text-brand-ink/60">{originalSideLabel}:&nbsp;</span>
-              <span aria-hidden="true" className="font-semibold">
-                {originalF.visual}
+        <div
+          id={ctxId}
+          className="border-hairline bg-paper px-md py-sm mt-sm rounded-md border text-sm"
+        >
+          <span className="text-muted">{originalSideLabel}</span>
+          <span aria-hidden="true" className="text-subtle mx-xxs">
+            ·
+          </span>
+          <span className="text-ink font-tabular font-medium">
+            <span aria-hidden="true">{originalF.visual}</span>
+            <span className="sr-only">{originalF.sr}</span>
+          </span>
+        </div>
+
+        {error ? (
+          <Alert variant="destructive" className="mt-md">
+            <TriangleAlert aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+
+        <div className="mt-md space-y-lg">
+          <div>
+            <Label htmlFor="counter-price">
+              מחיר נגדי ₪{" "}
+              <span aria-hidden="true" className="text-danger-fg">
+                *
               </span>
-              <span className="sr-only">{originalF.sr}</span>
-            </p>
-
-            {error ? (
-              <p
-                role="alert"
-                className="bg-danger-bg text-danger-text mt-4 rounded-md px-3 py-2 text-sm"
-              >
-                {error}
-              </p>
-            ) : null}
-
-            <div className="mt-4 space-y-4">
-              <div>
-                <label
-                  htmlFor="counter-price"
-                  className="text-brand-navy block text-sm font-medium"
-                >
-                  מחיר נגדי ₪
-                  <span aria-hidden="true" className="text-danger-text ms-1">
-                    *
-                  </span>
-                </label>
-                <input
-                  id="counter-price"
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
-                  aria-describedby={`counter-ctx-${offerId}`}
-                  aria-required="true"
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                />
-              </div>
-
-              <div>
-                <label
-                  htmlFor="counter-message"
-                  className="text-brand-navy block text-sm font-medium"
-                >
-                  הודעה (אופציונלי)
-                </label>
-                <p id="counter-message-hint" className="text-brand-navy/70 mt-1 text-xs">
-                  עד 2000 תווים
-                </p>
-                <textarea
-                  id="counter-message"
-                  rows={3}
-                  maxLength={2000}
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  aria-describedby="counter-message-hint"
-                  className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                />
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Dialog.Close asChild>
-                <button
-                  type="button"
-                  disabled={busy}
-                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-60"
-                >
-                  ביטול
-                </button>
-              </Dialog.Close>
-              <button
-                type="button"
-                onClick={() => void submit()}
-                disabled={busy}
-                aria-busy={busy || undefined}
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-              >
-                {busy ? "שולח…" : "שלח הצעה נגדית"}
-              </button>
-            </div>
+            </Label>
+            <Input
+              id="counter-price"
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              aria-describedby={ctxId}
+              aria-required="true"
+              className="font-tabular mt-xs"
+            />
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+
+          <div>
+            <Label htmlFor="counter-message">הודעה (אופציונלי)</Label>
+            <p id="counter-message-hint" className="text-muted mt-xxs text-xs">
+              עד <span className="font-tabular">2000</span> תווים
+            </p>
+            <Textarea
+              id="counter-message"
+              rows={3}
+              maxLength={2000}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              aria-describedby="counter-message-hint"
+              className="mt-xs"
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            ביטול
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void submit()}
+            disabled={busy}
+            aria-busy={busy || undefined}
+          >
+            {busy ? (
+              <>
+                <Loader2 aria-hidden="true" className="animate-spin" />
+                <span>שולח…</span>
+              </>
+            ) : (
+              "שלח הצעה נגדית"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
