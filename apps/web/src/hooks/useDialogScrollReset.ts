@@ -23,7 +23,11 @@ import { useEffect, type RefObject } from "react";
  * `scrollTo({behavior: "auto"})` (instant) so the user isn't
  * surprised by a moving viewport on open.
  */
-export function useDialogScrollReset(ref: RefObject<HTMLElement>, open: boolean) {
+// `RefObject<T | null>` accepts both @types/react ≤18 (`useRef<T>(null)`
+// returns `RefObject<T>`, structurally assignable) and ≥19 (returns
+// `RefObject<T | null>` natively). Avoids Vercel's stricter resolution
+// breaking on hooks/components that look fine locally.
+export function useDialogScrollReset(ref: RefObject<HTMLElement | null>, open: boolean) {
   useEffect(() => {
     if (!open) return;
     // queueMicrotask so the scroll happens AFTER React commits the

@@ -41,8 +41,13 @@ export function AdminMasthead({
   loading?: boolean;
   /** Trailing-edge content at the title row (primary CTA, link, etc.). */
   actions?: React.ReactNode;
-  /** Caller-supplied ref so pages can move keyboard focus to the H1. */
-  headingRef?: React.RefObject<HTMLHeadingElement>;
+  /**
+   * Caller-supplied ref so pages can move keyboard focus to the H1.
+   * Typed as `React.Ref<T>` — the union type JSX `ref={}` accepts
+   * directly. Works across @types/react 18 and 19 where `useRef<T>(null)`
+   * narrows to either `RefObject<T>` or `RefObject<T | null>`.
+   */
+  headingRef?: React.Ref<HTMLHeadingElement>;
 }) {
   return (
     <header>

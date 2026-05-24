@@ -1399,15 +1399,18 @@ type Step1Props = {
   plateAutofilled: boolean;
   setPlateAutofilled: (v: boolean) => void;
   runPlateLookup: () => Promise<void>;
-  imgInputRef: React.RefObject<HTMLInputElement>;
-  imgGalleryRef: React.RefObject<HTMLInputElement>;
+  // `RefObject<T | null>` accepts both @types/react ≤18 (`useRef<T>(null)`
+  // returns `RefObject<T>`) and ≥19 (returns `RefObject<T | null>`) so
+  // local typecheck + Vercel typecheck both pass.
+  imgInputRef: React.RefObject<HTMLInputElement | null>;
+  imgGalleryRef: React.RefObject<HTMLInputElement | null>;
   imgFile: File | null;
   setImgFile: (f: File | null) => void;
   imgBusy: boolean;
   imgStatus: string;
   imgError: string;
   runImageLookup: () => Promise<void>;
-  regInputRef: React.RefObject<HTMLInputElement>;
+  regInputRef: React.RefObject<HTMLInputElement | null>;
   regBusy: boolean;
   regStatus: string;
   regError: string;
@@ -1456,7 +1459,7 @@ function Step1(p: Step1Props) {
               צלם או העלה תמונה של רישיון הרכב — Claude AI יחלץ אוטומטית את כל הפרטים.
             </p>
             <input
-              ref={p.regInputRef}
+              ref={p.regInputRef as React.RefObject<HTMLInputElement>}
               type="file"
               accept="image/*,application/pdf"
               className="sr-only"
@@ -1576,7 +1579,7 @@ function Step1(p: Step1Props) {
               צלם או בחר תמונה של הרכב — Claude AI יזהה יצרן, דגם, שנה וצבע.
             </p>
             <input
-              ref={p.imgInputRef}
+              ref={p.imgInputRef as React.RefObject<HTMLInputElement>}
               type="file"
               accept="image/jpeg,image/png,image/webp,image/heic"
               capture="environment"
@@ -1585,7 +1588,7 @@ function Step1(p: Step1Props) {
               onChange={(e) => p.setImgFile(e.target.files?.[0] ?? null)}
             />
             <input
-              ref={p.imgGalleryRef}
+              ref={p.imgGalleryRef as React.RefObject<HTMLInputElement>}
               type="file"
               accept="image/jpeg,image/png,image/webp,image/heic"
               className="sr-only"
