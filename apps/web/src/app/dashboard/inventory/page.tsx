@@ -1,9 +1,10 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
@@ -39,6 +40,7 @@ const VehicleImagesDialog = dynamic(
 );
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 import { createClient } from "@/lib/supabase";
 
 /*
@@ -129,9 +131,9 @@ function InventoryPageInner() {
   const statusParam = params.get("status") ?? "active";
 
   const [token, setToken] = useState<string | null>(null);
-  const [data, setData] = useState<ListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const qc = useQueryClient();
 
   const headingRef = useRef<HTMLHeadingElement>(null);
   const addBtnRef = useRef<HTMLButtonElement>(null);
@@ -186,41 +188,56 @@ function InventoryPageInner() {
   const [smartFallbackQ, setSmartFallbackQ] = useState("");
   const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
 
-  const refresh = useCallback(async () => {
-    if (!token) return;
-    try {
+  const filters = useMemo(
+    () => ({
+      status: statusParam || undefined,
+      make: smartMake || undefined,
+      model: smartModel || undefined,
+      year_min: smartYearMin ?? undefined,
+      year_max: smartYearMax ?? undefined,
+      price_min: smartPriceMin ?? undefined,
+      price_max: smartPriceMax ?? undefined,
+      q: smartFallbackQ || undefined,
+      per_page: 20,
+    }),
+    [
+      statusParam,
+      smartMake,
+      smartModel,
+      smartYearMin,
+      smartYearMax,
+      smartPriceMin,
+      smartPriceMax,
+      smartFallbackQ,
+    ],
+  );
+
+  const inventoryQuery = useQuery({
+    queryKey: queryKeys.inventory.list(filters),
+    queryFn: () => {
       const qs = new URLSearchParams();
-      if (statusParam) qs.set("status", statusParam);
-      if (smartMake) qs.set("make", smartMake);
-      if (smartModel) qs.set("model", smartModel);
-      if (smartYearMin !== null) qs.set("year_min", String(smartYearMin));
-      if (smartYearMax !== null) qs.set("year_max", String(smartYearMax));
-      if (smartPriceMin !== null) qs.set("price_min", String(smartPriceMin));
-      if (smartPriceMax !== null) qs.set("price_max", String(smartPriceMax));
-      if (smartFallbackQ) qs.set("q", smartFallbackQ);
-      qs.set("per_page", "20");
-      const res = await apiFetch<ListResponse>(
+      Object.entries(filters).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "") qs.set(k, String(v));
+      });
+      return apiFetch<ListResponse>(
         `/api/v1/inventory${qs.toString() ? `?${qs.toString()}` : ""}`,
-        { token },
+        { token: token! },
       );
-      setData(res);
-    } catch {
-      // Dealer-facing — generic Hebrew, never the raw fetch error.
-      // Admins debug via DevTools console; the page never leaks
-      // "Failed to fetch" / 500 stack to a sales floor user.
-      setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
-    }
-  }, [
-    token,
-    statusParam,
-    smartMake,
-    smartModel,
-    smartYearMin,
-    smartYearMax,
-    smartPriceMin,
-    smartPriceMax,
-    smartFallbackQ,
-  ]);
+    },
+    enabled: !!token,
+  });
+
+  const data = inventoryQuery.data ?? null;
+
+  // Dealer-facing — keep the original generic Hebrew message; we never
+  // leak raw fetch errors to a sales-floor user.
+  useEffect(() => {
+    if (inventoryQuery.error) setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
+  }, [inventoryQuery.error]);
+
+  const refresh = async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.inventory.root() });
+  };
 
   const onSmartSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,10 +286,6 @@ function InventoryPageInner() {
   );
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  useEffect(() => {
     if (data) headingRef.current?.focus();
   }, [data]);
 
@@ -305,29 +318,43 @@ function InventoryPageInner() {
     setFormOpen(true);
   };
 
+  const createMutation = useMutation({
+    mutationFn: (payload: InventoryPayload) =>
+      apiFetch<{ id: string }>("/api/v1/inventory", {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      setToast("הרכב נוסף למלאי");
+      void qc.invalidateQueries({ queryKey: queryKeys.inventory.root() });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: InventoryPayload }) =>
+      apiFetch(`/api/v1/inventory/${id}`, {
+        method: "PUT",
+        token: token!,
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: (_data, vars) => {
+      setToast("הרכב עודכן");
+      void qc.invalidateQueries({ queryKey: queryKeys.inventory.root() });
+      void qc.invalidateQueries({ queryKey: queryKeys.inventory.detail(vars.id) });
+    },
+  });
+
   const submitItem = async (payload: InventoryPayload) => {
     if (!token) return;
     if (formMode === "create") {
-      const created = await apiFetch<{ id: string }>("/api/v1/inventory", {
-        method: "POST",
-        token,
-        body: JSON.stringify(payload),
-      });
-      setToast("הרכב נוסף למלאי");
-      await refresh();
       // Returned so the dialog can attach the just-captured ID photo as
       // the new vehicle's primary image (Phase 6.5 task 10).
-      return created;
+      return await createMutation.mutateAsync(payload);
     }
     if (editingId) {
-      await apiFetch(`/api/v1/inventory/${editingId}`, {
-        method: "PUT",
-        token,
-        body: JSON.stringify(payload),
-      });
-      setToast("הרכב עודכן");
+      await updateMutation.mutateAsync({ id: editingId, payload });
     }
-    await refresh();
   };
 
   const openDelete = (item: Item) => {
@@ -338,32 +365,34 @@ function InventoryPageInner() {
   // Phase 4.3 superseded the B2B boolean toggle + inline price with a
   // visibility radio group in InventoryFormDialog (edit a vehicle to change).
 
-  const unpauseVehicle = async (item: Item) => {
-    if (!token) return;
-    try {
-      await apiFetch(`/api/v1/inventory/${item.id}/unpause`, {
-        method: "POST",
-        token,
-      });
+  const unpauseMutation = useMutation({
+    mutationFn: (item: Item) =>
+      apiFetch(`/api/v1/inventory/${item.id}/unpause`, { method: "POST", token: token! }),
+    onSuccess: () => {
       setToast("הרכב חודש");
-      await refresh();
-    } catch {
-      setError("אירעה שגיאה בחידוש הרכב, אנא נסה שוב");
-    }
-  };
+      void qc.invalidateQueries({ queryKey: queryKeys.inventory.root() });
+    },
+    onError: () => setError("אירעה שגיאה בחידוש הרכב, אנא נסה שוב"),
+  });
+
+  const unpauseVehicle = (item: Item) => unpauseMutation.mutate(item);
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/v1/inventory/${id}?mode=soft`, { method: "DELETE", token: token! }),
+    onSuccess: async () => {
+      setToast("הרכב נמחק");
+      await qc.invalidateQueries({ queryKey: queryKeys.inventory.root() });
+    },
+  });
 
   const confirmDelete = async () => {
     if (!token || !deletingItem) return;
-    await apiFetch(`/api/v1/inventory/${deletingItem.id}?mode=soft`, {
-      method: "DELETE",
-      token,
-    });
     // Compute focus target BEFORE the list refreshes
     const items = data?.items ?? [];
     const idx = items.findIndex((i) => i.id === deletingItem.id);
     const targetId = items[idx + 1]?.id ?? items[idx - 1]?.id ?? null;
-    setToast("הרכב נמחק");
-    await refresh();
+    await deleteMutation.mutateAsync(deletingItem.id);
     queueMicrotask(() => {
       if (targetId && editBtnRefs.current.get(targetId)) {
         editBtnRefs.current.get(targetId)?.focus();

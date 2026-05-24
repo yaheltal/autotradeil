@@ -1,7 +1,8 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
@@ -14,6 +15,7 @@ import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Offers management page.
@@ -85,10 +87,9 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function OffersPage() {
   const { token } = useDealerAuth("/dashboard/offers");
+  const qc = useQueryClient();
 
   const [tab, setTab] = useState<Tab>("received");
-  const [received, setReceived] = useState<OfferListResponse | null>(null);
-  const [sent, setSent] = useState<OfferListResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string>("");
 
@@ -108,24 +109,32 @@ export default function OffersPage() {
     originalSideLabel: string;
   }>(null);
 
-  const refresh = useCallback(async () => {
-    if (!token) return;
-    try {
-      const [r, s] = await Promise.all([
-        apiFetch<OfferListResponse>(`/api/v1/marketplace/offers/received`, { token }),
-        apiFetch<OfferListResponse>(`/api/v1/marketplace/offers/sent`, { token }),
-      ]);
-      setReceived(r);
-      setSent(s);
-    } catch {
+  const receivedQuery = useQuery({
+    queryKey: queryKeys.offers.list("received"),
+    queryFn: () =>
+      apiFetch<OfferListResponse>(`/api/v1/marketplace/offers/received`, { token: token! }),
+    enabled: !!token,
+  });
+  const sentQuery = useQuery({
+    queryKey: queryKeys.offers.list("sent"),
+    queryFn: () =>
+      apiFetch<OfferListResponse>(`/api/v1/marketplace/offers/sent`, { token: token! }),
+    enabled: !!token,
+  });
+
+  const received = receivedQuery.data ?? null;
+  const sent = sentQuery.data ?? null;
+
+  useEffect(() => {
+    if (receivedQuery.error || sentQuery.error) {
       // Generic — never leak technical detail to dealers.
       setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
     }
-  }, [token]);
+  }, [receivedQuery.error, sentQuery.error]);
 
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  const refresh = async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+  };
 
   useEffect(() => {
     if (received || sent) h1Ref.current?.focus();
@@ -153,51 +162,55 @@ export default function OffersPage() {
     queueMicrotask(() => tabRefs.current.get(nextTab.id)?.focus());
   };
 
-  const doAccept = async (id: string) => {
-    if (!token) return;
-    await apiFetch(`/api/v1/marketplace/offers/${id}/accept`, {
-      method: "POST",
-      token,
-    });
-    setToast("ההצעה אושרה");
-    await refresh();
-  };
-  const doReject = async (id: string) => {
-    if (!token) return;
-    await apiFetch(`/api/v1/marketplace/offers/${id}/reject`, {
-      method: "POST",
-      token,
-    });
-    setToast("ההצעה נדחתה");
-    await refresh();
-  };
-  const doCancel = async (id: string) => {
-    if (!token) return;
-    await apiFetch(`/api/v1/marketplace/offers/${id}/cancel`, {
-      method: "POST",
-      token,
-    });
-    setToast("ההצעה בוטלה");
-    await refresh();
-  };
-  const doConfirmDeal = async (id: string) => {
-    if (!token) return;
-    // The body's `agreed: true` is the digital signature on the
-    // platform's terms — backend stamps timestamp + IP per side.
-    const res = await apiFetch<{ closed_at: string | null }>(
-      `/api/v1/marketplace/offers/${id}/confirm-deal`,
-      {
+  const acceptMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/v1/marketplace/offers/${id}/accept`, { method: "POST", token: token! }),
+    onSuccess: () => {
+      setToast("ההצעה אושרה");
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+    },
+  });
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/v1/marketplace/offers/${id}/reject`, { method: "POST", token: token! }),
+    onSuccess: () => {
+      setToast("ההצעה נדחתה");
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+    },
+  });
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/api/v1/marketplace/offers/${id}/cancel`, { method: "POST", token: token! }),
+    onSuccess: () => {
+      setToast("ההצעה בוטלה");
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+    },
+  });
+  const confirmDealMutation = useMutation({
+    // The body's `agreed: true` is the digital signature on the platform's
+    // terms — backend stamps timestamp + IP per side.
+    mutationFn: (id: string) =>
+      apiFetch<{ closed_at: string | null }>(`/api/v1/marketplace/offers/${id}/confirm-deal`, {
         method: "POST",
-        token,
+        token: token!,
         body: JSON.stringify({ agreed: true }),
-      },
-    );
-    setToast(
-      res.closed_at
-        ? "העסקה אושרה — בתהליך, צוות AutoTradeIL מלווה את הסגירה"
-        : "אישורך נשמר — ממתין לצד השני",
-    );
-    await refresh();
+      }),
+    onSuccess: (res) => {
+      setToast(
+        res.closed_at
+          ? "העסקה אושרה — בתהליך, צוות AutoTradeIL מלווה את הסגירה"
+          : "אישורך נשמר — ממתין לצד השני",
+      );
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      if (res.closed_at) void qc.invalidateQueries({ queryKey: queryKeys.deals.root() });
+    },
+  });
+
+  const doAccept = (id: string) => acceptMutation.mutateAsync(id);
+  const doReject = (id: string) => rejectMutation.mutateAsync(id);
+  const doCancel = (id: string) => cancelMutation.mutateAsync(id);
+  const doConfirmDeal = async (id: string) => {
+    await confirmDealMutation.mutateAsync(id);
   };
 
   if (!token) {

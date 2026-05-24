@@ -1,7 +1,8 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
@@ -11,6 +12,7 @@ import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Deal history (Phase 4.2).
@@ -60,59 +62,39 @@ type Resp = {
 
 export default function DealsPage() {
   const { token } = useDealerAuth("/dashboard/deals");
-  const [data, setData] = useState<Resp | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [myDealerId, setMyDealerId] = useState<string | null>(null);
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
+  // Backend `/marketplace/deals` filters by buyer_dealer_id == me OR
+  // seller_dealer_id == me — strict tenant isolation, no dealer sees
+  // another dealer's deal history.
+  //
   // Dealer-facing error policy: NEVER show technical messages
-  // ("Failed to fetch", "השרת מתעורר משינה", etc.). Only two states
-  // are user-visible:
-  //   · `loadingMode === "retrying"` — silent spinner, no text
-  //   · `loadingMode === "failed"` — generic Hebrew message after
-  //     ~30s of attempts; admins debugging the API see the technical
-  //     reason in DevTools, not on the page.
-  // Total retry budget is ~30s (3s + 6s + 9s + 12s back-off) before
-  // the failed UI takes over.
-  type LoadingMode = "idle" | "retrying" | "failed";
-  const [loadingMode, setLoadingMode] = useState<LoadingMode>("idle");
+  // ("Failed to fetch", etc.). Retry silently up to 3 times with
+  // exponential back-off (~3s + 6s + 9s); after all retries fail, the
+  // generic Hebrew error message takes over. Admins debug via DevTools.
+  const dealsQuery = useQuery({
+    queryKey: queryKeys.deals.root(),
+    queryFn: () => apiFetch<Resp>("/api/v1/marketplace/deals", { token: token! }),
+    enabled: !!token,
+    retry: 3,
+    retryDelay: (attempt) => 3000 * (attempt + 1),
+  });
+  const dealerQuery = useQuery({
+    queryKey: queryKeys.dealer.me(),
+    queryFn: () => apiFetch<{ id: string }>("/api/v1/dealers/me", { token: token! }),
+    enabled: !!token,
+  });
 
-  const load = useCallback(
-    async (attempt = 1) => {
-      if (!token) return;
-      setError(null);
-      try {
-        // Backend `/marketplace/deals` filters by buyer_dealer_id ==
-        // me OR seller_dealer_id == me — strict tenant isolation,
-        // no dealer ever sees another dealer's deal history.
-        const [me, res] = await Promise.all([
-          apiFetch<{ id: string }>("/api/v1/dealers/me", { token }).catch(() => null),
-          apiFetch<Resp>("/api/v1/marketplace/deals", { token }),
-        ]);
-        setData(res);
-        setLoadingMode("idle");
-        if (me?.id) setMyDealerId(me.id);
-      } catch {
-        // Treat ALL failures the same from the dealer's POV — there
-        // is no actionable difference between "network down" and
-        // "5xx" for them. Keep retrying silently up to 4 attempts
-        // (cumulative ~30s back-off), then show the generic failed
-        // state with a manual retry button.
-        if (attempt < 4) {
-          setLoadingMode("retrying");
-          setTimeout(() => void load(attempt + 1), 3000 * attempt);
-          return;
-        }
-        setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
-        setLoadingMode("failed");
-      }
-    },
-    [token],
-  );
-
-  useEffect(() => {
-    void load(1);
-  }, [load]);
+  const data = dealsQuery.data ?? null;
+  const myDealerId = dealerQuery.data?.id ?? null;
+  const loadingMode: "idle" | "retrying" | "failed" =
+    dealsQuery.isError && !dealsQuery.isFetching
+      ? "failed"
+      : dealsQuery.failureCount > 0
+        ? "retrying"
+        : "idle";
+  const error = loadingMode === "failed" ? "אירעה שגיאה, אנא נסה שוב מאוחר יותר" : null;
+  const load = (_attempt?: number) => dealsQuery.refetch();
 
   useEffect(() => {
     if (data) h1Ref.current?.focus();

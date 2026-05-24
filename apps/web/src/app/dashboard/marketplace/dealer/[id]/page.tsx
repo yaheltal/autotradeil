@@ -1,8 +1,9 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
@@ -11,6 +12,7 @@ import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Public dealer profile (Phase 4.2).
@@ -57,32 +59,33 @@ export default function DealerProfilePage() {
   const params = useParams<{ id: string }>();
   const dealerId = params?.id ?? "";
 
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [listings, setListings] = useState<Listing[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token || !dealerId) return;
-    try {
-      const [p, l] = await Promise.all([
-        apiFetch<Profile>(`/api/v1/marketplace/dealers/${dealerId}/profile`, { token }),
-        apiFetch<SearchResp>(
-          `/api/v1/marketplace/search?seller_dealer_id=${dealerId}&per_page=50`,
-          { token },
-        ),
-      ]);
-      setProfile(p);
-      setListings(l.items);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת פרופיל הסוחר");
-    }
-  }, [token, dealerId]);
+  const profileQuery = useQuery({
+    queryKey: queryKeys.marketplace.dealer(dealerId),
+    queryFn: () =>
+      apiFetch<Profile>(`/api/v1/marketplace/dealers/${dealerId}/profile`, { token: token! }),
+    enabled: !!token && !!dealerId,
+  });
+  const listingsQuery = useQuery({
+    queryKey: ["marketplace", "dealer", dealerId, "listings"] as const,
+    queryFn: () =>
+      apiFetch<SearchResp>(`/api/v1/marketplace/search?seller_dealer_id=${dealerId}&per_page=50`, {
+        token: token!,
+      }),
+    enabled: !!token && !!dealerId,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const profile = profileQuery.data ?? null;
+  const listings = listingsQuery.data?.items ?? null;
+  const error =
+    profileQuery.error instanceof Error
+      ? profileQuery.error.message
+      : listingsQuery.error instanceof Error
+        ? listingsQuery.error.message
+        : profileQuery.error || listingsQuery.error
+          ? "שגיאה בטעינת פרופיל הסוחר"
+          : null;
 
   useEffect(() => {
     if (profile) h1Ref.current?.focus();

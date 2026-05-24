@@ -1,8 +1,9 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
@@ -12,6 +13,7 @@ import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatMileage, formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Marketplace vehicle detail page.
@@ -81,8 +83,6 @@ export default function MarketplaceDetailPage() {
   const router = useRouter();
   const vehicleId = params?.id ?? "";
 
-  const [data, setData] = useState<Detail | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [offerOpen, setOfferOpen] = useState(false);
   const [offerToast, setOfferToast] = useState<string>("");
   const [slideStatus, setSlideStatus] = useState<string>("");
@@ -92,19 +92,19 @@ export default function MarketplaceDetailPage() {
   const slideRefs = useRef<Map<string, HTMLElement>>(new Map());
   const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const load = useCallback(async () => {
-    if (!token || !vehicleId) return;
-    try {
-      const res = await apiFetch<Detail>(`/api/v1/marketplace/vehicles/${vehicleId}`, { token });
-      setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת הרכב");
-    }
-  }, [token, vehicleId]);
+  const detailQuery = useQuery({
+    queryKey: queryKeys.marketplace.detail(vehicleId),
+    queryFn: () => apiFetch<Detail>(`/api/v1/marketplace/vehicles/${vehicleId}`, { token: token! }),
+    enabled: !!token && !!vehicleId,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const data = detailQuery.data ?? null;
+  const error =
+    detailQuery.error instanceof Error
+      ? detailQuery.error.message
+      : detailQuery.error
+        ? "שגיאה בטעינת הרכב"
+        : null;
 
   useEffect(() => {
     if (data) h1Ref.current?.focus();

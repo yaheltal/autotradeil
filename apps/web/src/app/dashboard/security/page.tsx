@@ -1,7 +1,8 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
@@ -11,6 +12,7 @@ import { NotificationPrefs } from "@/components/NotificationPrefs";
 import { PushNotificationsToggle } from "@/components/PushNotificationsToggle";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Dealer security & identity page (Phase 3.5).
@@ -101,7 +103,7 @@ export default function SecurityPage() {
   const [disableError, setDisableError] = useState<string | null>(null);
 
   // ---------- KYC ----------
-  const [kyc, setKyc] = useState<KycStatusResponse | null>(null);
+  const qc = useQueryClient();
   const [uploading, setUploading] = useState<DocType | null>(null);
   const [kycFilenames, setKycFilenames] = useState<Record<DocType, string>>({
     id_front: "",
@@ -109,25 +111,18 @@ export default function SecurityPage() {
     dealer_license: "",
   });
 
-  const loadKyc = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<KycStatusResponse>("/api/v1/security/kyc/status", {
-        token,
-      });
-      setKyc(res);
-    } catch {
-      /* non-fatal */
-    }
-  }, [token]);
-
-  // Initial bootstrap — load the dealer's current 2FA + phone + KYC status.
-  // We don't have a single "profile" endpoint so we poke /kyc/status and
-  // default 2FA to false until we add a /me endpoint. 2FA state flips to
-  // true after a successful enrollment.
-  useEffect(() => {
-    void loadKyc();
-  }, [loadKyc]);
+  // Initial bootstrap — load the dealer's current KYC status. 2FA state
+  // defaults to false until we add a /me endpoint; flips to true after a
+  // successful enrollment.
+  const kycQuery = useQuery({
+    queryKey: queryKeys.security.root(),
+    queryFn: () => apiFetch<KycStatusResponse>("/api/v1/security/kyc/status", { token: token! }),
+    enabled: !!token,
+  });
+  const kyc = kycQuery.data ?? null;
+  const loadKyc = async () => {
+    await qc.invalidateQueries({ queryKey: queryKeys.security.root() });
+  };
 
   useEffect(() => {
     if (kyc) h1Ref.current?.focus();

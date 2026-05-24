@@ -1,7 +1,8 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { DashboardSubNav } from "@/components/DashboardSubNav";
@@ -14,6 +15,7 @@ import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake } from "@/lib/car-data";
 import { formatMileage, formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * B2B marketplace search page.
@@ -97,9 +99,12 @@ export default function MarketplacePage() {
   const { token } = useDealerAuth("/dashboard/marketplace");
 
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
+  // Applied filters drive the query; the form's `filters` state is a
+  // draft that only commits on submit. Without this split, every
+  // dropdown change would refetch — undesirable when the dealer is
+  // refining a query.
+  const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
-  const [data, setData] = useState<SearchResponse | null>(null);
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resultsAnnouncement, setResultsAnnouncement] = useState<string>("");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
@@ -107,54 +112,52 @@ export default function MarketplacePage() {
   const h1Ref = useRef<HTMLHeadingElement>(null);
   const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const refresh = useCallback(
-    async (reqPage: number, reqFilters: Filters) => {
-      if (!token) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const qs = new URLSearchParams();
-        if (reqFilters.q) qs.set("q", reqFilters.q);
-        if (reqFilters.make) qs.set("make", reqFilters.make);
-        if (reqFilters.model) qs.set("model", reqFilters.model);
-        if (reqFilters.year_min) qs.set("year_min", reqFilters.year_min);
-        if (reqFilters.year_max) qs.set("year_max", reqFilters.year_max);
-        if (reqFilters.price_min) qs.set("price_min", reqFilters.price_min);
-        if (reqFilters.price_max) qs.set("price_max", reqFilters.price_max);
-        if (reqFilters.mileage_max) qs.set("mileage_max", reqFilters.mileage_max);
-        if (reqFilters.transmission) qs.set("transmission", reqFilters.transmission);
-        if (reqFilters.fuel_type) qs.set("fuel_type", reqFilters.fuel_type);
-        if (reqFilters.city) qs.set("city", reqFilters.city);
-        qs.set("page", String(reqPage));
-        qs.set("per_page", "20");
-
-        const res = await apiFetch<SearchResponse>(`/api/v1/marketplace/search?${qs.toString()}`, {
-          token,
-        });
-        setData(res);
-
-        // Debounced results-count announcement (a11y-lead: 150ms)
-        if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
-        announceTimerRef.current = setTimeout(() => {
-          setResultsAnnouncement(
-            res.total === 0 ? "לא נמצאו רכבים תואמים" : `נמצאו ${res.total} רכבים`,
-          );
-        }, 150);
-      } catch {
-        // Generic message — never leak fetch / 5xx detail to dealers.
-        setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
-      } finally {
-        setLoading(false);
-      }
+  const marketplaceQuery = useQuery({
+    queryKey: queryKeys.marketplace.list({ ...appliedFilters, page }),
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (appliedFilters.q) qs.set("q", appliedFilters.q);
+      if (appliedFilters.make) qs.set("make", appliedFilters.make);
+      if (appliedFilters.model) qs.set("model", appliedFilters.model);
+      if (appliedFilters.year_min) qs.set("year_min", appliedFilters.year_min);
+      if (appliedFilters.year_max) qs.set("year_max", appliedFilters.year_max);
+      if (appliedFilters.price_min) qs.set("price_min", appliedFilters.price_min);
+      if (appliedFilters.price_max) qs.set("price_max", appliedFilters.price_max);
+      if (appliedFilters.mileage_max) qs.set("mileage_max", appliedFilters.mileage_max);
+      if (appliedFilters.transmission) qs.set("transmission", appliedFilters.transmission);
+      if (appliedFilters.fuel_type) qs.set("fuel_type", appliedFilters.fuel_type);
+      if (appliedFilters.city) qs.set("city", appliedFilters.city);
+      qs.set("page", String(page));
+      qs.set("per_page", "20");
+      return apiFetch<SearchResponse>(`/api/v1/marketplace/search?${qs.toString()}`, {
+        token: token!,
+      });
     },
-    [token],
-  );
+    enabled: !!token,
+  });
+
+  const data = marketplaceQuery.data ?? null;
+  const loading = marketplaceQuery.isFetching;
 
   useEffect(() => {
-    void refresh(page, filters);
-    // only react to token ready / page change — filter changes require submit
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, page]);
+    if (marketplaceQuery.error) {
+      // Generic message — never leak fetch / 5xx detail to dealers.
+      setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
+    } else if (data) {
+      setError(null);
+    }
+  }, [marketplaceQuery.error, data]);
+
+  // Debounced results-count announcement (a11y-lead: 150ms).
+  useEffect(() => {
+    if (!data) return;
+    if (announceTimerRef.current) clearTimeout(announceTimerRef.current);
+    announceTimerRef.current = setTimeout(() => {
+      setResultsAnnouncement(
+        data.total === 0 ? "לא נמצאו רכבים תואמים" : `נמצאו ${data.total} רכבים`,
+      );
+    }, 150);
+  }, [data]);
 
   useEffect(() => {
     if (data) h1Ref.current?.focus();
@@ -195,13 +198,14 @@ export default function MarketplacePage() {
         setFilters(next);
       }
     }
-    void refresh(1, next);
+    setAppliedFilters(next);
+    setPage(1);
   };
 
   const resetFilters = () => {
     setFilters(EMPTY_FILTERS);
+    setAppliedFilters(EMPTY_FILTERS);
     setPage(1);
-    void refresh(1, EMPTY_FILTERS);
   };
 
   if (!token) {

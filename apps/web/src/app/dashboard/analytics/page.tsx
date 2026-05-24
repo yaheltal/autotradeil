@@ -1,7 +1,8 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
@@ -11,6 +12,7 @@ import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Dealer self-analytics (Phase 4.3).
@@ -51,25 +53,16 @@ type Analytics = {
 
 export default function AnalyticsPage() {
   const { token } = useDealerAuth("/dashboard/analytics");
-  const [data, setData] = useState<Analytics | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
-  const load = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await apiFetch<Analytics>("/api/v1/marketplace/analytics", {
-        token,
-      });
-      setData(res);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בטעינת הסטטיסטיקות");
-    }
-  }, [token]);
+  const { data: data, error: rawError } = useQuery({
+    queryKey: queryKeys.analytics.root(),
+    queryFn: () => apiFetch<Analytics>("/api/v1/marketplace/analytics", { token: token! }),
+    enabled: !!token,
+  });
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  const error =
+    rawError instanceof Error ? rawError.message : rawError ? "שגיאה בטעינת הסטטיסטיקות" : null;
 
   useEffect(() => {
     if (data) h1Ref.current?.focus();
@@ -114,7 +107,7 @@ export default function AnalyticsPage() {
             </p>
           ) : null}
 
-          {data === null ? (
+          {!data ? (
             <p role="status" className="text-brand-ink/60 p-8">
               טוען…
             </p>
