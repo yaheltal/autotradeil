@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 
 import { BackLink } from "@/components/BackLink";
 import { BrandMark } from "@/components/BrandMark";
-import { DashboardSubNav } from "@/components/DashboardSubNav";
 import { NotificationBell } from "@/components/NotificationBell";
 import { NotificationPrefs } from "@/components/NotificationPrefs";
 import { PushNotificationsToggle } from "@/components/PushNotificationsToggle";
@@ -298,8 +297,6 @@ export default function SecurityPage() {
           <NotificationBell token={token} />
         </div>
       </header>
-
-      <DashboardSubNav />
 
       <main id="main" tabIndex={-1} className="focus:outline-none">
         <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">

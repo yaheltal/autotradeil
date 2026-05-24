@@ -281,14 +281,25 @@ function DashboardPageInner() {
     );
   }
 
-  if (!dealer) return null;
-
   // ========================================================================
   // CONTENT
   // ========================================================================
+  //
+  // We DELIBERATELY don't bail with `if (!dealer) return null` here. Three
+  // observed races make that guard render a blank page:
+  //   1. /dealers/me returns 200 but a malformed body (dealer.data resolves
+  //      to undefined).
+  //   2. The user just got verified and the cached query result is stale.
+  //   3. Admin flicker — whoami briefly resolves before the redirect effect
+  //      runs.
+  // In every case we'd rather render the page shell (masthead + dek-style
+  // empty business name + dek + hero) than leave the dealer staring at the
+  // sidebar with no content. Below, every dealer.* reference falls back to
+  // a localized empty string so the layout always paints.
   const inventoryF = formatPrice(inventoryValue);
   const inventoryReady = !activeInventoryQuery.isLoading;
   const offersReady = !offersQuery.isLoading;
+  const businessName = dealer?.business_name ?? "";
 
   return (
     <main
@@ -317,10 +328,14 @@ function DashboardPageInner() {
           Dashboard
         </h1>
         <p className="text-muted mt-sm text-sm">
-          <span className="text-ink font-medium">{dealer.business_name}</span>
-          <span aria-hidden="true" className="mx-md text-muted">
-            ·
-          </span>
+          {businessName ? (
+            <>
+              <span className="text-ink font-medium">{businessName}</span>
+              <span aria-hidden="true" className="mx-md text-muted">
+                ·
+              </span>
+            </>
+          ) : null}
           <time dateTime={new Date().toISOString()}>{formatDate(new Date())}</time>
         </p>
       </header>
