@@ -1,44 +1,32 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  BarChart3,
-  Car,
-  Handshake,
-  Plus,
-  TrendingUp,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowLeft, BarChart3, Car, Handshake, Plus, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { SuspensionBanner } from "@/components/SuspensionBanner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api";
+import { formatPrice, formatRelativeTime } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 import { createClient } from "@/lib/supabase";
 
 /*
  * Dealer dashboard — fintech-minimalist layout.
  *
- * Structure per the design system (CLAUDE.md §4):
- *   1. Auth + admin gate (preserved — safety infrastructure, not UI)
- *   2. SuspensionBanner (preserved)
- *   3. Admin-route redirect notice (preserved)
- *   4. Page header — "Dashboard" + dealer name + locale-formatted date
- *   5. Hero card — bg-accent (oxidized bronze) + Total Inventory Value +
- *      4 primary actions with subtle glassmorphism on hover
- *   6. Two-column grid — Recent Vehicles + Recent Offers
+ * All numbers and lists come from real API queries:
+ *   inventory value    →  sum of price on /api/v1/inventory?status=active
+ *   recent vehicles    →  /api/v1/inventory?status=active (sorted DESC
+ *                         by created_at client-side, top 4)
+ *   recent offers      →  /api/v1/marketplace/offers/received (top 4)
+ *
+ * No mock data, no placeholder values. When a query has not yet
+ * resolved the UI shows a <Skeleton> matching the final layout.
  *
  * Chrome (sidebar / topbar / mobile bottom-nav / logout / notification
  * bell) is provided by the parent dashboard/layout.tsx (DashboardShell).
- * This page renders the content area only — no redundant per-page header.
- *
- * Data: dealer.business_name comes from the live API; the inventory value
- * and recent activity panels are stubbed against MOCK data marked below.
- * Wire to real endpoints in a follow-up commit.
  */
 
 type Dealer = {
@@ -55,51 +43,47 @@ type Dealer = {
   license_number?: string;
 };
 
-// ---- MOCK DATA --------------------------------------------------------
-// TODO(post-design): replace with real queries.
-//   inventory total      → GET /api/v1/inventory/stats   (sum of values)
-//   recent_vehicles      → GET /api/v1/inventory?limit=4&sort=-created_at
-//   recent_offers        → GET /api/v1/marketplace/offers/received?limit=4
-type RecentVehicle = {
-  id: number;
+type InventoryItem = {
+  id: string;
   make: string;
   model: string;
   year: number;
   price: number;
-  addedAt: string;
-};
-type RecentOffer = {
-  id: number;
-  vehicle: string;
-  amount: number;
-  status: "pending" | "accepted" | "rejected" | "countered";
-  time: string;
+  status: "active" | "sold" | "hidden";
+  primary_image_url: string | null;
+  created_at: string;
 };
 
-const MOCK_INVENTORY_VALUE = 1_247_500;
-const MOCK_INVENTORY_GROWTH = 12; // percent month-over-month
+type InventoryListResponse = {
+  items: InventoryItem[];
+  total: number;
+  page: number;
+  pages: number;
+  per_page: number;
+};
 
-const MOCK_RECENT_VEHICLES: RecentVehicle[] = [
-  { id: 1, make: "Toyota", model: "Camry", year: 2022, price: 145_000, addedAt: "לפני שעתיים" },
-  { id: 2, make: "Honda", model: "Civic", year: 2021, price: 98_000, addedAt: "לפני 5 שעות" },
-  { id: 3, make: "Mazda", model: "CX-5", year: 2023, price: 178_000, addedAt: "לפני יום" },
-  { id: 4, make: "Kia", model: "Sportage", year: 2020, price: 115_000, addedAt: "לפני יומיים" },
-];
+type Offer = {
+  id: string;
+  inventory_id: string;
+  offered_price: number;
+  status: string;
+  created_at: string;
+  vehicle: {
+    id: string;
+    make: string;
+    model: string;
+    year: number;
+    primary_image_url: string | null;
+  };
+};
 
-const MOCK_RECENT_OFFERS: RecentOffer[] = [
-  { id: 1, vehicle: "Toyota Camry 2022", amount: 140_000, status: "pending", time: "לפני שעה" },
-  { id: 2, vehicle: "Honda Civic 2021", amount: 95_000, status: "accepted", time: "לפני 3 שעות" },
-  { id: 3, vehicle: "Mazda CX-5 2023", amount: 175_000, status: "pending", time: "לפני 6 שעות" },
-  { id: 4, vehicle: "Kia Sportage 2020", amount: 110_000, status: "countered", time: "אתמול" },
-];
-
-// ---- Helpers ----------------------------------------------------------
-
-const ILS = new Intl.NumberFormat("he-IL", {
-  style: "currency",
-  currency: "ILS",
-  maximumFractionDigits: 0,
-});
+type OfferListResponse = {
+  items: Offer[];
+  total: number;
+  page: number;
+  pages: number;
+  per_page: number;
+};
 
 const formatDate = (d: Date) =>
   d.toLocaleDateString("he-IL", {
@@ -109,11 +93,13 @@ const formatDate = (d: Date) =>
     day: "numeric",
   });
 
-const OFFER_STATUS_COPY: Record<RecentOffer["status"], string> = {
+const OFFER_STATUS_COPY: Record<string, string> = {
   pending: "ממתינה",
   accepted: "התקבלה",
   rejected: "נדחתה",
   countered: "הצעה נגדית",
+  cancelled: "בוטלה",
+  expired: "פגה",
 };
 
 // ============================================================================
@@ -145,10 +131,7 @@ function DashboardPageInner() {
     window.history.replaceState({}, "", url.toString());
   }, [errorCode]);
 
-  // -- Auth bootstrap: pull session once, then let TanStack cache the API
-  // calls. Supabase's session lives outside React Query (it has its own
-  // listener), so we keep token in local state and gate every useQuery on
-  // its presence via `enabled`.
+  // -- Auth bootstrap (Supabase isn't a TanStack resource) -----------------
   const [token, setToken] = useState<string | null>(null);
   const [sessionResolved, setSessionResolved] = useState(false);
 
@@ -172,8 +155,7 @@ function DashboardPageInner() {
     };
   }, [router]);
 
-  // Admin-redirect gate. Cheap query, doesn't need long staleness — admins
-  // shouldn't be hitting /dashboard at all, so we run on every mount.
+  // Admin-redirect gate. Cheap query, runs on every mount.
   const whoami = useQuery({
     queryKey: ["auth", "whoami"],
     queryFn: () => apiFetch<{ user_type: string }>("/api/v1/auth/whoami", { token: token! }),
@@ -188,13 +170,53 @@ function DashboardPageInner() {
 
   const isAdmin = whoami.data?.user_type === "admin";
 
+  // -- Dealer profile ------------------------------------------------------
   const dealerQuery = useQuery({
     queryKey: queryKeys.dealer.me(),
     queryFn: () => apiFetch<Dealer>("/api/v1/dealers/me", { token: token! }),
     enabled: !!token && whoami.isFetched && !isAdmin,
   });
 
+  // -- Active inventory (drives hero value + recent-vehicles list) ---------
+  const activeInventoryQuery = useQuery({
+    queryKey: queryKeys.inventory.list({ status: "active", per_page: 200 }),
+    queryFn: () =>
+      apiFetch<InventoryListResponse>("/api/v1/inventory?status=active&per_page=200", {
+        token: token!,
+      }),
+    enabled: !!token && whoami.isFetched && !isAdmin,
+  });
+
+  // -- Received offers (drives recent-offers list). Shares the cache key
+  // with /dashboard/offers so the two pages don't double-fetch.
+  const offersQuery = useQuery({
+    queryKey: queryKeys.offers.list("received"),
+    queryFn: () =>
+      apiFetch<OfferListResponse>("/api/v1/marketplace/offers/received", { token: token! }),
+    enabled: !!token && whoami.isFetched && !isAdmin,
+  });
+
   const dealer = dealerQuery.data ?? null;
+  const inventoryValue = useMemo(() => {
+    const items = activeInventoryQuery.data?.items ?? [];
+    return items.reduce((sum, item) => sum + item.price, 0);
+  }, [activeInventoryQuery.data]);
+  const inventoryCount = activeInventoryQuery.data?.items.length ?? 0;
+  const recentVehicles = useMemo(() => {
+    const items = activeInventoryQuery.data?.items ?? [];
+    // Backend default order is created_at DESC, but sort defensively
+    // in case that changes.
+    return [...items]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 4);
+  }, [activeInventoryQuery.data]);
+  const recentOffers = useMemo(() => {
+    const items = offersQuery.data?.items ?? [];
+    return [...items]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 4);
+  }, [offersQuery.data]);
+
   const loading = !sessionResolved || whoami.isLoading || (!isAdmin && dealerQuery.isLoading);
   const error = dealerQuery.error
     ? dealerQuery.error instanceof Error
@@ -206,8 +228,6 @@ function DashboardPageInner() {
     if (!loading) headingRef.current?.focus();
   }, [loading]);
 
-  // Hard sign-out kept available even though the global topbar owns the
-  // primary logout — surfaced only inside the error fallback below.
   const handleLogout = useCallback(async () => {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -266,6 +286,10 @@ function DashboardPageInner() {
   // ========================================================================
   // CONTENT
   // ========================================================================
+  const inventoryF = formatPrice(inventoryValue);
+  const inventoryReady = !activeInventoryQuery.isLoading;
+  const offersReady = !offersQuery.isLoading;
+
   return (
     <main
       id="main"
@@ -313,14 +337,23 @@ function DashboardPageInner() {
           >
             סך שווי המלאי
           </p>
-          <p className="font-tabular text-5xl font-semibold leading-none sm:text-6xl">
-            {ILS.format(MOCK_INVENTORY_VALUE)}
-          </p>
-          <p className="text-paper/80 mt-md gap-xxs inline-flex items-center text-sm">
-            <TrendingUp aria-hidden="true" className="h-4 w-4" />
-            <span className="font-tabular font-medium">+{MOCK_INVENTORY_GROWTH}%</span>
-            <span className="text-paper/70">החודש</span>
-          </p>
+          {inventoryReady ? (
+            <>
+              <p className="font-tabular text-5xl font-semibold leading-none sm:text-6xl">
+                <span aria-hidden="true">{inventoryF.visual}</span>
+                <span className="sr-only">{inventoryF.sr}</span>
+              </p>
+              <p className="text-paper/80 mt-md text-sm">
+                <span className="font-tabular font-medium">{inventoryCount}</span>{" "}
+                {inventoryCount === 1 ? "רכב פעיל" : "רכבים פעילים"}
+              </p>
+            </>
+          ) : (
+            <>
+              <Skeleton className="bg-paper/20 h-14 w-64 sm:h-16" />
+              <Skeleton className="bg-paper/20 mt-md h-4 w-32" />
+            </>
+          )}
         </div>
 
         <div className="gap-md sm:gap-lg grid grid-cols-2 sm:grid-cols-4">
@@ -333,8 +366,8 @@ function DashboardPageInner() {
 
       {/* ── TWO-COLUMN — RECENT VEHICLES + RECENT OFFERS ────────────────── */}
       <div className="gap-xl grid grid-cols-1 sm:grid-cols-2">
-        <RecentVehiclesCard items={MOCK_RECENT_VEHICLES} />
-        <RecentOffersCard items={MOCK_RECENT_OFFERS} />
+        <RecentVehiclesCard items={recentVehicles} ready={inventoryReady} />
+        <RecentOffersCard items={recentOffers} ready={offersReady} />
       </div>
     </main>
   );
@@ -369,7 +402,7 @@ function HeroAction({
 // SECONDARY CARDS — Recent Vehicles & Recent Offers
 // ============================================================================
 
-function RecentVehiclesCard({ items }: { items: RecentVehicle[] }) {
+function RecentVehiclesCard({ items, ready }: { items: InventoryItem[]; ready: boolean }) {
   return (
     <section
       aria-labelledby="recent-vehicles-heading"
@@ -391,32 +424,56 @@ function RecentVehiclesCard({ items }: { items: RecentVehicle[] }) {
         </Link>
       </header>
 
-      {items.length === 0 ? (
-        <EmptyCardMessage>אין רכבים להצגה.</EmptyCardMessage>
+      {!ready ? (
+        <RecentRowSkeleton count={4} />
+      ) : items.length === 0 ? (
+        <EmptyCardMessage>אין עדיין רכבים פעילים במלאי.</EmptyCardMessage>
       ) : (
         <ul className="space-y-lg">
-          {items.map((v) => (
-            <li key={v.id} className="gap-md flex items-center">
-              <div
-                aria-hidden="true"
-                className="border-hairline bg-paper h-12 w-12 shrink-0 rounded-lg border"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-ink truncate text-sm font-medium">
-                  {v.make} {v.model} {v.year}
+          {items.map((v) => {
+            const priceF = formatPrice(v.price);
+            const rel = formatRelativeTime(v.created_at);
+            return (
+              <li key={v.id} className="gap-md flex items-center">
+                {v.primary_image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={v.primary_image_url}
+                    alt=""
+                    loading="lazy"
+                    className="border-hairline h-12 w-12 shrink-0 rounded-lg border object-cover"
+                  />
+                ) : (
+                  <div
+                    aria-hidden="true"
+                    className="border-hairline bg-paper text-subtle flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border"
+                  >
+                    <Car className="h-4 w-4" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-ink truncate text-sm font-medium">
+                    {v.make} {v.model}{" "}
+                    <span className="text-muted font-tabular font-normal">· {v.year}</span>
+                  </p>
+                  <p className="text-muted mt-0.5 text-xs">
+                    <time dateTime={rel.iso}>{rel.visual}</time>
+                  </p>
+                </div>
+                <p className="text-ink font-tabular text-sm font-semibold">
+                  <span aria-hidden="true">{priceF.visual}</span>
+                  <span className="sr-only">{priceF.sr}</span>
                 </p>
-                <p className="text-muted mt-0.5 text-xs">{v.addedAt}</p>
-              </div>
-              <p className="text-ink font-tabular text-sm font-semibold">{ILS.format(v.price)}</p>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
   );
 }
 
-function RecentOffersCard({ items }: { items: RecentOffer[] }) {
+function RecentOffersCard({ items, ready }: { items: Offer[]; ready: boolean }) {
   return (
     <section
       aria-labelledby="recent-offers-heading"
@@ -438,32 +495,78 @@ function RecentOffersCard({ items }: { items: RecentOffer[] }) {
         </Link>
       </header>
 
-      {items.length === 0 ? (
+      {!ready ? (
+        <RecentRowSkeleton count={4} />
+      ) : items.length === 0 ? (
         <EmptyCardMessage>אין הצעות חדשות.</EmptyCardMessage>
       ) : (
         <ul className="space-y-lg">
-          {items.map((o) => (
-            <li key={o.id} className="gap-md flex items-center">
-              <div
-                aria-hidden="true"
-                className="border-hairline bg-paper h-12 w-12 shrink-0 rounded-lg border"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-ink truncate text-sm font-medium">{o.vehicle}</p>
-                <p className="text-muted mt-0.5 text-xs">
-                  {OFFER_STATUS_COPY[o.status]}
-                  <span aria-hidden="true" className="mx-xxs">
-                    ·
-                  </span>
-                  {o.time}
+          {items.map((o) => {
+            const amountF = formatPrice(o.offered_price);
+            const rel = formatRelativeTime(o.created_at);
+            const statusLabel = OFFER_STATUS_COPY[o.status] ?? o.status;
+            return (
+              <li key={o.id} className="gap-md flex items-center">
+                {o.vehicle.primary_image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={o.vehicle.primary_image_url}
+                    alt=""
+                    loading="lazy"
+                    className="border-hairline h-12 w-12 shrink-0 rounded-lg border object-cover"
+                  />
+                ) : (
+                  <div
+                    aria-hidden="true"
+                    className="border-hairline bg-paper text-subtle flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border"
+                  >
+                    <Car className="h-4 w-4" />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-ink truncate text-sm font-medium">
+                    {o.vehicle.make} {o.vehicle.model}{" "}
+                    <span className="text-muted font-tabular font-normal">· {o.vehicle.year}</span>
+                  </p>
+                  <p className="text-muted mt-0.5 text-xs">
+                    {statusLabel}
+                    <span aria-hidden="true" className="mx-xxs">
+                      ·
+                    </span>
+                    <time dateTime={rel.iso}>{rel.visual}</time>
+                  </p>
+                </div>
+                <p className="text-ink font-tabular text-sm font-semibold">
+                  <span aria-hidden="true">{amountF.visual}</span>
+                  <span className="sr-only">{amountF.sr}</span>
                 </p>
-              </div>
-              <p className="text-ink font-tabular text-sm font-semibold">{ILS.format(o.amount)}</p>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
+  );
+}
+
+// ============================================================================
+// RecentRowSkeleton — placeholder rows that mirror the final layout shape.
+// ============================================================================
+
+function RecentRowSkeleton({ count }: { count: number }) {
+  return (
+    <ul className="space-y-lg">
+      {Array.from({ length: count }, (_, i) => (
+        <li key={i} aria-hidden="true" className="gap-md flex items-center">
+          <Skeleton className="h-12 w-12 rounded-lg" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-4 w-2/3" />
+            <Skeleton className="h-3 w-1/3" />
+          </div>
+          <Skeleton className="h-4 w-16" />
+        </li>
+      ))}
+    </ul>
   );
 }
 
