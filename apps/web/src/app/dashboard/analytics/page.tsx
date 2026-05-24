@@ -1,28 +1,50 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
-import { BackLink } from "@/components/BackLink";
-import { BrandMark } from "@/components/BrandMark";
-import { NotificationBell } from "@/components/NotificationBell";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 
 /*
- * Dealer self-analytics (Phase 4.3).
+ * /dashboard/analytics — editorial summary report.
  *
- * A11y (approved):
- *   - H1 focusable on data-ready.
- *   - KPI cards rendered as a <dl> with <div> wrappers around <dt>/<dd>
- *     pairs so SR users hear "רכבים פעילים: 3".
- *   - "Top vehicles" rendered as a real <table> with <caption> (sr-only)
- *     + <th scope="col">; first cell is a <Link> (no whole-row click).
- *   - TrustBadge for the dealer's own tier.
+ *   סטטיסטיקות
+ *   ──────────
+ *   סקירה · ציון אמון 87 · [TrustBadge]              ← dek byline
+ *
+ *   ביצועים
+ *   ──────────
+ *   רכבים פעילים    צפיות השבוע    הצעות שקיבלתי   עסקאות הושלמו
+ *   3              247            12             5
+ *   רכבים מושהים    רכבים שנמכרו   הצעות שלחתי     סך עסקאות ₪
+ *   1              8              7              ₪450,000
+ *
+ *   רכבים פופולריים
+ *   ──────────
+ *   ┌─────────────────────────────────────────────────┐
+ *   │ רכב                            צפיות   הצעות    │
+ *   └─────────────────────────────────────────────────┘
+ *
+ * Observational page — no actions, no accent moments. KPI tiles have
+ * no borders; typography and grid spacing carry the structure. The
+ * trust score lives in the dek as a byline so the KPI grid stays the
+ * focal element.
  */
 
 type TopVehicle = {
@@ -54,7 +76,7 @@ export default function AnalyticsPage() {
   const { token } = useDealerAuth("/dashboard/analytics");
   const h1Ref = useRef<HTMLHeadingElement>(null);
 
-  const { data: data, error: rawError } = useQuery({
+  const { data, error: rawError } = useQuery({
     queryKey: queryKeys.analytics.root(),
     queryFn: () => apiFetch<Analytics>("/api/v1/marketplace/analytics", { token: token! }),
     enabled: !!token,
@@ -67,147 +89,137 @@ export default function AnalyticsPage() {
     if (data) h1Ref.current?.focus();
   }, [data]);
 
-  if (!token) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="status" className="text-brand-ink/70 p-10">
-          טוען…
-        </p>
-      </main>
-    );
-  }
-
   return (
-    <div className="bg-brand-cream text-brand-ink min-h-screen">
-      <header className="border-brand-navy/10 border-b bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-6 py-4">
-          <BrandMark />
-          <NotificationBell token={token} />
-        </div>
-      </header>
-
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
-          <BackLink href="/dashboard" label="חזרה ללוח הבקרה" />
-          <h1
-            ref={h1Ref}
-            tabIndex={-1}
-            className="text-brand-navy mt-3 text-3xl font-bold tracking-tight focus:outline-none"
-          >
-            סטטיסטיקות
-          </h1>
-          <p className="text-brand-ink/70 mt-2">סקירה של הפעילות שלך במערכת.</p>
-
-          {error ? (
-            <p role="alert" className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3">
-              {error}
-            </p>
-          ) : null}
-
+    <main
+      id="main"
+      tabIndex={-1}
+      className="px-lg sm:px-2xl py-2xl mx-auto max-w-5xl focus:outline-none"
+    >
+      {/* ── MASTHEAD ──────────────────────────────────────────────────── */}
+      <header>
+        <h1
+          ref={h1Ref}
+          tabIndex={-1}
+          className="text-ink tracking-editorial font-serif text-4xl font-medium leading-tight focus:outline-none"
+        >
+          סטטיסטיקות
+        </h1>
+        <div aria-hidden="true" className="bg-hairline mt-lg h-px w-full" />
+        <p className="text-muted gap-xs mt-lg flex flex-wrap items-center text-sm">
+          <span>סקירה של הפעילות שלך</span>
           {!data ? (
-            <p role="status" className="text-brand-ink/60 p-8">
-              טוען…
-            </p>
+            <Skeleton className="inline-block h-4 w-40" />
           ) : (
             <>
-              {/* Tier badge */}
-              <div className="border-brand-navy/10 mt-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-white p-5">
-                <div>
-                  <p className="text-brand-ink/60 text-xs">דרגת אמון נוכחית</p>
-                  <p className="text-brand-navy mt-1 text-2xl font-bold">
-                    {data.trust_score} נקודות
-                  </p>
-                </div>
-                <TrustBadge tier={data.tier} />
-              </div>
-
-              {/* KPI cards as <dl> */}
-              <section aria-labelledby="kpi-heading" className="mt-6">
-                <h2 id="kpi-heading" className="sr-only">
-                  מדדי ביצוע
-                </h2>
-                <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <KpiCard label="רכבים פעילים" value={data.active_vehicles} />
-                  <KpiCard label="צפיות השבוע" value={data.views_this_week} />
-                  <KpiCard label="הצעות שקיבלתי" value={data.total_offers_received} />
-                  <KpiCard label="עסקאות הושלמו" value={data.deals_completed} />
-                  <KpiCard label="רכבים מושהים" value={data.paused_vehicles} />
-                  <KpiCard label="רכבים שנמכרו" value={data.sold_vehicles} />
-                  <KpiCard label="הצעות שלחתי" value={data.total_offers_sent} />
-                  <KpiCard
-                    label="סך עסקאות ₪"
-                    value={data.deals_value}
-                    formatter={(n) => formatPrice(n).visual}
-                    srFormatter={(n) => formatPrice(n).sr}
-                  />
-                </dl>
-              </section>
-
-              {/* Top vehicles */}
-              <section aria-labelledby="top-vehicles-heading" className="mt-8">
-                <h2 id="top-vehicles-heading" className="text-brand-navy text-lg font-semibold">
-                  הרכבים הפופולריים שלי
-                </h2>
-
-                {data.top_vehicles.length === 0 ? (
-                  <p className="border-brand-navy/10 text-brand-ink/60 mt-4 rounded-lg border bg-white p-8 text-center">
-                    אין עדיין נתוני פופולריות
-                  </p>
-                ) : (
-                  <div className="border-brand-navy/10 mt-4 overflow-x-auto rounded-lg border bg-white">
-                    <table className="w-full text-start text-sm">
-                      <caption className="sr-only">5 הרכבים עם הכי הרבה צפיות</caption>
-                      <thead className="bg-brand-navy/5">
-                        <tr>
-                          <th
-                            scope="col"
-                            className="text-brand-navy px-4 py-2 text-start font-semibold"
-                          >
-                            רכב
-                          </th>
-                          <th
-                            scope="col"
-                            className="text-brand-navy px-4 py-2 text-start font-semibold"
-                          >
-                            צפיות
-                          </th>
-                          <th
-                            scope="col"
-                            className="text-brand-navy px-4 py-2 text-start font-semibold"
-                          >
-                            הצעות
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.top_vehicles.map((v) => (
-                          <tr key={v.id} className="border-brand-navy/10 border-t">
-                            <td className="px-4 py-3">
-                              <Link
-                                href={`/dashboard/marketplace/${v.id}`}
-                                className="text-brand-navy focus-visible:outline-brand-navy rounded font-semibold underline focus-visible:outline-2 focus-visible:outline-offset-2"
-                              >
-                                {v.make} {v.model} {v.year}
-                              </Link>
-                            </td>
-                            <td className="px-4 py-3">{v.views}</td>
-                            <td className="px-4 py-3">{v.offers}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
+              <span className="text-subtle mx-xxs">·</span>
+              <span>
+                ציון אמון{" "}
+                <span className="text-ink font-tabular font-medium">{data.trust_score}</span>
+              </span>
+              <span className="text-subtle mx-xxs">·</span>
+              <TrustBadge tier={data.tier} compact />
             </>
           )}
-        </div>
-      </main>
-    </div>
+        </p>
+      </header>
+
+      {/* ── ERROR ─────────────────────────────────────────────────────── */}
+      {error ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {/* ── SECTION 1: KPI GRID ──────────────────────────────────────── */}
+      <section aria-labelledby="kpi-heading" className="mt-3xl">
+        <p className="text-muted text-xs font-medium uppercase tracking-widest">ביצועים</p>
+        <h2 id="kpi-heading" className="sr-only">
+          מדדי ביצוע
+        </h2>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        {!data ? (
+          <KpiGridSkeleton />
+        ) : (
+          <dl className="gap-y-2xl gap-x-lg mt-xl grid grid-cols-2 sm:grid-cols-4">
+            <Stat label="רכבים פעילים" value={data.active_vehicles} />
+            <Stat label="צפיות השבוע" value={data.views_this_week} />
+            <Stat label="הצעות שקיבלתי" value={data.total_offers_received} />
+            <Stat label="עסקאות הושלמו" value={data.deals_completed} />
+            <Stat label="רכבים מושהים" value={data.paused_vehicles} />
+            <Stat label="רכבים שנמכרו" value={data.sold_vehicles} />
+            <Stat label="הצעות שלחתי" value={data.total_offers_sent} />
+            <Stat
+              label="סך עסקאות ₪"
+              value={data.deals_value}
+              formatter={(n) => formatPrice(n).visual}
+              srFormatter={(n) => formatPrice(n).sr}
+            />
+          </dl>
+        )}
+      </section>
+
+      {/* ── SECTION 2: TOP VEHICLES ──────────────────────────────────── */}
+      <section aria-labelledby="top-vehicles-heading" className="mt-3xl">
+        <p className="text-muted text-xs font-medium uppercase tracking-widest">רכבים פופולריים</p>
+        <h2 id="top-vehicles-heading" className="sr-only">
+          הרכבים הפופולריים שלי
+        </h2>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        {!data ? (
+          <TopVehiclesSkeleton />
+        ) : data.top_vehicles.length === 0 ? (
+          <p className="text-muted py-2xl text-center text-sm">אין עדיין נתוני פופולריות.</p>
+        ) : (
+          <Table>
+            <caption className="sr-only">5 הרכבים עם הכי הרבה צפיות</caption>
+            <TableHeader>
+              <TableRow className="border-hairline">
+                <TableHead>רכב</TableHead>
+                <TableHead className="text-end">צפיות</TableHead>
+                <TableHead className="text-end">הצעות</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {data.top_vehicles.map((v) => (
+                <TableRow
+                  key={v.id}
+                  className="border-hairline hover:bg-muted/5 duration-fast transition-colors"
+                >
+                  <TableCell>
+                    <Link
+                      href={`/dashboard/marketplace/${v.id}`}
+                      className="text-ink duration-fast hover:text-accent focus-visible:outline-accent rounded-sm font-medium underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                    >
+                      {v.make} {v.model}{" "}
+                      <span className="text-muted font-tabular font-normal">· {v.year}</span>
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-end">
+                    <span className="font-tabular text-sm">{v.views}</span>
+                  </TableCell>
+                  <TableCell className="text-end">
+                    <span className="font-tabular text-sm">{v.offers}</span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </section>
+    </main>
   );
 }
 
-function KpiCard({
+// ============================================================================
+// Stat — single KPI: label-above-value, no border. Frank Ruhl on the
+// value gives the page its editorial weight; font-tabular keeps the
+// digits aligned across the grid.
+// ============================================================================
+
+function Stat({
   label,
   value,
   formatter,
@@ -221,12 +233,53 @@ function KpiCard({
   const visual = formatter ? formatter(value) : String(value);
   const sr = srFormatter ? srFormatter(value) : `${label}: ${value}`;
   return (
-    <div className="border-brand-navy/10 rounded-lg border bg-white p-4">
-      <dt className="text-brand-ink/60 text-sm">{label}</dt>
-      <dd className="text-brand-navy mt-2 text-2xl font-bold tracking-tight">
+    <div>
+      <dt className="text-muted text-xs font-medium uppercase tracking-widest">{label}</dt>
+      <dd className="text-ink font-tabular mt-xs font-serif text-3xl font-medium leading-none">
         <span aria-hidden="true">{visual}</span>
         <span className="sr-only">{sr}</span>
       </dd>
+    </div>
+  );
+}
+
+// ============================================================================
+// Skeletons
+// ============================================================================
+
+function KpiGridSkeleton() {
+  return (
+    <div
+      className="gap-y-2xl gap-x-lg mt-xl grid grid-cols-2 sm:grid-cols-4"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">טוען מדדים…</span>
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} aria-hidden="true">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="mt-xs h-8 w-16" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TopVehiclesSkeleton() {
+  return (
+    <div className="mt-lg" role="status" aria-live="polite">
+      <span className="sr-only">טוען רכבים פופולריים…</span>
+      {[0, 1, 2].map((i) => (
+        <div
+          key={i}
+          aria-hidden="true"
+          className="border-hairline gap-md py-md flex items-center border-b last:border-b-0"
+        >
+          <Skeleton className="h-5 flex-1" />
+          <Skeleton className="h-5 w-12" />
+          <Skeleton className="h-5 w-12" />
+        </div>
+      ))}
     </div>
   );
 }
