@@ -10,12 +10,14 @@ import {
   Loader2,
   Sparkles,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
 import { z } from "zod";
 
 import { FormField } from "@/components/FormField";
+import { ImageDropZone } from "@/components/ImageDropZone";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -420,6 +422,21 @@ const STEPS: Array<{ num: StepNum; label: string }> = [
 
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 
+// ── Create-mode image queue constants ──────────────────────────────
+// Match VehicleImagesDialog so the same MIME/size policy applies on both
+// surfaces. The 10-image cap is enforced before submit; uploads happen
+// fire-and-forget after the vehicle is created.
+const QUEUE_MAX_IMAGES = 10;
+const QUEUE_MAX_BYTES = 10 * 1024 * 1024;
+const QUEUE_ALLOWED_MIME = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+]);
+const QUEUE_ALLOWED_EXT = /\.(jpe?g|png|webp|heic)$/i;
+
 export function InventoryFormDialog({
   open,
   onOpenChange,
@@ -494,6 +511,43 @@ export function InventoryFormDialog({
   const [priceHintStatus, setPriceHintStatus] = useState<string>("");
   const lastAnnouncedPrice = useRef<number | null>(null);
 
+  // ── Create-mode image queue ────────────────────────────────────────
+  // Drop zone in step 3 (create mode only) collects File[] locally.
+  // On submit success, each queued file is uploaded to the new vehicle
+  // fire-and-forget (non-fatal — dealer can re-add if any fail).
+  const [queuedFiles, setQueuedFiles] = useState<File[]>([]);
+  const [queueErrors, setQueueErrors] = useState<string[]>([]);
+
+  const handleQueuePick = useCallback(
+    (files: File[]) => {
+      const errs: string[] = [];
+      const ok: File[] = [];
+      const remaining = QUEUE_MAX_IMAGES - queuedFiles.length;
+      for (const f of files) {
+        if (!QUEUE_ALLOWED_MIME.has(f.type) && !QUEUE_ALLOWED_EXT.test(f.name)) {
+          errs.push(`${f.name}: סוג קובץ לא נתמך`);
+          continue;
+        }
+        if (f.size > QUEUE_MAX_BYTES) {
+          errs.push(`${f.name}: גדול מ-10MB`);
+          continue;
+        }
+        ok.push(f);
+      }
+      const capped = ok.slice(0, remaining);
+      if (ok.length > capped.length) {
+        errs.push(`ניתן להוסיף עוד ${remaining} תמונות בלבד`);
+      }
+      setQueueErrors(errs);
+      if (capped.length) setQueuedFiles((prev) => [...prev, ...capped]);
+    },
+    [queuedFiles.length],
+  );
+
+  const removeQueuedFile = useCallback((index: number) => {
+    setQueuedFiles((prev) => prev.filter((_, i) => i !== index));
+  }, []);
+
   // ── Market price hint + AI price estimate ─────────────────────────
   const [marketPriceHint, setMarketPriceHint] = useState<number | null>(null);
   const [priceEstimate, setPriceEstimate] = useState<{
@@ -530,6 +584,8 @@ export function InventoryFormDialog({
       setPriceEstimate(null);
       setPriceHintStatus("");
       lastAnnouncedPrice.current = null;
+      setQueuedFiles([]);
+      setQueueErrors([]);
     }
   }, [open, initial, reset]);
 
@@ -1031,18 +1087,29 @@ export function InventoryFormDialog({
       }
       const fileToAttach = mode === "create" ? imgFile : null;
       const newId = mode === "create" && created ? created.id : null;
+      const queuedToAttach = mode === "create" ? queuedFiles : [];
       onOpenChange(false);
       reset(toFormValues(null));
-      if (newId && fileToAttach && token) {
-        const form = new FormData();
-        form.append("file", fileToAttach);
-        void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/inventory/${newId}/images`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-          body: form,
-        }).catch(() => {
-          // Non-fatal — vehicle exists, dealer can upload images later.
-        });
+      if (newId && token) {
+        // Fire-and-forget uploads. AI identification photo first (so it
+        // becomes position 1), then any queued gallery files in order.
+        // Non-fatal failures — vehicle exists, dealer can re-upload.
+        const uploadOne = (file: File) => {
+          const form = new FormData();
+          form.append("file", file);
+          return fetch(
+            `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/inventory/${newId}/images`,
+            {
+              method: "POST",
+              headers: { Authorization: `Bearer ${token}` },
+              body: form,
+            },
+          ).catch(() => {
+            // Silent — non-fatal
+          });
+        };
+        if (fileToAttach) void uploadOne(fileToAttach);
+        for (const f of queuedToAttach) void uploadOne(f);
       }
     } catch (e) {
       setFieldError("root", {
@@ -1184,6 +1251,10 @@ export function InventoryFormDialog({
               initialId={initial?.id}
               imageCount={imageCount}
               onManageImages={onManageImages}
+              queuedFiles={queuedFiles}
+              onQueuePick={handleQueuePick}
+              onQueueRemove={removeQueuedFile}
+              queueErrors={queueErrors}
             />
           ) : null}
 
@@ -1961,6 +2032,11 @@ type Step3Props = {
   initialId: string | undefined;
   imageCount?: number;
   onManageImages?: (vehicleId: string) => void;
+  /** Create-mode image queue — built locally, uploaded post-create. */
+  queuedFiles: File[];
+  onQueuePick: (files: File[]) => void;
+  onQueueRemove: (index: number) => void;
+  queueErrors: string[];
 };
 
 function Step3(p: Step3Props) {
@@ -2026,9 +2102,12 @@ function Step3(p: Step3Props) {
         <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
 
         {p.mode === "create" || !p.initialId ? (
-          <p className="text-muted mt-md text-sm">
-            תמונות יהיו זמינות לאחר שמירת הרכב. תוכל להוסיף את התמונות מיד לאחר שמירה.
-          </p>
+          <CreateModeImageQueue
+            queuedFiles={p.queuedFiles}
+            onQueuePick={p.onQueuePick}
+            onQueueRemove={p.onQueueRemove}
+            queueErrors={p.queueErrors}
+          />
         ) : (
           <Button
             type="button"
@@ -2051,6 +2130,118 @@ function Step3(p: Step3Props) {
           </Button>
         )}
       </section>
+    </div>
+  );
+}
+
+// ============================================================================
+// CreateModeImageQueue — drop zone + thumbnail previews for the create flow.
+// Files are uploaded fire-and-forget after the vehicle is created (the
+// parent's submit handler reads `queuedFiles` and POSTs to /images).
+// ============================================================================
+
+function CreateModeImageQueue({
+  queuedFiles,
+  onQueuePick,
+  onQueueRemove,
+  queueErrors,
+}: {
+  queuedFiles: File[];
+  onQueuePick: (files: File[]) => void;
+  onQueueRemove: (index: number) => void;
+  queueErrors: string[];
+}) {
+  // Build local object-URL previews and revoke when the file list changes
+  // or the component unmounts.
+  const [previews, setPreviews] = useState<string[]>([]);
+  useEffect(() => {
+    const urls = queuedFiles.map((f) => URL.createObjectURL(f));
+    setPreviews(urls);
+    return () => {
+      urls.forEach((u) => URL.revokeObjectURL(u));
+    };
+  }, [queuedFiles]);
+
+  const remaining = QUEUE_MAX_IMAGES - queuedFiles.length;
+
+  return (
+    <div className="mt-md">
+      {remaining > 0 ? (
+        <ImageDropZone
+          id="inv-create-images"
+          onPick={onQueuePick}
+          hint={
+            <>
+              נותרו <span className="text-ink font-medium">{remaining}</span> תמונות · JPEG / PNG /
+              WebP / HEIC · עד <span className="font-tabular">10MB</span>
+            </>
+          }
+        />
+      ) : (
+        <p className="border-hairline bg-muted/5 px-md py-md text-muted rounded-md border text-sm">
+          הגעת לגבול של <span className="font-tabular">{QUEUE_MAX_IMAGES}</span> תמונות. הסר תמונה
+          כדי להוסיף חדשה.
+        </p>
+      )}
+
+      {queueErrors.length > 0 ? (
+        <Alert variant="destructive" className="mt-sm">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>
+            <ul className="space-y-1">
+              {queueErrors.map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      {queuedFiles.length > 0 ? (
+        <>
+          <p
+            role="status"
+            aria-live="polite"
+            className="text-muted mt-md text-xs"
+            key={queuedFiles.length}
+          >
+            <span className="text-ink font-tabular font-medium">{queuedFiles.length}</span> מתוך{" "}
+            <span className="font-tabular">{QUEUE_MAX_IMAGES}</span> תמונות בתור — יועלו לאחר שמירת
+            הרכב
+          </p>
+          <ul className="gap-sm mt-sm grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
+            {queuedFiles.map((file, i) => (
+              <li
+                key={`${file.name}-${i}`}
+                className="border-hairline bg-paper group relative aspect-[4/3] overflow-hidden rounded-md border"
+              >
+                {previews[i] ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img src={previews[i]} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="text-subtle flex h-full w-full items-center justify-center">
+                    <ImageIcon aria-hidden="true" className="h-6 w-6" />
+                  </div>
+                )}
+                <span
+                  aria-hidden="true"
+                  className="bg-paper/85 text-ink font-tabular absolute bottom-1 start-1 inline-flex h-6 min-w-[24px] items-center justify-center rounded-md px-1.5 text-xs font-medium backdrop-blur"
+                >
+                  {i + 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onQueueRemove(i)}
+                  aria-label={`הסר תמונה ${i + 1} מתוך ${queuedFiles.length}`}
+                  className="border-hairline bg-paper/95 text-danger-fg hover:bg-danger-bg focus-visible:outline-accent duration-fast absolute end-1 top-1 inline-flex h-7 w-7 items-center justify-center rounded-md border backdrop-blur transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+                >
+                  <X aria-hidden="true" className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : null}
     </div>
   );
 }
