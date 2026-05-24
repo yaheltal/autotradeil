@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import { apiFetch } from "@/lib/api";
 
@@ -42,21 +43,24 @@ export type ParseFiltersResponse = {
  * do its old substring-on-make-or-model fallback. We never throw.
  */
 export function useSmartFilters(token: string | null) {
-  const [busy, setBusy] = useState(false);
+  const parseMutation = useMutation({
+    mutationFn: (query: string) =>
+      apiFetch<ParseFiltersResponse>("/api/v1/ai/parse-filters", {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ query }),
+      }),
+  });
 
   const parse = useCallback(
     async (query: string): Promise<ParseFiltersResponse | null> => {
-      if (!token || !query.trim()) return null;
-      setBusy(true);
+      const trimmed = query.trim();
+      if (!token || !trimmed) return null;
       try {
-        return await apiFetch<ParseFiltersResponse>("/api/v1/ai/parse-filters", {
-          method: "POST",
-          token,
-          body: JSON.stringify({ query: query.trim() }),
-        });
+        return await parseMutation.mutateAsync(trimmed);
       } catch {
-        // Don't break the page on a parser error — let the caller
-        // fall back to literal substring search.
+        // Don't break the page on a parser error — let the caller fall
+        // back to literal substring search.
         return {
           filters: {
             make: null,
@@ -70,14 +74,12 @@ export function useSmartFilters(token: string | null) {
             fuel_type: null,
             color: null,
           },
-          fallback_q: query.trim(),
+          fallback_q: trimmed,
         };
-      } finally {
-        setBusy(false);
       }
     },
-    [token],
+    [token, parseMutation],
   );
 
-  return { parse, busy };
+  return { parse, busy: parseMutation.isPending };
 }

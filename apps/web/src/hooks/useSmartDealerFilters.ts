@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useCallback } from "react";
 
 import { apiFetch } from "@/lib/api";
 
@@ -29,18 +30,21 @@ export type ParseDealerFiltersResponse = { filters: SmartDealerFilters };
  * admin-protected pages.
  */
 export function useSmartDealerFilters(token: string | null) {
-  const [busy, setBusy] = useState(false);
+  const parseMutation = useMutation({
+    mutationFn: (query: string) =>
+      apiFetch<ParseDealerFiltersResponse>("/api/v1/ai/parse-dealer-filters", {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ query }),
+      }),
+  });
 
   const parse = useCallback(
     async (query: string): Promise<ParseDealerFiltersResponse | null> => {
-      if (!token || !query.trim()) return null;
-      setBusy(true);
+      const trimmed = query.trim();
+      if (!token || !trimmed) return null;
       try {
-        return await apiFetch<ParseDealerFiltersResponse>("/api/v1/ai/parse-dealer-filters", {
-          method: "POST",
-          token,
-          body: JSON.stringify({ query: query.trim() }),
-        });
+        return await parseMutation.mutateAsync(trimmed);
       } catch {
         return {
           filters: {
@@ -48,15 +52,13 @@ export function useSmartDealerFilters(token: string | null) {
             tier: null,
             kyc_status: null,
             city: null,
-            search: query.trim(),
+            search: trimmed,
           },
         };
-      } finally {
-        setBusy(false);
       }
     },
-    [token],
+    [token, parseMutation],
   );
 
-  return { parse, busy };
+  return { parse, busy: parseMutation.isPending };
 }
