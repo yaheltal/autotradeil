@@ -237,67 +237,6 @@ function DashboardPageInner() {
       .slice(0, 4);
   }, [inStockItems]);
 
-  // TEMP DEBUG — instrumentation requested by the user after the
-  // "₪0 even though I have vehicles" report. Logs the actual runtime
-  // shape of the inventory query so we can see what the API returns
-  // (vs guessing from the OpenAPI snapshot). Remove once the data
-  // is confirmed.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    /* eslint-disable no-console */
-    console.group("[dashboard:inventory] query state");
-    console.log("token?", !!token, "whoami.isFetched?", whoami.isFetched, "isAdmin?", isAdmin);
-    console.log("query state:", {
-      status: inventoryQuery.status,
-      fetchStatus: inventoryQuery.fetchStatus,
-      isLoading: inventoryQuery.isLoading,
-      isError: inventoryQuery.isError,
-      isFetched: inventoryQuery.isFetched,
-      error: inventoryQuery.error,
-      errorMsg: inventoryQuery.error instanceof Error ? inventoryQuery.error.message : undefined,
-    });
-    console.log("data:", {
-      present: !!inventoryQuery.data,
-      total: inventoryQuery.data?.total,
-      itemsCount: inventoryQuery.data?.items?.length,
-      statusBreakdown: (inventoryQuery.data?.items ?? []).reduce<Record<string, number>>(
-        (acc, i) => {
-          acc[i.status] = (acc[i.status] ?? 0) + 1;
-          return acc;
-        },
-        {},
-      ),
-    });
-    console.log("first 3 items (raw):", inventoryQuery.data?.items?.slice(0, 3));
-    console.log("inStockItems (post-filter):", {
-      count: inStockItems.length,
-      sample: inStockItems.slice(0, 3).map((i) => ({
-        idShort: i.id?.slice(0, 8),
-        status: i.status,
-        price: i.price,
-        priceType: typeof i.price,
-        make: i.make,
-        model: i.model,
-      })),
-    });
-    console.log("computed:", { inventoryValue, inventoryCount });
-    console.groupEnd();
-    /* eslint-enable no-console */
-  }, [
-    token,
-    whoami.isFetched,
-    isAdmin,
-    inventoryQuery.status,
-    inventoryQuery.fetchStatus,
-    inventoryQuery.isLoading,
-    inventoryQuery.isError,
-    inventoryQuery.isFetched,
-    inventoryQuery.error,
-    inventoryQuery.data,
-    inStockItems,
-    inventoryValue,
-    inventoryCount,
-  ]);
   const recentOffers = useMemo(() => {
     const items = offersQuery.data?.items ?? [];
     return [...items]

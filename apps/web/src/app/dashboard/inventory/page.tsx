@@ -309,54 +309,6 @@ function InventoryPageInner() {
     if (inventoryQuery.error) setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
   }, [inventoryQuery.error]);
 
-  // TEMP DEBUG — instrumentation requested by the user after the
-  // dek showed "0 פעילים · 0 נמכרו · 0 מוסתרים" while the main
-  // table rendered 4 active vehicles. Logs the tally query's actual
-  // shape so we can compare it to the main list query (which works).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    /* eslint-disable no-console */
-    console.group("[inventory:tallies] tally query state");
-    console.log("token?", !!token);
-    console.log("tally query state:", {
-      status: tallyQuery.status,
-      fetchStatus: tallyQuery.fetchStatus,
-      isLoading: tallyQuery.isLoading,
-      isError: tallyQuery.isError,
-      isFetched: tallyQuery.isFetched,
-      error: tallyQuery.error,
-      errorMsg: tallyQuery.error instanceof Error ? tallyQuery.error.message : undefined,
-    });
-    console.log("tally data:", {
-      present: !!tallyQuery.data,
-      total: tallyQuery.data?.total,
-      itemsCount: tallyQuery.data?.items?.length,
-      statusBreakdown: (tallyQuery.data?.items ?? []).reduce<Record<string, number>>((acc, i) => {
-        acc[i.status] = (acc[i.status] ?? 0) + 1;
-        return acc;
-      }, {}),
-    });
-    console.log("first 3 tally items:", tallyQuery.data?.items?.slice(0, 3));
-    console.log("main list (status=active) data:", {
-      itemsCount: inventoryQuery.data?.items?.length,
-      total: inventoryQuery.data?.total,
-    });
-    console.log("computed tallies:", tallies);
-    console.groupEnd();
-    /* eslint-enable no-console */
-  }, [
-    token,
-    tallyQuery.status,
-    tallyQuery.fetchStatus,
-    tallyQuery.isLoading,
-    tallyQuery.isError,
-    tallyQuery.isFetched,
-    tallyQuery.error,
-    tallyQuery.data,
-    inventoryQuery.data,
-    tallies,
-  ]);
-
   const refresh = async () => {
     await qc.invalidateQueries({ queryKey: queryKeys.inventory.root() });
     await qc.invalidateQueries({ queryKey: ["inventory", "tallies"] });
