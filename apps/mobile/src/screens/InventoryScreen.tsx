@@ -236,7 +236,6 @@ export function InventoryScreen() {
       <FlashList
         data={items}
         keyExtractor={(it) => it.id}
-        estimatedItemSize={104}
         renderItem={renderItem}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{

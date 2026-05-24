@@ -239,7 +239,6 @@ export function MarketplaceScreen() {
       <FlashList
         data={items}
         keyExtractor={(it) => it.id}
-        estimatedItemSize={120}
         renderItem={renderItem}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={{

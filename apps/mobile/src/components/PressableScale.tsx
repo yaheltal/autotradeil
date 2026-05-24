@@ -1,16 +1,23 @@
 import { forwardRef } from "react";
-import { Pressable, PressableProps, ViewStyle } from "react-native";
+import { Pressable, PressableProps, StyleProp, ViewStyle } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
 
 import { haptic } from "@/services/haptics";
 import { useTheme } from "@/theme/ThemeProvider";
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+// reanimated 4's createAnimatedComponent overloads expect FunctionComponent
+// /ComponentClass/typeof FlatList — none of which matches Pressable's
+// ForwardRefExoticComponent shape. Cast through `any` so the wrapper
+// inherits AnimatedProps<PressableProps> at the call sites.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable as any) as React.ComponentType<
+  PressableProps & { style?: StyleProp<ViewStyle> | ReturnType<typeof useAnimatedStyle> }
+>;
 
-type Props = PressableProps & {
+type Props = Omit<PressableProps, "style"> & {
   hapticStyle?: "tap" | "press" | "selection" | "none";
   scaleTo?: number;
-  style?: ViewStyle | ((s: { pressed: boolean }) => ViewStyle);
+  style?: StyleProp<ViewStyle>;
 };
 
 /**
@@ -29,7 +36,7 @@ export const PressableScale = forwardRef<typeof AnimatedPressable, Props>(functi
   return (
     <AnimatedPressable
       {...rest}
-      style={[typeof style === "function" ? undefined : style, animatedStyle]}
+      style={[style, animatedStyle]}
       onPressIn={(e) => {
         scale.value = withSpring(scaleTo, motion.spring);
         onPressIn?.(e);
