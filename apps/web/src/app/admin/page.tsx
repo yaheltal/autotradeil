@@ -5,16 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
-
-type Stats = {
-  total_dealers: number;
-  pending: number;
-  verified: number;
-  rejected: number;
-  new_this_week: number;
-  verified_this_week: number;
-  avg_hours_to_verify: number | null;
-};
+import type { AdminStatsResponse as Stats } from "@autotradeil/shared-types";
 
 /*
  * Admin home — stats dashboard.

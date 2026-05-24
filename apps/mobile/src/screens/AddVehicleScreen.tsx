@@ -40,11 +40,10 @@ import { useUiStore } from "@/stores/uiStore";
 import { useTheme } from "@/theme/ThemeProvider";
 import { type ExposureOption, inventoryItemCreateSchema } from "@/types/schemas";
 import { formatILS } from "@/utils/formatters";
+import type { FuelType as Fuel, Transmission } from "@autotradeil/shared-types";
 
 type Mode = "choice" | "license" | "scanning" | "results" | "form";
 type Step = "vehicle" | "details" | "review";
-type Transmission = "automatic" | "manual";
-type Fuel = "petrol" | "diesel" | "electric" | "hybrid";
 
 type Form = {
   licensePlate: string;
