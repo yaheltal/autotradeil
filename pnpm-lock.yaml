@@ -295,8 +295,6 @@ importers:
 
   packages/database: {}
 
-  packages/shared: {}
-
   packages/shared-types:
     devDependencies:
       openapi-typescript:
