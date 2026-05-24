@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",
-    "build": "next build",
+    "build": "pnpm --filter @autotradeil/shared-types build && next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "pnpm --filter @autotradeil/shared-types build && tsc --noEmit"
   },
   "dependencies": {
     "@autotradeil/shared-types": "workspace:*",
