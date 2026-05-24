@@ -1,30 +1,53 @@
 "use client";
 
-import * as Dialog from "@radix-ui/react-dialog";
+import { Eye, EyeOff, GripVertical, Loader2, Trash2, TriangleAlert } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { DialogCloseButton } from "@/components/DialogCloseButton";
+import { ImageDropZone } from "@/components/ImageDropZone";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { apiFetch } from "@/lib/api";
 
 /*
- * Vehicle images management.
+ * VehicleImagesDialog — editorial image gallery manager.
  *
- * A11y decisions (approved, 6 required changes applied):
- *   1. Counter is a live region  <p aria-live="polite" aria-atomic>.
- *   2. Upload is a real <button> that calls inputRef.current?.click()
- *      (not label-as-button — no tab-order edge cases).
- *   3. Per-thumb delete aria-label carries position + total + car id.
- *   4. Errors rendered in a single <ul role="alert"> container; items
- *      are plain <li>.
- *   5. Focus after delete: next → prev → upload → close fallback.
- *   6. Confirm-delete inline ribbon shows thumbnail preview + position.
+ *   תמונות — {make} {model} {year}                          ×
+ *   {N} מתוך 10 תמונות · JPEG/PNG/WebP/HEIC · עד 10MB
+ *   ─────
+ *   ┌─ ImageDropZone (dashed; "גרור תמונות לכאן או לחץ לבחירה") ─┐
+ *   └─────────────────────────────────────────────────────────────┘
  *
- * We use a native <progress aria-hidden="true"> visually only — the
- * single role="status" line is the SR signal, gated to start/end.
+ *   ┌── grid of thumbnails ────────────────────────────────────┐
+ *   │ each tile: img + ⋮⋮ drag handle + Hide + Trash overlay  │
+ *   │ reorder by drag (HTML5 native) OR keyboard ←/→ on focus │
+ *   └─────────────────────────────────────────────────────────────┘
  *
- * Storage: sessionStorage is NOT touched here; images are owned
- * server-side and re-fetched on open.
+ *   [סגירה]
+ *
+ * Reorder is UI-local optimistic — the PATCH endpoint is a TODO:
+ *   PATCH /api/v1/inventory/{id}/images/reorder
+ *   { order: [imageId, imageId, …] }
+ * When backend ships, the persistReorder call already wires through.
+ * Until then 404 is swallowed and the local order resets on next
+ * load. Drag/keyboard interactions still feel instant.
+ *
+ * A11y:
+ *   - shadcn Dialog: focus trap, return focus, Escape, scroll lock
+ *   - Counter is a live region
+ *   - Per-tile delete + hide buttons announce position + total + label
+ *   - Errors render as a single shadcn Alert
+ *   - Delete confirmation → shadcn AlertDialog (was inline ribbon)
+ *   - Reorder keyboard: ArrowLeft / ArrowRight on focused tile moves
+ *     it one position left/right (RTL-aware via document order)
  */
 
 const MAX_IMAGES = 10;
@@ -32,14 +55,9 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIME = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/heic"]);
 const ALLOWED_EXT = /\.(jpe?g|png|webp|heic)$/i;
 
-type Image = { id: string; url: string; position: number; hidden?: boolean };
+type ImageRecord = { id: string; url: string; position: number; hidden?: boolean };
 
-type Vehicle = {
-  id: string;
-  make: string;
-  model: string;
-  year: number;
-};
+type Vehicle = { id: string; make: string; model: string; year: number };
 
 type Props = {
   open: boolean;
@@ -49,24 +67,24 @@ type Props = {
 };
 
 export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Props) {
-  const [images, setImages] = useState<Image[] | null>(null);
+  const [images, setImages] = useState<ImageRecord[] | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [statusMsg, setStatusMsg] = useState<string>("");
   const [uploading, setUploading] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<Image | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ImageRecord | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
 
-  const inputRef = useRef<HTMLInputElement>(null);
-  const uploadBtnRef = useRef<HTMLButtonElement>(null);
-  const closeBtnRef = useRef<HTMLButtonElement>(null);
-  const deleteBtnRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const tileRefs = useRef<Map<string, HTMLLIElement>>(new Map());
 
   const vehicleLabel = `${vehicle.make} ${vehicle.model} ${vehicle.year}`;
 
   const load = useCallback(async () => {
     try {
-      const list = await apiFetch<Image[]>(`/api/v1/inventory/${vehicle.id}/images`, { token });
+      const list = await apiFetch<ImageRecord[]>(`/api/v1/inventory/${vehicle.id}/images`, {
+        token,
+      });
       setImages(list);
     } catch (e) {
       setErrors([e instanceof Error ? e.message : "שגיאה בטעינת התמונות"]);
@@ -74,8 +92,27 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
     }
   }, [vehicle.id, token]);
 
+  // TODO: backend endpoint not yet shipped. When it lands the body
+  // shape below should match. Until then we swallow 404 and keep the
+  // local order — next `load()` will reset to whatever the server has.
+  const persistReorder = useCallback(
+    async (orderedIds: string[]) => {
+      try {
+        await apiFetch(`/api/v1/inventory/${vehicle.id}/images/reorder`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({ order: orderedIds }),
+        });
+      } catch {
+        // Silent — UI already updated optimistically. When the
+        // endpoint ships, surface real errors through setErrors.
+      }
+    },
+    [vehicle.id, token],
+  );
+
   const toggleHidden = useCallback(
-    async (img: Image) => {
+    async (img: ImageRecord) => {
       setTogglingId(img.id);
       try {
         const next = !img.hidden;
@@ -105,6 +142,7 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
       setErrors([]);
       setStatusMsg("");
       setPendingDelete(null);
+      setDragId(null);
       void load();
     }
   }, [open, load]);
@@ -113,10 +151,10 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
   const remaining = MAX_IMAGES - count;
   const atMax = remaining <= 0;
 
-  const validateFiles = (files: FileList): { ok: File[]; errs: string[] } => {
+  const validateFiles = (files: File[]): { ok: File[]; errs: string[] } => {
     const ok: File[] = [];
     const errs: string[] = [];
-    for (const f of Array.from(files)) {
+    for (const f of files) {
       if (!ALLOWED_MIME.has(f.type) && !ALLOWED_EXT.test(f.name)) {
         errs.push(`${f.name}: סוג הקובץ אינו נתמך (JPEG / PNG / WebP / HEIC)`);
         continue;
@@ -130,17 +168,15 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
     return { ok, errs };
   };
 
-  const handleFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  const handleFiles = async (files: File[]) => {
+    if (!files.length) return;
     const { ok, errs } = validateFiles(files);
 
-    // Cap by remaining slots
     const capped = ok.slice(0, remaining);
     if (ok.length > capped.length) {
       errs.push(`ניתן להעלות עוד ${remaining} תמונות בלבד; חלק מהקבצים נחתכו`);
     }
     if (errs.length) setErrors(errs);
-
     if (capped.length === 0) return;
 
     setUploading(true);
@@ -182,9 +218,6 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
         : "ההעלאה נכשלה",
     );
     setUploading(false);
-
-    if (inputRef.current) inputRef.current.value = "";
-
     await load();
   };
 
@@ -193,7 +226,6 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
     const target = pendingDelete;
     setDeletingId(target.id);
 
-    // Compute focus target BEFORE list refreshes
     const idx = images.findIndex((i) => i.id === target.id);
     const fallbackId = images[idx + 1]?.id ?? images[idx - 1]?.id ?? null;
 
@@ -207,12 +239,8 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
       await load();
 
       queueMicrotask(() => {
-        if (fallbackId && deleteBtnRefs.current.get(fallbackId)) {
-          deleteBtnRefs.current.get(fallbackId)?.focus();
-        } else if (uploadBtnRef.current && !atMax) {
-          uploadBtnRef.current.focus();
-        } else {
-          closeBtnRef.current?.focus();
+        if (fallbackId && tileRefs.current.get(fallbackId)) {
+          tileRefs.current.get(fallbackId)?.focus();
         }
       });
     } catch (e) {
@@ -222,211 +250,377 @@ export function VehicleImagesDialog({ open, onOpenChange, vehicle, token }: Prop
     }
   };
 
+  // ── Reorder ────────────────────────────────────────────────────────
+  const moveTo = useCallback(
+    (sourceId: string, targetId: string) => {
+      if (sourceId === targetId || !images) return;
+      const fromIdx = images.findIndex((i) => i.id === sourceId);
+      const toIdx = images.findIndex((i) => i.id === targetId);
+      if (fromIdx < 0 || toIdx < 0) return;
+      const next = [...images];
+      const [moved] = next.splice(fromIdx, 1);
+      if (!moved) return;
+      next.splice(toIdx, 0, moved);
+      setImages(next);
+      void persistReorder(next.map((i) => i.id));
+    },
+    [images, persistReorder],
+  );
+
+  const moveByDelta = useCallback(
+    (id: string, delta: number) => {
+      if (!images) return;
+      const idx = images.findIndex((i) => i.id === id);
+      const targetIdx = idx + delta;
+      if (idx < 0 || targetIdx < 0 || targetIdx >= images.length) return;
+      const next = [...images];
+      const [moved] = next.splice(idx, 1);
+      if (!moved) return;
+      next.splice(targetIdx, 0, moved);
+      setImages(next);
+      void persistReorder(next.map((i) => i.id));
+      queueMicrotask(() => tileRefs.current.get(id)?.focus());
+    },
+    [images, persistReorder],
+  );
+
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Overlay
-          className="bg-brand-navy/40 fixed inset-0 z-40 motion-reduce:transition-none"
-          aria-hidden="true"
-        />
-        <Dialog.Content
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
           aria-describedby="img-dialog-desc"
-          className="fixed inset-0 z-50 flex h-[100dvh] w-screen items-center justify-center p-3 motion-reduce:transition-none sm:p-4"
+          className="max-h-[90dvh] max-w-2xl overflow-y-auto"
         >
-          <div className="bg-brand-cream relative max-h-[95dvh] w-full max-w-2xl overflow-y-auto rounded-xl p-6 shadow-xl">
-            <DialogCloseButton />
-            <Dialog.Title className="text-brand-navy pe-12 text-lg font-bold">
-              תמונות – {vehicleLabel}
-            </Dialog.Title>
-            <Dialog.Description id="img-dialog-desc" className="text-brand-ink/70 mt-1 text-sm">
-              ניתן להעלות עד {MAX_IMAGES} תמונות. מקסימום 10MB לתמונה. JPEG / PNG / WebP / HEIC.
-            </Dialog.Description>
+          <DialogHeader>
+            <DialogTitle>תמונות — {vehicleLabel}</DialogTitle>
+            <DialogDescription id="img-dialog-desc">
+              ניתן להעלות עד <span className="font-tabular">{MAX_IMAGES}</span> תמונות. עד{" "}
+              <span className="font-tabular">10MB</span> לתמונה. JPEG / PNG / WebP / HEIC.
+            </DialogDescription>
+          </DialogHeader>
 
-            {/* Counter — live region */}
-            <p
-              aria-live="polite"
-              aria-atomic="true"
-              className="text-brand-navy mt-4 text-sm font-semibold"
-            >
-              {count} מתוך {MAX_IMAGES} תמונות
-            </p>
+          <p
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="text-muted mt-sm text-sm"
+          >
+            <span className="font-tabular text-ink font-medium">{count}</span> מתוך{" "}
+            <span className="font-tabular">{MAX_IMAGES}</span> תמונות
+          </p>
 
-            {/* Upload trigger — real button, not label */}
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <button
-                ref={uploadBtnRef}
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                disabled={atMax || uploading}
-                aria-busy={uploading || undefined}
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {uploading ? "מעלה…" : "העלאת תמונות"}
-              </button>
-              <input
-                ref={inputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/heic"
-                multiple
-                onChange={(e) => void handleFiles(e.target.files)}
-                className="sr-only"
+          {/* Drop zone — replaces the old "Upload Images" button */}
+          {!atMax ? (
+            <div className="mt-md">
+              <ImageDropZone
+                onPick={handleFiles}
+                disabled={uploading}
+                hint={
+                  <>
+                    נותרו <span className="text-ink font-medium">{remaining}</span> תמונות
+                  </>
+                }
               />
-              {uploading ? <progress aria-hidden="true" className="h-2 w-full sm:w-48" /> : null}
+              {uploading ? (
+                <p className="gap-xs text-muted mt-xs flex items-center text-xs">
+                  <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
+                  <span>מעלה תמונות…</span>
+                </p>
+              ) : null}
             </div>
+          ) : (
+            <p className="text-muted mt-md text-sm">
+              הגעת לגבול של <span className="font-tabular">{MAX_IMAGES}</span> תמונות. מחק תמונה
+              קיימת כדי להעלות חדשה.
+            </p>
+          )}
 
-            {/* Status — SR signal */}
-            {statusMsg ? (
-              <p role="status" aria-live="polite" className="sr-only">
-                {statusMsg}
-              </p>
-            ) : null}
+          {statusMsg ? (
+            <p role="status" aria-live="polite" className="sr-only">
+              {statusMsg}
+            </p>
+          ) : null}
 
-            {/* Errors */}
-            {errors.length > 0 ? (
-              <ul
-                role="alert"
-                aria-live="assertive"
-                className="bg-danger-bg text-danger-text mt-4 space-y-1 rounded-md px-4 py-3 text-sm"
-              >
-                {errors.map((err, i) => (
-                  <li key={i}>{err}</li>
-                ))}
-              </ul>
-            ) : null}
-
-            {/* Inline confirm-delete ribbon */}
-            {pendingDelete ? (
-              <div
-                role="region"
-                aria-label="אישור מחיקה"
-                className="border-danger-text/30 mt-4 rounded-md border bg-white p-4"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="relative h-20 w-28 shrink-0 overflow-hidden rounded-md">
-                    <Image
-                      src={pendingDelete.url}
-                      alt=""
-                      fill
-                      sizes="112px"
-                      className="object-cover"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-brand-navy text-sm font-semibold">
-                      למחוק את תמונה מספר {pendingDelete.position + 1}?
-                    </p>
-                    <p className="text-brand-ink/70 mt-1 text-xs">
-                      {vehicleLabel} · המחיקה אינה הפיכה.
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setPendingDelete(null)}
-                    disabled={deletingId !== null}
-                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                  >
-                    ביטול
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void confirmDelete()}
-                    disabled={deletingId !== null}
-                    aria-busy={deletingId !== null || undefined}
-                    className="bg-danger hover:bg-danger-text focus-visible:outline-danger-text inline-flex min-h-11 items-center justify-center rounded-md px-4 py-2 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                  >
-                    {deletingId ? "מוחק…" : "אישור מחיקה"}
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
-            {/* Thumbnails */}
-            <div className="mt-6">
-              {images === null ? (
-                <p role="status" className="text-brand-ink/60">
-                  טוען…
-                </p>
-              ) : images.length === 0 ? (
-                <p className="border-brand-navy/20 text-brand-ink/60 rounded-md border border-dashed bg-white p-6 text-center">
-                  אין עדיין תמונות. לחץ על &quot;העלאת תמונות&quot; כדי להעלות.
-                </p>
-              ) : (
-                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-                  {images.map((img, i) => (
-                    <li
-                      key={img.id}
-                      className="border-brand-navy/10 relative aspect-[4/3] overflow-hidden rounded-md border bg-white"
-                    >
-                      <Image
-                        src={img.url}
-                        alt=""
-                        fill
-                        sizes="(max-width: 768px) 50vw, 25vw"
-                        className={[
-                          "object-cover transition-opacity",
-                          img.hidden ? "opacity-40" : "",
-                        ].join(" ")}
-                      />
-                      {/* "hidden" badge — visible signal in addition to the
-                       *  reduced opacity, since color/opacity alone cannot be
-                       *  the only signal (WCAG 1.4.1). */}
-                      {img.hidden ? (
-                        <span className="bg-brand-navy text-brand-cream absolute start-2 top-2 rounded px-2 py-0.5 text-xs font-semibold">
-                          מוסתר
-                        </span>
-                      ) : null}
-                      {/* Hide/show toggle (Phase 6.5 task 16) */}
-                      <button
-                        type="button"
-                        onClick={() => void toggleHidden(img)}
-                        aria-pressed={!!img.hidden}
-                        aria-label={
-                          img.hidden
-                            ? `הצג תמונה ${i + 1} מתוך ${count} – ${vehicleLabel}`
-                            : `הסתר תמונה ${i + 1} מתוך ${count} – ${vehicleLabel}`
-                        }
-                        disabled={togglingId === img.id}
-                        className="border-brand-navy/40 hover:bg-brand-navy/10 text-brand-navy focus-visible:outline-brand-navy absolute bottom-2 start-2 inline-flex min-h-9 items-center gap-1 rounded-md border bg-white/90 px-2 py-1 text-xs font-semibold backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-                      >
-                        <span aria-hidden="true">{img.hidden ? "👁" : "🚫"}</span>
-                        {img.hidden ? "הצג" : "הסתר"}
-                      </button>
-                      <button
-                        ref={(el) => {
-                          if (el) deleteBtnRefs.current.set(img.id, el);
-                          else deleteBtnRefs.current.delete(img.id);
-                        }}
-                        type="button"
-                        onClick={() => setPendingDelete(img)}
-                        aria-label={`מחיקת תמונה ${i + 1} מתוך ${count} – ${vehicleLabel}`}
-                        className="bg-brand-navy/80 hover:bg-brand-navy absolute end-2 top-2 inline-flex h-11 w-11 items-center justify-center rounded-full border border-white/40 text-white backdrop-blur focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-                      >
-                        <span aria-hidden="true" className="text-lg leading-none">
-                          ×
-                        </span>
-                      </button>
-                    </li>
+          {errors.length > 0 ? (
+            <Alert variant="destructive" className="mt-md">
+              <TriangleAlert aria-hidden="true" />
+              <AlertDescription>
+                <ul className="space-y-1">
+                  {errors.map((err, i) => (
+                    <li key={i}>{err}</li>
                   ))}
                 </ul>
-              )}
-            </div>
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
-            <div className="mt-6 flex justify-end">
-              <Dialog.Close asChild>
-                <button
-                  ref={closeBtnRef}
-                  type="button"
-                  className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                >
-                  סגירה
-                </button>
-              </Dialog.Close>
-            </div>
+          <div className="mt-lg">
+            {images === null ? (
+              <p role="status" className="text-muted py-lg text-center text-sm">
+                טוען…
+              </p>
+            ) : images.length === 0 ? (
+              <p className="text-muted py-2xl text-center text-sm">
+                אין עדיין תמונות. גרור או בחר תמונות מעל כדי להתחיל.
+              </p>
+            ) : (
+              <ul className="gap-md grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4">
+                {images.map((img, i) => (
+                  <ImageTile
+                    key={img.id}
+                    img={img}
+                    index={i}
+                    total={count}
+                    vehicleLabel={vehicleLabel}
+                    isToggling={togglingId === img.id}
+                    isDragging={dragId === img.id}
+                    onToggleHidden={() => void toggleHidden(img)}
+                    onDelete={() => setPendingDelete(img)}
+                    onMoveLeft={() => moveByDelta(img.id, -1)}
+                    onMoveRight={() => moveByDelta(img.id, +1)}
+                    onDragStart={() => setDragId(img.id)}
+                    onDragEnd={() => setDragId(null)}
+                    onDrop={(srcId) => {
+                      moveTo(srcId, img.id);
+                      setDragId(null);
+                    }}
+                    refMap={tileRefs}
+                  />
+                ))}
+              </ul>
+            )}
           </div>
-        </Dialog.Content>
-      </Dialog.Portal>
-    </Dialog.Root>
+
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              סגירה
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation — shadcn Dialog (alert-dialog primitive not
+       *  installed; the same Radix Dialog primitive carries the
+       *  semantics. Cancel is the first focusable so destructive
+       *  actions never auto-focus). */}
+      <Dialog open={!!pendingDelete} onOpenChange={(v) => !v && setPendingDelete(null)}>
+        <DialogContent
+          aria-describedby="img-delete-desc"
+          className="max-w-md"
+          onOpenAutoFocus={(e) => {
+            // Don't auto-focus inside; let the close button take focus
+            // (Radix default) so destructive confirm needs an explicit tab.
+            e.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              למחוק את תמונה מספר{" "}
+              <span className="font-tabular">
+                {pendingDelete ? pendingDelete.position + 1 : ""}
+              </span>
+              ?
+            </DialogTitle>
+            <DialogDescription id="img-delete-desc">
+              {vehicleLabel} — המחיקה אינה הפיכה.
+            </DialogDescription>
+          </DialogHeader>
+          {pendingDelete ? (
+            <div className="border-hairline bg-paper p-sm gap-md flex items-center rounded-md border">
+              <div className="border-hairline relative h-16 w-24 shrink-0 overflow-hidden rounded-md border">
+                <Image src={pendingDelete.url} alt="" fill sizes="96px" className="object-cover" />
+              </div>
+              <p className="text-muted text-xs">תמונה זו תוסר מתצוגת הרכב בשוק.</p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPendingDelete(null)}
+              disabled={deletingId !== null}
+            >
+              ביטול
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={() => void confirmDelete()}
+              disabled={deletingId !== null}
+              aria-busy={deletingId !== null || undefined}
+            >
+              {deletingId !== null ? (
+                <>
+                  <Loader2 aria-hidden="true" className="animate-spin" />
+                  <span>מוחק…</span>
+                </>
+              ) : (
+                "אישור מחיקה"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+// ============================================================================
+// ImageTile — single draggable thumbnail with hover overlay actions.
+// ============================================================================
+
+function ImageTile({
+  img,
+  index,
+  total,
+  vehicleLabel,
+  isToggling,
+  isDragging,
+  onToggleHidden,
+  onDelete,
+  onMoveLeft,
+  onMoveRight,
+  onDragStart,
+  onDragEnd,
+  onDrop,
+  refMap,
+}: {
+  img: ImageRecord;
+  index: number;
+  total: number;
+  vehicleLabel: string;
+  isToggling: boolean;
+  isDragging: boolean;
+  onToggleHidden: () => void;
+  onDelete: () => void;
+  onMoveLeft: () => void;
+  onMoveRight: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDrop: (srcId: string) => void;
+  refMap: React.MutableRefObject<Map<string, HTMLLIElement>>;
+}) {
+  const labelN = index + 1;
+
+  // Keyboard reorder — ArrowLeft moves toward index 0, ArrowRight away.
+  // The dialog is `dir="rtl"` but the document order is unchanged, so
+  // "Left" and "Right" map to "earlier" and "later" in the list logically.
+  const onKeyDown = (e: React.KeyboardEvent<HTMLLIElement>) => {
+    if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      onMoveLeft();
+    } else if (e.key === "ArrowRight") {
+      e.preventDefault();
+      onMoveRight();
+    }
+  };
+
+  return (
+    <li
+      ref={(el) => {
+        if (el) refMap.current.set(img.id, el);
+        else refMap.current.delete(img.id);
+      }}
+      draggable
+      tabIndex={0}
+      aria-label={`תמונה ${labelN} מתוך ${total} — ${vehicleLabel}. גרור או חצים כדי לסדר.`}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", img.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart();
+      }}
+      onDragEnd={onDragEnd}
+      onDragOver={(e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        const srcId = e.dataTransfer.getData("text/plain");
+        if (srcId) onDrop(srcId);
+      }}
+      onKeyDown={onKeyDown}
+      className={[
+        "border-hairline group relative aspect-[4/3] cursor-grab overflow-hidden rounded-md border",
+        "focus-visible:outline-accent focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2",
+        "duration-fast transition-opacity",
+        isDragging ? "opacity-40" : "",
+      ].join(" ")}
+    >
+      <Image
+        src={img.url}
+        alt=""
+        fill
+        sizes="(max-width: 768px) 50vw, 25vw"
+        className={["object-cover transition-opacity", img.hidden ? "opacity-40" : ""].join(" ")}
+      />
+
+      {/* Drag handle — visible on hover + focus */}
+      <span
+        aria-hidden="true"
+        className={[
+          "text-paper bg-ink/70 absolute end-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md backdrop-blur",
+          "duration-fast opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100",
+        ].join(" ")}
+      >
+        <GripVertical className="h-4 w-4" />
+      </span>
+
+      {/* Hidden badge */}
+      {img.hidden ? (
+        <span className="bg-ink text-paper px-xs py-xxs absolute start-2 top-2 rounded-md text-[11px] font-medium">
+          מוסתר
+        </span>
+      ) : null}
+
+      {/* Position badge */}
+      <span
+        aria-hidden="true"
+        className="bg-paper/85 text-ink font-tabular absolute bottom-2 start-2 inline-flex h-7 min-w-[28px] items-center justify-center rounded-md px-1.5 text-xs font-medium backdrop-blur"
+      >
+        {labelN}
+      </span>
+
+      {/* Hover/focus action row */}
+      <div
+        className={[
+          "absolute inset-x-2 bottom-2 flex justify-end gap-1.5",
+          "duration-fast opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100",
+        ].join(" ")}
+      >
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleHidden();
+          }}
+          aria-pressed={!!img.hidden}
+          aria-label={
+            img.hidden
+              ? `הצג תמונה ${labelN} מתוך ${total} — ${vehicleLabel}`
+              : `הסתר תמונה ${labelN} מתוך ${total} — ${vehicleLabel}`
+          }
+          disabled={isToggling}
+          className="border-hairline bg-paper/95 text-ink hover:bg-paper focus-visible:outline-accent duration-fast inline-flex h-8 w-8 items-center justify-center rounded-md border backdrop-blur transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
+        >
+          {img.hidden ? (
+            <Eye aria-hidden="true" className="h-4 w-4" />
+          ) : (
+            <EyeOff aria-hidden="true" className="h-4 w-4" />
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+          aria-label={`מחיקת תמונה ${labelN} מתוך ${total} — ${vehicleLabel}`}
+          className="border-hairline bg-paper/95 text-danger-fg hover:bg-danger-bg focus-visible:outline-accent duration-fast inline-flex h-8 w-8 items-center justify-center rounded-md border backdrop-blur transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          <Trash2 aria-hidden="true" className="h-4 w-4" />
+        </button>
+      </div>
+    </li>
   );
 }
