@@ -1,25 +1,53 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import type { AdminStatsResponse as Stats } from "@autotradeil/shared-types";
+import {
+  ArrowLeft,
+  FileClock,
+  Settings,
+  ShieldCheck,
+  ShoppingBag,
+  TriangleAlert,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
 
-import { apiFetch } from "@/lib/api";
+import { AdminMasthead } from "@/components/admin/AdminMasthead";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminAuth } from "@/hooks/useAdminAuth";
+import { apiFetch } from "@/lib/api";
 import { queryKeys } from "@/lib/query-keys";
-import type { AdminStatsResponse as Stats } from "@autotradeil/shared-types";
 
 /*
- * Admin home — stats dashboard.
+ * /admin — editorial operator dashboard.
  *
- * A11y:
- *   - <main id="main" tabIndex={-1}>
- *   - <h1> receives focus on first render so screen readers announce
- *     the admin landing
- *   - Stat cards are <div aria-labelledby> (NOT <article> — plan
- *     correction: they aren't syndicatable)
- *   - Numbers are explicit digits even when zero
- *   - `role="status"` for loading (implicit aria-live — don't duplicate)
+ *   לוח ניהול
+ *   ──────────
+ *   סקירה מהירה של מצב המערכת · 5 ממתינים לאישור   ← dek + pending byline
+ *
+ *   סוחרים
+ *   ──────────
+ *   סך סוחרים  ממתינים   מאושרים   נדחו                 ← Stat tiles (no borders)
+ *
+ *   תובנות השבוע
+ *   ──────────
+ *   חדשים השבוע  · אושרו השבוע  · זמן ממוצע לאישור
+ *
+ *   [if pending > 0] Alert callout with link to /admin/dealers?status=pending
+ *
+ *   ניהול נוסף
+ *   ──────────
+ *   ── אימות זהות (KYC)
+ *   ── כל הרכבים במערכת
+ *   ── הגדרות מערכת
+ *   ── יומן פעולות
+ *
+ * Typography-only Stat tiles (mirrors /dashboard/analytics) — no
+ * per-tile borders, no color-tinted "tones". The pending count
+ * earns the dek byline (one operator-relevant number always visible).
  */
 
 export default function AdminHomePage() {
@@ -43,231 +71,251 @@ export default function AdminHomePage() {
     if (!loading && stats) headingRef.current?.focus();
   }, [loading, stats]);
 
-  if (loading || (!stats && !error)) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="status" className="text-brand-ink/70 p-10">
-          טוען…
-        </p>
-      </main>
-    );
-  }
-
-  if (error) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <div className="p-10" role="alert">
-          <p className="bg-danger-bg text-danger-text rounded-md px-4 py-3">{error}</p>
-        </div>
-      </main>
-    );
-  }
-
-  if (!stats) return null;
-
-  const pendingActive = stats.pending > 0;
+  const pendingActive = (stats?.pending ?? 0) > 0;
 
   return (
-    <main id="main" tabIndex={-1} className="focus:outline-none">
-      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <h1
-          ref={headingRef}
-          tabIndex={-1}
-          className="text-brand-navy text-3xl font-bold tracking-tight focus:outline-none"
-        >
-          לוח בקרה
-        </h1>
-        <p className="text-brand-ink/70 mt-2">סקירה מהירה של מצב הסוחרים במערכת.</p>
+    <div className="px-lg sm:px-2xl py-2xl mx-auto max-w-5xl">
+      <AdminMasthead
+        title="לוח ניהול"
+        dek={<span>סקירה מהירה של מצב המערכת</span>}
+        loading={loading || !stats}
+        count={
+          stats ? `${stats.pending} ${stats.pending === 1 ? "ממתין" : "ממתינים"} לאישור` : undefined
+        }
+        headingRef={headingRef}
+      />
 
-        <section aria-labelledby="stats-heading" className="mt-10">
-          <h2 id="stats-heading" className="sr-only">
-            סטטיסטיקת סוחרים
-          </h2>
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              id="total"
-              label="סך סוחרים"
-              value={stats.total_dealers}
-              href="/admin/dealers"
-            />
-            <StatCard
-              id="pending"
+      {error ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {/* ── SECTION 1: KPI GRID ──────────────────────────────────────── */}
+      <section aria-labelledby="kpi-heading" className="mt-3xl">
+        <p className="text-muted text-xs font-medium uppercase tracking-widest">סוחרים</p>
+        <h2 id="kpi-heading" className="sr-only">
+          סטטיסטיקת סוחרים
+        </h2>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        {!stats ? (
+          <KpiGridSkeleton />
+        ) : (
+          <dl className="gap-y-2xl gap-x-lg mt-xl grid grid-cols-2 sm:grid-cols-4">
+            <Stat label="סך סוחרים" value={stats.total_dealers} href="/admin/dealers" />
+            <Stat
               label="ממתינים לאישור"
               value={stats.pending}
-              tone={pendingActive ? "gold" : "muted"}
               href="/admin/dealers?status=pending"
             />
-            <StatCard
-              id="verified"
-              label="מאושרים"
-              value={stats.verified}
-              tone="ok"
-              href="/admin/dealers?status=verified"
-            />
-            <StatCard
-              id="rejected"
-              label="נדחו"
-              value={stats.rejected}
-              tone="danger"
-              href="/admin/dealers?status=rejected"
-            />
-          </ul>
-        </section>
+            <Stat label="מאושרים" value={stats.verified} href="/admin/dealers?status=verified" />
+            <Stat label="נדחו" value={stats.rejected} href="/admin/dealers?status=rejected" />
+          </dl>
+        )}
+      </section>
 
-        <section aria-labelledby="insights-heading" className="mt-10">
-          <h2 id="insights-heading" className="text-brand-navy text-lg font-semibold">
-            תובנות השבוע
-          </h2>
-          <dl className="mt-4 grid gap-4 sm:grid-cols-2">
-            <InsightRow label="חדשים השבוע" value={String(stats.new_this_week)} />
-            <InsightRow label="אושרו השבוע" value={String(stats.verified_this_week)} />
-            <InsightRow
+      {/* ── SECTION 2: INSIGHTS ──────────────────────────────────────── */}
+      <section aria-labelledby="insights-heading" className="mt-3xl">
+        <p className="text-muted text-xs font-medium uppercase tracking-widest">תובנות השבוע</p>
+        <h2 id="insights-heading" className="sr-only">
+          תובנות השבוע
+        </h2>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        {!stats ? (
+          <InsightsSkeleton />
+        ) : (
+          <dl className="gap-y-xl gap-x-2xl mt-xl grid grid-cols-1 sm:grid-cols-3">
+            <Insight label="חדשים השבוע" value={String(stats.new_this_week)} />
+            <Insight label="אושרו השבוע" value={String(stats.verified_this_week)} />
+            <Insight
               label="זמן ממוצע לאישור (שעות)"
               value={
                 stats.avg_hours_to_verify === null ? "—" : stats.avg_hours_to_verify.toFixed(1)
               }
             />
           </dl>
-        </section>
+        )}
+      </section>
 
-        {pendingActive ? (
-          <div className="border-brand-gold/50 mt-10 rounded-lg border bg-amber-50 p-5">
-            <p className="text-brand-navy font-semibold">יש סוחרים שממתינים לאישור.</p>
-            <p className="text-brand-ink/80 mt-1 text-sm">אנא עבור לעמוד הסוחרים ופעל לפי הצורך.</p>
-            <Link
-              href="/admin/dealers?status=pending"
-              className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy mt-4 inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2.5 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              צפה בסוחרים ממתינים
+      {/* ── PENDING CTA ──────────────────────────────────────────────── */}
+      {pendingActive ? (
+        <section
+          aria-labelledby="pending-cta-heading"
+          className="border-accent/30 bg-accent-subtle p-xl mt-3xl rounded-md border"
+        >
+          <p id="pending-cta-heading" className="text-ink font-serif text-lg font-medium">
+            יש סוחרים שממתינים לאישור
+          </p>
+          <p className="text-muted mt-xs text-sm">עבור לעמוד הסוחרים ופעל לפי הצורך.</p>
+          <Button asChild className="mt-lg">
+            <Link href="/admin/dealers?status=pending">
+              <span>צפה בסוחרים ממתינים</span>
+              <ArrowLeft aria-hidden="true" />
             </Link>
-          </div>
-        ) : null}
-
-        <section aria-labelledby="admin-links-heading" className="mt-10">
-          <h2 id="admin-links-heading" className="text-brand-navy text-lg font-semibold">
-            ניהול נוסף
-          </h2>
-          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
-            <li>
-              <Link
-                href="/admin/kyc"
-                className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                <p className="text-brand-navy font-semibold">אימות זהות (KYC)</p>
-                <p className="text-brand-ink/70 mt-1 text-sm">בקשות ממתינות לבדיקת מסמכים</p>
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/admin/inventory"
-                className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                <p className="text-brand-navy font-semibold">כל הרכבים במערכת</p>
-                <p className="text-brand-ink/70 mt-1 text-sm">
-                  מלאי מכלל הסוחרים — סינון לפי חשיפה, סטטוס, יצרן
-                </p>
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/admin/settings"
-                className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                <p className="text-brand-navy font-semibold">הגדרות מערכת</p>
-                <p className="text-brand-ink/70 mt-1 text-sm">
-                  שם המערכת, אימייל תמיכה, ניהול אדמינים
-                </p>
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/admin/audit-log"
-                className="border-brand-navy/10 hover:bg-brand-navy/5 focus-visible:outline-brand-navy block rounded-lg border bg-white p-5 focus-visible:outline-2 focus-visible:outline-offset-2"
-              >
-                <p className="text-brand-navy font-semibold">יומן פעולות</p>
-                <p className="text-brand-ink/70 mt-1 text-sm">היסטוריית פעולות מנהל מלאה</p>
-              </Link>
-            </li>
-          </ul>
+          </Button>
         </section>
-      </div>
-    </main>
+      ) : null}
+
+      {/* ── SECTION 3: ADMIN LINKS ───────────────────────────────────── */}
+      <section aria-labelledby="links-heading" className="mt-3xl">
+        <p className="text-muted text-xs font-medium uppercase tracking-widest">ניהול נוסף</p>
+        <h2 id="links-heading" className="sr-only">
+          ניהול נוסף
+        </h2>
+        <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
+
+        <ul className="mt-md">
+          <AdminLinkRow
+            href="/admin/kyc"
+            icon={ShieldCheck}
+            title="אימות זהות (KYC)"
+            description="בקשות ממתינות לבדיקת מסמכים"
+          />
+          <AdminLinkRow
+            href="/admin/inventory"
+            icon={ShoppingBag}
+            title="כל הרכבים במערכת"
+            description="מלאי מכלל הסוחרים — סינון לפי חשיפה, סטטוס, יצרן"
+          />
+          <AdminLinkRow
+            href="/admin/settings"
+            icon={Settings}
+            title="הגדרות מערכת"
+            description="שם המערכת, אימייל תמיכה, ניהול אדמינים"
+          />
+          <AdminLinkRow
+            href="/admin/audit-log"
+            icon={FileClock}
+            title="יומן פעולות"
+            description="היסטוריית פעולות מנהל מלאה"
+          />
+        </ul>
+      </section>
+    </div>
   );
 }
 
-type Tone = "muted" | "gold" | "ok" | "danger";
+// ============================================================================
+// Stat — single KPI: label above value, no border. Frank Ruhl on the
+// value gives the page editorial weight; font-tabular keeps digits
+// aligned across the grid. Optional href turns the whole tile into a
+// link to the relevant filtered list.
+// ============================================================================
 
-function StatCard({
-  id,
-  label,
-  value,
-  tone = "muted",
-  href,
-}: {
-  id: string;
-  label: string;
-  value: number;
-  tone?: Tone;
-  href?: string;
-}) {
-  // Tone classes split: base color + hover state. Hover deepens the tint
-  // so the card reads as interactive when href is present, without
-  // changing layout.
-  const toneClasses: Record<Tone, string> = {
-    muted: "border-brand-navy/10 bg-white hover:border-brand-navy/30 hover:bg-brand-navy/[0.03]",
-    gold: "border-brand-gold/60 bg-amber-50 hover:border-brand-gold hover:bg-amber-100",
-    ok: "border-ok/30 bg-ok-bg/50 hover:border-ok/60 hover:bg-ok-bg/70",
-    danger: "border-danger/30 bg-danger-bg/60 hover:border-danger/60 hover:bg-danger-bg/80",
-  };
-
+function Stat({ label, value, href }: { label: string; value: number; href?: string }) {
   const inner = (
     <>
-      <div className="flex items-start justify-between gap-2">
-        <p id={`stat-${id}-label`} className="text-brand-ink/70 text-sm font-medium">
-          {label}
-        </p>
-        {href ? (
-          <span
-            aria-hidden="true"
-            className="text-brand-ink/40 group-hover:text-brand-gold text-lg leading-none transition-colors"
-          >
-            ←
-          </span>
-        ) : null}
-      </div>
-      <p className="text-brand-navy mt-2 text-4xl font-bold tracking-tight">{value}</p>
+      <dt className="text-muted text-xs font-medium uppercase tracking-widest">{label}</dt>
+      <dd className="text-ink font-tabular mt-xs font-serif text-3xl font-medium leading-none">
+        {value}
+      </dd>
     </>
   );
-
   if (href) {
     return (
-      <li aria-labelledby={`stat-${id}-label`}>
+      <div>
         <Link
           href={href}
+          className="duration-fast hover:text-accent focus-visible:outline-accent group block rounded-sm transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4"
           aria-label={`${label} — ${value}. פתיחת רשימה.`}
-          className={`focus-visible:outline-brand-navy group block rounded-lg border p-5 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 ${toneClasses[tone]}`}
         >
           {inner}
         </Link>
-      </li>
+      </div>
     );
   }
+  return <div>{inner}</div>;
+}
 
+function Insight({ label, value }: { label: string; value: string }) {
   return (
-    <li
-      aria-labelledby={`stat-${id}-label`}
-      className={`rounded-lg border p-5 ${toneClasses[tone]}`}
-    >
-      {inner}
+    <div>
+      <dt className="text-muted text-xs font-medium uppercase tracking-widest">{label}</dt>
+      <dd className="text-ink font-tabular mt-xs font-serif text-2xl font-medium leading-none">
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+// ============================================================================
+// AdminLinkRow — hairline-separated row in the "ניהול נוסף" list.
+// Replaces the bordered card pattern; typography + chevron carry it.
+// ============================================================================
+
+function AdminLinkRow({
+  href,
+  icon: Icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: typeof ShieldCheck;
+  title: string;
+  description: string;
+}) {
+  return (
+    <li>
+      <Link
+        href={href}
+        className="gap-md border-hairline py-lg duration-fast hover:bg-muted/5 focus-visible:outline-accent group flex items-center border-b transition-colors last:border-b-0 focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+      >
+        <Icon
+          className="text-muted group-hover:text-ink duration-fast h-5 w-5 shrink-0 transition-colors"
+          aria-hidden="true"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-ink text-sm font-medium">{title}</p>
+          <p className="text-muted mt-xxs text-xs">{description}</p>
+        </div>
+        <ArrowLeft
+          className="text-subtle group-hover:text-ink duration-fast h-4 w-4 shrink-0 transition-all group-hover:-translate-x-0.5"
+          aria-hidden="true"
+        />
+      </Link>
     </li>
   );
 }
 
-function InsightRow({ label, value }: { label: string; value: string }) {
+// ============================================================================
+// Skeletons
+// ============================================================================
+
+function KpiGridSkeleton() {
   return (
-    <div className="border-brand-navy/10 rounded-lg border bg-white p-5">
-      <dt className="text-brand-ink/70 text-sm">{label}</dt>
-      <dd className="text-brand-navy mt-1 text-2xl font-semibold">{value}</dd>
+    <div
+      className="gap-y-2xl gap-x-lg mt-xl grid grid-cols-2 sm:grid-cols-4"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">טוען סטטיסטיקות…</span>
+      {Array.from({ length: 4 }, (_, i) => (
+        <div key={i} aria-hidden="true">
+          <Skeleton className="h-3 w-20" />
+          <Skeleton className="mt-xs h-8 w-12" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InsightsSkeleton() {
+  return (
+    <div
+      className="gap-y-xl gap-x-2xl mt-xl grid grid-cols-1 sm:grid-cols-3"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">טוען תובנות…</span>
+      {Array.from({ length: 3 }, (_, i) => (
+        <div key={i} aria-hidden="true">
+          <Skeleton className="h-3 w-32" />
+          <Skeleton className="mt-xs h-7 w-16" />
+        </div>
+      ))}
     </div>
   );
 }
