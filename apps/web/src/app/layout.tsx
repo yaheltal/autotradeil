@@ -3,6 +3,7 @@ import { Frank_Ruhl_Libre, Inter } from "next/font/google";
 
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { QueryProvider } from "@/providers/query-provider";
 
 import "./globals.css";
 
@@ -163,9 +164,11 @@ export default function RootLayout({
         >
           דלג לתוכן הראשי
         </a>
-        <ImpersonationBanner />
-        {children}
-        <PWAInstallPrompt />
+        <QueryProvider>
+          <ImpersonationBanner />
+          {children}
+          <PWAInstallPrompt />
+        </QueryProvider>
       </body>
     </html>
   );
