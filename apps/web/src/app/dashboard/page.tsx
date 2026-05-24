@@ -49,7 +49,10 @@ type InventoryItem = {
   model: string;
   year: number;
   price: number;
-  status: "active" | "sold" | "hidden";
+  // Backend enum is wider than what StatusBadge surfaces locally —
+  // include the full set so client-side filtering against "sold" is
+  // type-safe regardless of which state a vehicle is in.
+  status: "active" | "sold" | "hidden" | "draft" | "reserved";
   primary_image_url: string | null;
   created_at: string;
 };
@@ -177,11 +180,21 @@ function DashboardPageInner() {
     enabled: !!token && whoami.isFetched && !isAdmin,
   });
 
-  // -- Active inventory (drives hero value + recent-vehicles list) ---------
-  const activeInventoryQuery = useQuery({
-    queryKey: queryKeys.inventory.list({ status: "active", per_page: 200 }),
+  // -- All inventory (drives hero value + recent-vehicles list) -----------
+  //
+  // Fetch ALL statuses, not just `active`. The hero metric is "סך שווי
+  // המלאי" — the total value of inventory the dealer currently owns,
+  // which is everything except `sold`. Filtering server-side to `active`
+  // would exclude `draft` / `reserved` / hidden listings the dealer
+  // still has on the lot and produce a misleading ₪0 when those are
+  // the only statuses present (the originally-reported bug).
+  //
+  // per_page=500 is a safety bump from 200 — most dealers have far
+  // fewer; a single page covers ~all practical cases.
+  const inventoryQuery = useQuery({
+    queryKey: queryKeys.inventory.list({ per_page: 500 }),
     queryFn: () =>
-      apiFetch<InventoryListResponse>("/api/v1/inventory?status=active&per_page=200", {
+      apiFetch<InventoryListResponse>("/api/v1/inventory?per_page=500", {
         token: token!,
       }),
     enabled: !!token && whoami.isFetched && !isAdmin,
@@ -197,19 +210,27 @@ function DashboardPageInner() {
   });
 
   const dealer = dealerQuery.data ?? null;
-  const inventoryValue = useMemo(() => {
-    const items = activeInventoryQuery.data?.items ?? [];
-    return items.reduce((sum, item) => sum + item.price, 0);
-  }, [activeInventoryQuery.data]);
-  const inventoryCount = activeInventoryQuery.data?.items.length ?? 0;
+  // "On-the-lot" inventory = every status EXCEPT sold. Hero value and
+  // recent-vehicles list both derive from this filtered set so a dealer
+  // with only `draft` / `reserved` listings still sees their inventory
+  // total instead of ₪0.
+  const inStockItems = useMemo(() => {
+    const items = inventoryQuery.data?.items ?? [];
+    return items.filter((i) => i.status !== "sold");
+  }, [inventoryQuery.data]);
+  const inventoryValue = useMemo(
+    () => inStockItems.reduce((sum, item) => sum + (Number(item.price) || 0), 0),
+    [inStockItems],
+  );
+  const inventoryCount = inStockItems.length;
   const recentVehicles = useMemo(() => {
-    const items = activeInventoryQuery.data?.items ?? [];
-    // Backend default order is created_at DESC, but sort defensively
-    // in case that changes.
-    return [...items]
+    // Backend default order is created_at DESC; sort defensively in case
+    // that changes. Use the same in-stock filter so the recent panel
+    // never surfaces a sold vehicle.
+    return [...inStockItems]
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 4);
-  }, [activeInventoryQuery.data]);
+  }, [inStockItems]);
   const recentOffers = useMemo(() => {
     const items = offersQuery.data?.items ?? [];
     return [...items]
@@ -297,7 +318,7 @@ function DashboardPageInner() {
   // sidebar with no content. Below, every dealer.* reference falls back to
   // a localized empty string so the layout always paints.
   const inventoryF = formatPrice(inventoryValue);
-  const inventoryReady = !activeInventoryQuery.isLoading;
+  const inventoryReady = !inventoryQuery.isLoading;
   const offersReady = !offersQuery.isLoading;
   const businessName = dealer?.business_name ?? "";
 
@@ -360,7 +381,7 @@ function DashboardPageInner() {
               </p>
               <p className="text-paper/80 mt-md text-sm">
                 <span className="font-tabular font-medium">{inventoryCount}</span>{" "}
-                {inventoryCount === 1 ? "רכב פעיל" : "רכבים פעילים"}
+                {inventoryCount === 1 ? "רכב במלאי" : "רכבים במלאי"}
               </p>
             </>
           ) : (
@@ -442,7 +463,7 @@ function RecentVehiclesCard({ items, ready }: { items: InventoryItem[]; ready: b
       {!ready ? (
         <RecentRowSkeleton count={4} />
       ) : items.length === 0 ? (
-        <EmptyCardMessage>אין עדיין רכבים פעילים במלאי.</EmptyCardMessage>
+        <EmptyCardMessage>אין עדיין רכבים במלאי.</EmptyCardMessage>
       ) : (
         <ul className="space-y-lg">
           {items.map((v) => {
