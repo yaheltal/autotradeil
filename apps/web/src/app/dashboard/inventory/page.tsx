@@ -533,7 +533,7 @@ function InventoryPageInner() {
               autoComplete="off"
               value={smartQuery}
               onChange={(e) => setSmartQuery(e.target.value)}
-              placeholder="חיפוש: BMW 2020, רכבים עד 50 אלף, או חיפוש חופשי"
+              placeholder="חפש יצרן, דגם, שנה, או טווח מחירים"
               className="pe-10"
               aria-busy={parsingSmart || undefined}
             />

@@ -1,62 +1,70 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronDown,
+  Search,
+  SlidersHorizontal,
+  TriangleAlert,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { BrandMark } from "@/components/BrandMark";
-import { DashboardSubNav } from "@/components/DashboardSubNav";
-import { FilterFABIcon, MobileFAB } from "@/components/MobileFAB";
-import { NotificationBell } from "@/components/NotificationBell";
+import { MarketplaceCard, type MarketplaceCardVehicle } from "@/components/MarketplaceCard";
 import { SearchableSelect } from "@/components/SearchableSelect";
-import { TrustBadge } from "@/components/TrustBadge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
 import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake } from "@/lib/car-data";
-import { formatMileage, formatPrice } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 
 /*
- * B2B marketplace search page.
+ * /dashboard/marketplace — editorial catalogue index.
  *
- * A11y plan (approved):
- *   - H1 "שוק סוחרים B2B" is focusable (tabIndex -1) and focused after
- *     first load so screen readers land on the page title.
- *   - Filters live inside a <section aria-labelledby="filters-heading">
- *     with an sr-only <h2>. Numeric range pairs use a <fieldset> with a
- *     visible <legend> and per-input labels.
- *   - Mobile collapse uses a <button aria-expanded aria-controls>
- *     toggle, NOT native <details> (more predictable SR behavior).
- *   - Results list wrapped in aria-busy during fetch; completion is
- *     announced once via a role=status region "נמצאו N רכבים" with a
- *     150ms debounce against rapid filter changes.
- *   - Each result card is an <article aria-labelledby="..."> with a
- *     bold H3 vehicle title; trust-tier badge has a text label.
- *   - Numeric values render with a visual + sr-only override to keep
- *     Hebrew SRs clean.
- *   - Pagination uses <nav aria-label="ניווט עמודים"> + aria-current.
+ *   שוק
+ *   ──────────
+ *   נמצאו 47 רכבים                ← dek (font-tabular)
+ *
+ *   [🔍 חיפוש: BMW עד 80,000…  ]
+ *   [≡ סינון מתקדם ▼]              ← collapsed by default
+ *   {active filter chips, if any}
+ *
+ *   ┌── card ── card ── card ──┐
+ *   │   ...3-col grid on lg     │
+ *   └──────────────────────────┘
+ *
+ *   [הקודם] עמוד 1 מתוך 5 [הבא]
+ *
+ * Smart-search drives 80% of queries; advanced filters live behind a
+ * toggle. The 320px sidebar pattern from the prior implementation was
+ * too heavy for an editorial direction. Cards live on hairlines, not
+ * shadows or thick borders. Whole card is a <Link>.
+ *
+ * TanStack filter-state machine preserved verbatim: `filters` is the
+ * draft, `appliedFilters` drives the query, submit commits.
  */
 
-type Result = {
-  id: string;
-  make: string;
-  model: string;
-  year: number;
-  mileage: number;
-  price: number;
-  b2b_price: number | null;
+type Result = MarketplaceCardVehicle & {
+  seller_dealer_id: string;
+  // re-stating the seller_* fields as required so the SearchResponse
+  // shape stays explicit even though MarketplaceCardVehicle types them
+  // optionally.
+  seller_business_name: string;
+  seller_city: string | null;
+  seller_tier: "bronze" | "silver" | "gold" | "platinum";
   color: string | null;
   transmission: "automatic" | "manual" | null;
   fuel_type: "petrol" | "diesel" | "electric" | "hybrid" | null;
   engine_volume: number | string | null;
-  seller_dealer_id: string;
-  seller_business_name: string;
-  seller_city: string | null;
-  seller_tier: "bronze" | "silver" | "gold" | "platinum";
-  primary_image_url: string | null;
   created_at: string;
-  is_own?: boolean;
 };
 
 type SearchResponse = {
@@ -100,14 +108,13 @@ export default function MarketplacePage() {
 
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   // Applied filters drive the query; the form's `filters` state is a
-  // draft that only commits on submit. Without this split, every
-  // dropdown change would refetch — undesirable when the dealer is
-  // refining a query.
+  // draft that only commits on submit. Without this split every input
+  // would refetch — undesirable when the dealer is refining a query.
   const [appliedFilters, setAppliedFilters] = useState<Filters>(EMPTY_FILTERS);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [resultsAnnouncement, setResultsAnnouncement] = useState<string>("");
-  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const h1Ref = useRef<HTMLHeadingElement>(null);
   const announceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -141,7 +148,6 @@ export default function MarketplacePage() {
 
   useEffect(() => {
     if (marketplaceQuery.error) {
-      // Generic message — never leak fetch / 5xx detail to dealers.
       setError("אירעה שגיאה, אנא נסה שוב מאוחר יותר");
     } else if (data) {
       setError(null);
@@ -165,25 +171,16 @@ export default function MarketplacePage() {
 
   const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
 
-  const onSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMobileFiltersOpen(false);
-    setPage(1);
-
-    // Smart-search: if the free-text box has content, route through
-    // Claude to extract structured filters, then merge them on top of
-    // any explicit filter the user already set in the dropdowns. The
-    // explicit dropdown values WIN — Claude only fills in gaps so we
-    // don't override an intentional choice.
+  const applyFilters = async () => {
     let next = filters;
     const q = filters.q.trim();
     if (q) {
       const parsed = await parseSmart(q);
       if (parsed) {
         const f = parsed.filters;
+        // Explicit dropdown values WIN — Claude only fills gaps.
         next = {
           ...filters,
-          // Keep the original q — backend can use it as substring fallback
           q: parsed.fallback_q ?? "",
           make: filters.make || f.make || "",
           model: filters.model || f.model || "",
@@ -202,505 +199,452 @@ export default function MarketplacePage() {
     setPage(1);
   };
 
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await applyFilters();
+  };
+
   const resetFilters = () => {
     setFilters(EMPTY_FILTERS);
     setAppliedFilters(EMPTY_FILTERS);
     setPage(1);
   };
 
-  if (!token) {
-    return (
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <p role="status" className="text-brand-ink/70 p-10">
-          טוען…
-        </p>
-      </main>
-    );
-  }
+  const hasAppliedFilter = !!(
+    appliedFilters.q ||
+    appliedFilters.make ||
+    appliedFilters.model ||
+    appliedFilters.year_min ||
+    appliedFilters.year_max ||
+    appliedFilters.price_min ||
+    appliedFilters.price_max ||
+    appliedFilters.mileage_max ||
+    appliedFilters.transmission ||
+    appliedFilters.fuel_type ||
+    appliedFilters.city
+  );
 
   const models = filters.make ? getModelsForMake(filters.make) : [];
 
   return (
-    <div className="bg-brand-cream text-brand-ink min-h-screen">
-      <header className="border-brand-navy/10 border-b bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-4">
-          <BrandMark />
-          <NotificationBell token={token} />
-        </div>
+    <main
+      id="main"
+      tabIndex={-1}
+      className="px-lg sm:px-2xl py-2xl mx-auto max-w-6xl focus:outline-none"
+    >
+      {/* ── MASTHEAD ──────────────────────────────────────────────────── */}
+      <header>
+        <h1
+          ref={h1Ref}
+          tabIndex={-1}
+          className="text-ink tracking-editorial font-serif text-4xl font-medium leading-tight focus:outline-none"
+        >
+          שוק
+        </h1>
+        <div aria-hidden="true" className="bg-hairline mt-lg h-px w-full" />
+        <p className="text-muted mt-lg font-tabular text-sm" role="status" aria-live="polite">
+          {!data ? (
+            <Skeleton className="inline-block h-4 w-32" />
+          ) : data.total === 0 ? (
+            "לא נמצאו רכבים"
+          ) : (
+            <>
+              נמצאו {data.total} רכבים
+              {hasAppliedFilter ? <span className="text-subtle"> · מסונן</span> : null}
+            </>
+          )}
+        </p>
+        {/* sr-only echo of the count for AT — debounced version preserved */}
+        {resultsAnnouncement ? (
+          <span role="status" aria-live="polite" className="sr-only" key={resultsAnnouncement}>
+            {resultsAnnouncement}
+          </span>
+        ) : null}
       </header>
 
-      <DashboardSubNav />
-
-      <main id="main" tabIndex={-1} className="focus:outline-none">
-        <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-          <h1
-            ref={h1Ref}
-            tabIndex={-1}
-            className="text-brand-navy text-3xl font-bold tracking-tight focus:outline-none"
-          >
-            שוק סוחרים B2B
-          </h1>
-          <p className="text-brand-ink/70 mt-2">רכבים שהוצעו לסחר בין סוחרים רשומים.</p>
-
-          {/* Results-count live region */}
-          {resultsAnnouncement ? (
-            <p role="status" aria-live="polite" className="sr-only" key={resultsAnnouncement}>
-              {resultsAnnouncement}
-            </p>
-          ) : null}
-
-          <div className="mt-6 grid gap-6 lg:grid-cols-[320px_1fr]">
-            {/* =====================================================
-                Filters
-                ===================================================== */}
-            <section aria-labelledby="filters-heading">
-              <h2 id="filters-heading" className="sr-only">
-                סינון חיפוש
-              </h2>
-
-              {/* Mobile toggle */}
-              <button
-                type="button"
-                onClick={() => setMobileFiltersOpen((v) => !v)}
-                aria-expanded={mobileFiltersOpen}
-                aria-controls="filters-panel"
-                className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 w-full items-center justify-between rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 lg:hidden"
-              >
-                <span>{mobileFiltersOpen ? "הסתר סינון" : "הצג סינון"}</span>
-                <span aria-hidden="true">{mobileFiltersOpen ? "▲" : "▼"}</span>
-              </button>
-
-              <form
-                id="filters-panel"
-                onSubmit={onSubmit}
-                className={[
-                  "border-brand-navy/10 mt-2 rounded-lg border bg-white p-4",
-                  mobileFiltersOpen ? "block" : "hidden",
-                  "lg:mt-0 lg:block",
-                ].join(" ")}
-              >
-                <div className="space-y-4">
-                  <div>
-                    <label htmlFor="f-q" className="text-brand-navy block text-sm font-medium">
-                      חיפוש חכם
-                      <span
-                        aria-hidden="true"
-                        title="חיפוש חופשי בעברית — Claude יזהה אוטומטית יצרן, מחיר, שנה, ק״מ"
-                        className="text-brand-gold ms-1.5 text-xs"
-                      >
-                        ✦
-                      </span>
-                    </label>
-                    <input
-                      id="f-q"
-                      type="search"
-                      autoComplete="off"
-                      value={filters.q}
-                      onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-                      placeholder='למשל: "BMW עד 80,000" או "סוזוקי 2020"'
-                      aria-describedby="f-q-hint"
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    />
-                    <p id="f-q-hint" className="text-brand-ink/55 mt-1 text-xs">
-                      ✦ ניתן להזין משפט בעברית — המערכת תחלץ אוטומטית פילטרים
-                    </p>
-                  </div>
-
-                  <SearchableSelect
-                    id="f-make"
-                    label="יצרן"
-                    value={filters.make}
-                    onChange={(v) => setFilters({ ...filters, make: v, model: "" })}
-                    options={["", ...CAR_MAKES]}
-                    placeholder="הכל"
-                  />
-
-                  <SearchableSelect
-                    id="f-model"
-                    label="דגם"
-                    value={filters.model}
-                    onChange={(v) => setFilters({ ...filters, model: v })}
-                    options={["", ...models]}
-                    placeholder={filters.make ? "הכל" : "בחר יצרן תחילה"}
-                    disabled={!filters.make}
-                    disabledHint="יש לבחור יצרן תחילה"
-                  />
-
-                  <fieldset className="border-0 p-0">
-                    <legend className="text-brand-navy text-sm font-medium">טווח שנים</legend>
-                    <div className="mt-2 flex gap-2">
-                      <div className="flex-1">
-                        <label htmlFor="f-year-min" className="sr-only">
-                          שנה מ-
-                        </label>
-                        <input
-                          id="f-year-min"
-                          type="text"
-                          inputMode="numeric"
-                          value={filters.year_min}
-                          onChange={(e) => setFilters({ ...filters, year_min: e.target.value })}
-                          placeholder="מ-"
-                          className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label htmlFor="f-year-max" className="sr-only">
-                          שנה עד
-                        </label>
-                        <input
-                          id="f-year-max"
-                          type="text"
-                          inputMode="numeric"
-                          value={filters.year_max}
-                          onChange={(e) => setFilters({ ...filters, year_max: e.target.value })}
-                          placeholder="עד"
-                          className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                        />
-                      </div>
-                    </div>
-                  </fieldset>
-
-                  <fieldset className="border-0 p-0">
-                    <legend className="text-brand-navy text-sm font-medium">טווח מחירים (₪)</legend>
-                    <div className="mt-2 flex gap-2">
-                      <div className="flex-1">
-                        <label htmlFor="f-price-min" className="sr-only">
-                          מחיר מ-
-                        </label>
-                        <input
-                          id="f-price-min"
-                          type="text"
-                          inputMode="numeric"
-                          value={filters.price_min}
-                          onChange={(e) => setFilters({ ...filters, price_min: e.target.value })}
-                          placeholder="מ-"
-                          className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <label htmlFor="f-price-max" className="sr-only">
-                          מחיר עד
-                        </label>
-                        <input
-                          id="f-price-max"
-                          type="text"
-                          inputMode="numeric"
-                          value={filters.price_max}
-                          onChange={(e) => setFilters({ ...filters, price_max: e.target.value })}
-                          placeholder="עד"
-                          className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                        />
-                      </div>
-                    </div>
-                  </fieldset>
-
-                  <div>
-                    <label
-                      htmlFor="f-mileage-max"
-                      className="text-brand-navy block text-sm font-medium"
-                    >
-                      ק&quot;מ מקסימלי
-                    </label>
-                    <input
-                      id="f-mileage-max"
-                      type="text"
-                      inputMode="numeric"
-                      value={filters.mileage_max}
-                      onChange={(e) => setFilters({ ...filters, mileage_max: e.target.value })}
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="f-transmission"
-                      className="text-brand-navy block text-sm font-medium"
-                    >
-                      תיבת הילוכים
-                    </label>
-                    <select
-                      id="f-transmission"
-                      dir="rtl"
-                      value={filters.transmission}
-                      onChange={(e) =>
-                        setFilters({
-                          ...filters,
-                          transmission: e.target.value as Filters["transmission"],
-                        })
-                      }
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    >
-                      <option value="">הכל</option>
-                      <option value="automatic">אוטומט</option>
-                      <option value="manual">ידני</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="f-fuel" className="text-brand-navy block text-sm font-medium">
-                      סוג דלק
-                    </label>
-                    <select
-                      id="f-fuel"
-                      dir="rtl"
-                      value={filters.fuel_type}
-                      onChange={(e) =>
-                        setFilters({
-                          ...filters,
-                          fuel_type: e.target.value as Filters["fuel_type"],
-                        })
-                      }
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    >
-                      <option value="">הכל</option>
-                      <option value="petrol">בנזין</option>
-                      <option value="diesel">דיזל</option>
-                      <option value="electric">חשמלי</option>
-                      <option value="hybrid">היברידי</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label htmlFor="f-city" className="text-brand-navy block text-sm font-medium">
-                      עיר
-                    </label>
-                    <input
-                      id="f-city"
-                      type="text"
-                      autoComplete="off"
-                      value={filters.city}
-                      onChange={(e) => setFilters({ ...filters, city: e.target.value })}
-                      className="border-brand-navy/20 text-brand-ink focus-visible:outline-brand-navy mt-2 block w-full rounded-md border bg-white px-3 py-2 text-base focus-visible:outline-2 focus-visible:outline-offset-2"
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-5 flex flex-col gap-2 sm:flex-row">
-                  <button
-                    type="submit"
-                    disabled={parsingSmart}
-                    aria-busy={parsingSmart || undefined}
-                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy inline-flex min-h-11 flex-1 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:cursor-wait disabled:opacity-70"
-                  >
-                    {parsingSmart ? "מנתח…" : "חפש"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetFilters}
-                    className="border-brand-navy/30 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center justify-center rounded-md border bg-white px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                  >
-                    נקה
-                  </button>
-                </div>
-              </form>
-            </section>
-
-            {/* =====================================================
-                Results
-                ===================================================== */}
-            <section aria-labelledby="results-heading">
-              <h2 id="results-heading" className="sr-only">
-                תוצאות חיפוש
-              </h2>
-
-              {error ? (
-                <p role="alert" className="bg-danger-bg text-danger-text rounded-md px-4 py-3">
-                  {error}
-                </p>
-              ) : null}
-
-              <div aria-busy={loading || undefined}>
-                {loading && !data ? (
-                  <ul className="grid gap-4 sm:grid-cols-2">
-                    {[0, 1, 2, 3].map((i) => (
-                      <li
-                        key={i}
-                        aria-hidden="true"
-                        className="border-brand-navy/10 rounded-lg border bg-white p-4"
-                      >
-                        <div className="bg-brand-navy/10 aspect-[16/9] w-full rounded-md motion-safe:animate-pulse" />
-                        <div className="bg-brand-navy/10 mt-3 h-5 w-2/3 rounded motion-safe:animate-pulse" />
-                        <div className="bg-brand-navy/10 mt-2 h-4 w-1/2 rounded motion-safe:animate-pulse" />
-                      </li>
-                    ))}
-                  </ul>
-                ) : data && data.items.length === 0 ? (
-                  // Two distinct empty cases — be explicit about which:
-                  //  • no filters set → there genuinely is no B2B inventory
-                  //    from other dealers right now (or you're the only
-                  //    dealer with B2B listings — the API self-excludes)
-                  //  • any filter set → your filter combination matched
-                  //    nothing; suggest broadening
-                  (() => {
-                    const hasAnyFilter = Boolean(
-                      filters.q ||
-                      filters.make ||
-                      filters.model ||
-                      filters.year_min ||
-                      filters.year_max ||
-                      filters.price_min ||
-                      filters.price_max ||
-                      filters.mileage_max ||
-                      filters.transmission ||
-                      filters.fuel_type ||
-                      filters.city,
-                    );
-                    return (
-                      <div className="border-brand-navy/10 mx-auto max-w-md rounded-lg border bg-white p-10 text-center">
-                        <p className="text-brand-navy text-base font-bold">
-                          {hasAnyFilter
-                            ? "לא נמצאו רכבים תואמים לסינון שלך"
-                            : "אין כרגע רכבים פעילים בשוק B2B"}
-                        </p>
-                        <p className="text-brand-ink/65 mt-2 text-sm leading-relaxed">
-                          {hasAnyFilter
-                            ? "נסה להרחיב את טווח השנים, המחיר או הק״מ — או לאפס את הסינון לקבלת רשימה מלאה."
-                            : "כשסוחרים נוספים יפרסמו רכבים לסחר בין-סוחרים, הם יופיעו כאן. הרכבים שלך עצמך אינם נכללים בשוק."}
-                        </p>
-                        {hasAnyFilter ? (
-                          <button
-                            type="button"
-                            onClick={resetFilters}
-                            className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy mt-5 inline-flex min-h-11 items-center justify-center rounded-md px-5 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-                          >
-                            איפוס סינון
-                          </button>
-                        ) : null}
-                      </div>
-                    );
-                  })()
-                ) : data ? (
-                  <>
-                    <ul className="grid gap-4 sm:grid-cols-2">
-                      {data.items.map((v) => (
-                        <ResultCard key={v.id} v={v} />
-                      ))}
-                    </ul>
-
-                    {data.pages > 1 ? (
-                      <nav aria-label="ניווט עמודים" className="mt-6 flex justify-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setPage((p) => Math.max(1, p - 1))}
-                          disabled={page <= 1}
-                          className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-                        >
-                          הקודם
-                        </button>
-                        <span className="text-brand-ink/70 inline-flex items-center px-3 text-sm">
-                          עמוד {page} מתוך {data.pages}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setPage((p) => Math.min(data.pages, p + 1))}
-                          disabled={page >= data.pages}
-                          className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy inline-flex min-h-11 items-center rounded-md border bg-white px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 disabled:opacity-50"
-                        >
-                          הבא
-                        </button>
-                      </nav>
-                    ) : null}
-                  </>
-                ) : null}
-              </div>
-            </section>
+      {/* ── TOOLBAR ───────────────────────────────────────────────────── */}
+      <form onSubmit={onSubmit} className="mt-3xl gap-md flex flex-col" role="search">
+        {/* Primary smart search */}
+        <div>
+          <Label htmlFor="mkt-search" className="sr-only">
+            חיפוש חכם בשוק
+          </Label>
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              className="text-muted pointer-events-none absolute end-3 top-1/2 h-4 w-4 -translate-y-1/2"
+            />
+            <Input
+              id="mkt-search"
+              type="search"
+              autoComplete="off"
+              value={filters.q}
+              onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+              placeholder="חפש יצרן, דגם, שנה, או טווח מחירים"
+              className="pe-10"
+              aria-busy={parsingSmart || undefined}
+            />
           </div>
         </div>
-      </main>
 
-      {/* Mobile FAB — opens the filters panel on phones where the
-          inline "הצג סינון" toggle is hidden under the results list. */}
-      <MobileFAB
-        label="פתח סינון"
-        icon={<FilterFABIcon />}
-        onClick={() => setMobileFiltersOpen(true)}
-      />
-    </div>
+        {/* Toggle + submit row */}
+        <div className="gap-sm flex flex-wrap items-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setAdvancedOpen((v) => !v)}
+            aria-expanded={advancedOpen}
+            aria-controls="advanced-filters-panel"
+          >
+            <SlidersHorizontal aria-hidden="true" />
+            <span>סינון מתקדם</span>
+            <ChevronDown
+              aria-hidden="true"
+              className={[
+                "duration-fast h-4 w-4 transition-transform",
+                advancedOpen ? "rotate-180" : "",
+              ].join(" ")}
+            />
+          </Button>
+          <Button type="submit" size="sm" disabled={parsingSmart}>
+            {parsingSmart ? "מנתח…" : "חפש"}
+          </Button>
+          {hasAppliedFilter ? (
+            <Button type="button" variant="link" size="sm" onClick={resetFilters}>
+              נקה הכל
+            </Button>
+          ) : null}
+        </div>
+
+        {/* Advanced filter panel (collapsed by default) */}
+        {advancedOpen ? (
+          <div
+            id="advanced-filters-panel"
+            className="border-hairline pt-lg gap-lg mt-sm grid grid-cols-1 border-t sm:grid-cols-2"
+          >
+            <SearchableSelect
+              id="f-make"
+              label="יצרן"
+              value={filters.make}
+              onChange={(v) => setFilters({ ...filters, make: v, model: "" })}
+              options={["", ...CAR_MAKES]}
+              placeholder="הכל"
+            />
+            <SearchableSelect
+              id="f-model"
+              label="דגם"
+              value={filters.model}
+              onChange={(v) => setFilters({ ...filters, model: v })}
+              options={["", ...models]}
+              placeholder={filters.make ? "הכל" : "בחר יצרן תחילה"}
+              disabled={!filters.make}
+              disabledHint="יש לבחור יצרן תחילה"
+            />
+
+            <fieldset className="space-y-xs">
+              <legend className="text-ink text-sm font-medium">טווח שנים</legend>
+              <div className="gap-sm flex">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={filters.year_min}
+                  onChange={(e) => setFilters({ ...filters, year_min: e.target.value })}
+                  placeholder="מ-"
+                  aria-label="שנה מ-"
+                />
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={filters.year_max}
+                  onChange={(e) => setFilters({ ...filters, year_max: e.target.value })}
+                  placeholder="עד"
+                  aria-label="שנה עד"
+                />
+              </div>
+            </fieldset>
+
+            <fieldset className="space-y-xs">
+              <legend className="text-ink text-sm font-medium">טווח מחירים (₪)</legend>
+              <div className="gap-sm flex">
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={filters.price_min}
+                  onChange={(e) => setFilters({ ...filters, price_min: e.target.value })}
+                  placeholder="מ-"
+                  aria-label="מחיר מ-"
+                />
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  value={filters.price_max}
+                  onChange={(e) => setFilters({ ...filters, price_max: e.target.value })}
+                  placeholder="עד"
+                  aria-label="מחיר עד"
+                />
+              </div>
+            </fieldset>
+
+            <div className="space-y-xs">
+              <Label htmlFor="f-mileage-max">ק&quot;מ מקסימלי</Label>
+              <Input
+                id="f-mileage-max"
+                type="text"
+                inputMode="numeric"
+                value={filters.mileage_max}
+                onChange={(e) => setFilters({ ...filters, mileage_max: e.target.value })}
+              />
+            </div>
+
+            <div className="space-y-xs">
+              <Label htmlFor="f-transmission">תיבת הילוכים</Label>
+              <select
+                id="f-transmission"
+                dir="rtl"
+                value={filters.transmission}
+                onChange={(e) =>
+                  setFilters({
+                    ...filters,
+                    transmission: e.target.value as Filters["transmission"],
+                  })
+                }
+                className="border-input text-ink bg-paper focus-visible:outline-accent block h-10 w-full rounded-md border px-3 py-2 text-base focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 md:text-sm"
+              >
+                <option value="">הכל</option>
+                <option value="automatic">אוטומט</option>
+                <option value="manual">ידני</option>
+              </select>
+            </div>
+
+            <div className="space-y-xs">
+              <Label htmlFor="f-fuel">סוג דלק</Label>
+              <select
+                id="f-fuel"
+                dir="rtl"
+                value={filters.fuel_type}
+                onChange={(e) =>
+                  setFilters({ ...filters, fuel_type: e.target.value as Filters["fuel_type"] })
+                }
+                className="border-input text-ink bg-paper focus-visible:outline-accent block h-10 w-full rounded-md border px-3 py-2 text-base focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 md:text-sm"
+              >
+                <option value="">הכל</option>
+                <option value="petrol">בנזין</option>
+                <option value="diesel">דיזל</option>
+                <option value="electric">חשמלי</option>
+                <option value="hybrid">היברידי</option>
+              </select>
+            </div>
+
+            <div className="space-y-xs sm:col-span-2">
+              <Label htmlFor="f-city">עיר</Label>
+              <Input
+                id="f-city"
+                type="text"
+                autoComplete="off"
+                value={filters.city}
+                onChange={(e) => setFilters({ ...filters, city: e.target.value })}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        {/* Active filter chips */}
+        {hasAppliedFilter ? (
+          <div className="gap-xs flex flex-wrap items-center">
+            <span className="text-muted text-xs">מסונן:</span>
+            {appliedFilters.make ? (
+              <FilterChip onClear={() => setAppliedFilters((f) => ({ ...f, make: "", model: "" }))}>
+                {appliedFilters.make}
+              </FilterChip>
+            ) : null}
+            {appliedFilters.model ? (
+              <FilterChip onClear={() => setAppliedFilters((f) => ({ ...f, model: "" }))}>
+                {appliedFilters.model}
+              </FilterChip>
+            ) : null}
+            {appliedFilters.year_min || appliedFilters.year_max ? (
+              <FilterChip
+                onClear={() => setAppliedFilters((f) => ({ ...f, year_min: "", year_max: "" }))}
+              >
+                {appliedFilters.year_min || "?"}–{appliedFilters.year_max || "?"}
+              </FilterChip>
+            ) : null}
+            {appliedFilters.price_min || appliedFilters.price_max ? (
+              <FilterChip
+                onClear={() => setAppliedFilters((f) => ({ ...f, price_min: "", price_max: "" }))}
+              >
+                ₪{Number(appliedFilters.price_min || 0).toLocaleString("he-IL")}
+                {appliedFilters.price_max
+                  ? `–${Number(appliedFilters.price_max).toLocaleString("he-IL")}`
+                  : "+"}
+              </FilterChip>
+            ) : null}
+            {appliedFilters.mileage_max ? (
+              <FilterChip onClear={() => setAppliedFilters((f) => ({ ...f, mileage_max: "" }))}>
+                עד {Number(appliedFilters.mileage_max).toLocaleString("he-IL")} ק&quot;מ
+              </FilterChip>
+            ) : null}
+            {appliedFilters.transmission ? (
+              <FilterChip onClear={() => setAppliedFilters((f) => ({ ...f, transmission: "" }))}>
+                {appliedFilters.transmission === "automatic" ? "אוטומט" : "ידני"}
+              </FilterChip>
+            ) : null}
+            {appliedFilters.fuel_type ? (
+              <FilterChip onClear={() => setAppliedFilters((f) => ({ ...f, fuel_type: "" }))}>
+                {appliedFilters.fuel_type}
+              </FilterChip>
+            ) : null}
+            {appliedFilters.city ? (
+              <FilterChip onClear={() => setAppliedFilters((f) => ({ ...f, city: "" }))}>
+                {appliedFilters.city}
+              </FilterChip>
+            ) : null}
+            {appliedFilters.q ? (
+              <FilterChip onClear={() => setAppliedFilters((f) => ({ ...f, q: "" }))}>
+                ״{appliedFilters.q}״
+              </FilterChip>
+            ) : null}
+          </div>
+        ) : null}
+      </form>
+
+      {/* ── ERROR ─────────────────────────────────────────────────────── */}
+      {error ? (
+        <Alert variant="destructive" className="mt-xl">
+          <TriangleAlert aria-hidden="true" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {/* ── RESULTS ───────────────────────────────────────────────────── */}
+      <section aria-labelledby="results-heading" className="mt-2xl">
+        <h2 id="results-heading" className="sr-only">
+          תוצאות חיפוש
+        </h2>
+
+        <div aria-busy={loading || undefined}>
+          {loading && !data ? (
+            <ResultsSkeleton />
+          ) : data && data.items.length === 0 ? (
+            <EmptyResults hasFilter={hasAppliedFilter} onReset={resetFilters} />
+          ) : data ? (
+            <>
+              <ul className="gap-md grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+                {data.items.map((v) => (
+                  <MarketplaceCard key={v.id} vehicle={v} />
+                ))}
+              </ul>
+
+              {data.pages > 1 ? (
+                <nav
+                  aria-label="ניווט עמודים"
+                  className="mt-2xl gap-sm flex items-center justify-center"
+                >
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1}
+                  >
+                    <ArrowRight aria-hidden="true" />
+                    הקודם
+                  </Button>
+                  <span className="text-muted font-tabular px-md text-sm">
+                    עמוד {page} מתוך {data.pages}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage((p) => Math.min(data.pages, p + 1))}
+                    disabled={page >= data.pages}
+                  >
+                    הבא
+                    <ArrowLeft aria-hidden="true" />
+                  </Button>
+                </nav>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+      </section>
+    </main>
   );
 }
 
-function ResultCard({ v }: { v: Result }) {
-  const titleId = `mkt-${v.id}-title`;
-  const priceF = formatPrice(v.b2b_price ?? v.price);
-  const mileageF = formatMileage(v.mileage);
-  const fullLabel = `${v.make} ${v.model} שנת ${v.year}`;
+// ============================================================================
+// FilterChip — dismissible chip for active filter values.
+// ============================================================================
 
+function FilterChip({ children, onClear }: { children: React.ReactNode; onClear: () => void }) {
   return (
-    <li
-      className={[
-        "overflow-hidden rounded-lg border bg-white",
-        v.is_own ? "border-ok ring-ok/30 ring-2" : "border-brand-navy/10",
-      ].join(" ")}
+    <Badge variant="outline" className="gap-xxs h-7 pe-1 ps-2 text-xs font-normal">
+      <span>{children}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        aria-label="הסר סינון"
+        className="text-muted duration-fast hover:text-ink inline-flex h-5 w-5 items-center justify-center rounded-sm transition-colors"
+      >
+        <X className="h-3 w-3" aria-hidden="true" />
+      </button>
+    </Badge>
+  );
+}
+
+// ============================================================================
+// ResultsSkeleton — mirrors the card grid while loading.
+// ============================================================================
+
+function ResultsSkeleton() {
+  return (
+    <ul
+      className="gap-md grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
+      role="status"
+      aria-live="polite"
     >
-      <article aria-labelledby={titleId}>
-        <div className="bg-brand-navy/5 relative aspect-[16/9] w-full">
-          {v.primary_image_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={v.primary_image_url}
-              alt={`תמונת ${fullLabel}`}
-              loading="lazy"
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <div
-              aria-hidden="true"
-              className="text-brand-ink/30 flex h-full w-full items-center justify-center text-4xl"
-            >
-              🚗
-            </div>
-          )}
-          {v.is_own ? (
-            <span className="bg-ok absolute end-2 top-2 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold text-white shadow">
-              <span aria-hidden="true" className="me-1">
-                ★
-              </span>
-              הרכב שלך
-            </span>
-          ) : null}
-        </div>
+      <span className="sr-only">טוען רכבים…</span>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <li
+          key={i}
+          aria-hidden="true"
+          className="border-hairline bg-paper overflow-hidden rounded-md border"
+        >
+          <Skeleton className="aspect-[16/9] w-full rounded-none" />
+          <div className="px-md py-md space-y-xs">
+            <Skeleton className="h-5 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+            <Skeleton className="my-md h-px w-full" />
+            <Skeleton className="h-5 w-1/3" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
-        <div className="p-4">
-          <h3 id={titleId} className="text-brand-navy text-lg font-bold">
-            {v.make} {v.model} · {v.year}
-          </h3>
+// ============================================================================
+// EmptyResults — two distinct empty states (no filter vs filter mismatch).
+// ============================================================================
 
-          <dl className="mt-3 space-y-1.5 text-sm">
-            <div className="flex items-baseline justify-between gap-2">
-              <dt className="text-brand-ink/60">מחיר</dt>
-              <dd className="text-brand-navy font-bold">
-                <span aria-hidden="true">{priceF.visual}</span>
-                <span className="sr-only">{priceF.sr}</span>
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-2">
-              <dt className="text-brand-ink/60">קילומטראז׳</dt>
-              <dd>
-                <span aria-hidden="true">{mileageF.visual}</span>
-                <span className="sr-only">{mileageF.sr}</span>
-              </dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-2">
-              <dt className="text-brand-ink/60">סוחר</dt>
-              <dd className="text-brand-ink flex flex-wrap items-center gap-2 text-end">
-                <span>
-                  {v.seller_business_name}
-                  {v.seller_city ? ` · ${v.seller_city}` : ""}
-                </span>
-                <TrustBadge tier={v.seller_tier} compact />
-              </dd>
-            </div>
-          </dl>
-
-          <Link
-            href={`/dashboard/marketplace/${v.id}`}
-            aria-label={`פרטים נוספים על ${fullLabel}`}
-            className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            פרטים נוספים
-          </Link>
-        </div>
-      </article>
-    </li>
+function EmptyResults({ hasFilter, onReset }: { hasFilter: boolean; onReset: () => void }) {
+  return (
+    <div className="py-3xl text-center">
+      <p className="text-ink font-serif text-lg font-medium">
+        {hasFilter ? "לא נמצאו רכבים תואמים לסינון שלך" : "אין כרגע רכבים פעילים בשוק B2B"}
+      </p>
+      <p className="text-muted mt-sm mx-auto max-w-md text-sm leading-relaxed">
+        {hasFilter
+          ? "נסה להרחיב את טווח השנים, המחיר או הק״מ — או לאפס את הסינון לקבלת רשימה מלאה."
+          : "כשסוחרים נוספים יפרסמו רכבים לסחר בין-סוחרים, הם יופיעו כאן. הרכבים שלך עצמך אינם נכללים בשוק."}
+      </p>
+      {hasFilter ? (
+        <Button type="button" variant="outline" onClick={onReset} className="mt-xl">
+          איפוס סינון
+        </Button>
+      ) : null}
+    </div>
   );
 }
