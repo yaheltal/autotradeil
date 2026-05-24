@@ -1,11 +1,13 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * Make-offer dialog for the marketplace vehicle detail page.
@@ -38,9 +40,9 @@ export function MakeOfferDialog({
   askingPrice,
   onSubmitted,
 }: Props) {
+  const qc = useQueryClient();
   const [price, setPrice] = useState("");
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,6 +55,22 @@ export function MakeOfferDialog({
 
   const askingF = formatPrice(askingPrice);
 
+  const submitMutation = useMutation({
+    mutationFn: ({ offered_price, msg }: { offered_price: number; msg: string | null }) =>
+      apiFetch(`/api/v1/marketplace/vehicles/${inventoryId}/offers`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ offered_price, message: msg }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      onSubmitted();
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "שגיאה בשליחת ההצעה"),
+  });
+  const busy = submitMutation.isPending;
+
   const submit = async () => {
     const n = parseInt(price.replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n <= 0) {
@@ -63,24 +81,8 @@ export function MakeOfferDialog({
       setError("הודעה ארוכה מדי (מקסימום 2000 תווים)");
       return;
     }
-    setBusy(true);
     setError(null);
-    try {
-      await apiFetch(`/api/v1/marketplace/vehicles/${inventoryId}/offers`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({
-          offered_price: n,
-          message: message.trim() || null,
-        }),
-      });
-      onSubmitted();
-      onOpenChange(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בשליחת ההצעה");
-    } finally {
-      setBusy(false);
-    }
+    await submitMutation.mutateAsync({ offered_price: n, msg: message.trim() || null });
   };
 
   return (

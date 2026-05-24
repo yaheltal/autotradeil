@@ -1,11 +1,13 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { DialogCloseButton } from "@/components/DialogCloseButton";
 import { apiFetch } from "@/lib/api";
 import { formatPrice } from "@/lib/format";
+import { queryKeys } from "@/lib/query-keys";
 
 /**
  * Counter-offer dialog. Used from both the "offers received" list (seller
@@ -41,9 +43,9 @@ export function CounterOfferDialog({
   originalSideLabel,
   onSubmitted,
 }: Props) {
+  const qc = useQueryClient();
   const [price, setPrice] = useState("");
   const [message, setMessage] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -56,6 +58,28 @@ export function CounterOfferDialog({
 
   const originalF = formatPrice(originalPrice);
 
+  const submitMutation = useMutation({
+    mutationFn: ({
+      counter_price,
+      counter_message,
+    }: {
+      counter_price: number;
+      counter_message: string | null;
+    }) =>
+      apiFetch(`/api/v1/marketplace/offers/${offerId}/counter`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ counter_price, counter_message }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      onSubmitted();
+      onOpenChange(false);
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : "שגיאה בשליחת ההצעה"),
+  });
+  const busy = submitMutation.isPending;
+
   const submit = async () => {
     const n = parseInt(price.replace(/[^\d]/g, ""), 10);
     if (!Number.isFinite(n) || n <= 0) {
@@ -66,24 +90,11 @@ export function CounterOfferDialog({
       setError("הודעה ארוכה מדי (מקסימום 2000 תווים)");
       return;
     }
-    setBusy(true);
     setError(null);
-    try {
-      await apiFetch(`/api/v1/marketplace/offers/${offerId}/counter`, {
-        method: "POST",
-        token,
-        body: JSON.stringify({
-          counter_price: n,
-          counter_message: message.trim() || null,
-        }),
-      });
-      onSubmitted();
-      onOpenChange(false);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בשליחת ההצעה");
-    } finally {
-      setBusy(false);
-    }
+    await submitMutation.mutateAsync({
+      counter_price: n,
+      counter_message: message.trim() || null,
+    });
   };
 
   return (

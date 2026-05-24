@@ -1,8 +1,10 @@
 "use client";
 
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 
 /*
  * Notification-preferences fieldset (Phase 4.4 Step 7).
@@ -27,9 +29,8 @@ type Props = {
 
 export function NotificationPrefs({ token, initial }: Props) {
   const [prefs, setPrefs] = useState<Prefs>(initial);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState("");
+  const qc = useQueryClient();
 
   useEffect(() => {
     if (!toast) return;
@@ -42,22 +43,26 @@ export function NotificationPrefs({ token, initial }: Props) {
     prefs.notification_deals !== initial.notification_deals ||
     prefs.notification_updates !== initial.notification_updates;
 
-  const save = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFetch("/api/v1/dealers/me", {
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      apiFetch("/api/v1/dealers/me", {
         method: "PATCH",
         token,
         body: JSON.stringify(prefs),
-      });
+      }),
+    onSuccess: () => {
       setToast("ההעדפות נשמרו");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "שגיאה בשמירה");
-    } finally {
-      setBusy(false);
-    }
-  };
+      void qc.invalidateQueries({ queryKey: queryKeys.dealer.me() });
+    },
+  });
+  const busy = saveMutation.isPending;
+  const error =
+    saveMutation.error instanceof Error
+      ? saveMutation.error.message
+      : saveMutation.error
+        ? "שגיאה בשמירה"
+        : null;
+  const save = () => saveMutation.mutate();
 
   return (
     <section

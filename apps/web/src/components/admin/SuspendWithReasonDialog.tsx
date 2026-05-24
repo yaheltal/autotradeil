@@ -1,6 +1,7 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -45,16 +46,23 @@ export function SuspendWithReasonDialog({
   token,
   onSuspended,
 }: Props) {
-  const [reasons, setReasons] = useState<ReasonTemplate[]>([]);
+  const qc = useQueryClient();
   const [picked, setPicked] = useState<string>("");
   const [otherText, setOtherText] = useState("");
   const [saveAsTemplate, setSaveAsTemplate] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const errorRef = useRef<HTMLParagraphElement>(null);
   const fieldsetRef = useRef<HTMLFieldSetElement>(null);
+
+  const reasonsQuery = useQuery({
+    queryKey: ["admin", "suspension-reasons", "suspend"] as const,
+    queryFn: () =>
+      apiFetch<ReasonTemplate[]>("/api/v1/admin/suspension-reasons?kind=suspend", { token }),
+    enabled: open,
+  });
+  const reasons = reasonsQuery.data ?? [];
 
   useEffect(() => {
     if (open) {
@@ -63,13 +71,10 @@ export function SuspendWithReasonDialog({
       setSaveAsTemplate(false);
       setAdminPassword("");
       setError(null);
-      void apiFetch<ReasonTemplate[]>("/api/v1/admin/suspension-reasons?kind=suspend", { token })
-        .then(setReasons)
-        .catch(() => setReasons([]));
       // Initial focus: reason fieldset (NOT the destructive button).
       queueMicrotask(() => fieldsetRef.current?.focus());
     }
-  }, [open, token]);
+  }, [open]);
 
   useEffect(() => {
     if (error) errorRef.current?.focus();
@@ -77,15 +82,10 @@ export function SuspendWithReasonDialog({
 
   const finalReason =
     picked === OTHER ? otherText.trim() : (reasons.find((r) => r.id === picked)?.text_he ?? "");
-  const canSubmit = finalReason.length > 0 && adminPassword.length > 0 && !busy;
 
-  const submit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!canSubmit) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await apiFetch(`/api/v1/admin/dealers/${dealerId}/suspend`, {
+  const suspendMutation = useMutation({
+    mutationFn: () =>
+      apiFetch(`/api/v1/admin/dealers/${dealerId}/suspend`, {
         method: "POST",
         token,
         body: JSON.stringify({
@@ -93,25 +93,30 @@ export function SuspendWithReasonDialog({
           reason: finalReason,
           admin_password: adminPassword,
         }),
-      });
+      }),
+    onSuccess: () => {
       // If admin chose "אחר" + asked to save as template, fire-and-forget.
       if (picked === OTHER && saveAsTemplate && otherText.trim()) {
         void apiFetch("/api/v1/admin/suspension-reasons", {
           method: "POST",
           token,
-          body: JSON.stringify({
-            text_he: otherText.trim(),
-            kind: "suspend",
-          }),
+          body: JSON.stringify({ text_he: otherText.trim(), kind: "suspend" }),
         }).catch(() => {});
       }
+      void qc.invalidateQueries({ queryKey: ["admin", "dealers"] });
       onSuspended();
       onOpenChange(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "שגיאה בהשעיה");
-    } finally {
-      setBusy(false);
-    }
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "שגיאה בהשעיה"),
+  });
+  const busy = suspendMutation.isPending;
+  const canSubmit = finalReason.length > 0 && adminPassword.length > 0 && !busy;
+
+  const submit = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setError(null);
+    await suspendMutation.mutateAsync();
   };
 
   return (
