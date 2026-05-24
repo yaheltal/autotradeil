@@ -63,16 +63,20 @@
     text-rendering: optimizeLegibility;
   }
 
-  /* Headings inherit the serif stack (Fraunces + Frank Ruhl Libre) by
-   * default. Component code can still override with `font-sans` when an
-   * editorial heading would feel wrong (e.g., inside a chip). */
+  /* Headings inherit the Frank Ruhl Libre serif stack by default. The
+   * face covers Hebrew + Latin so a single font handles every heading
+   * regardless of script. Component code can still override with
+   * `font-sans` when an editorial heading would feel wrong (e.g., inside
+   * a chip).
+   *
+   * Frank Ruhl Libre exposes the standard `liga` ligatures and pulls
+   * fractions/superscripts/numerators via `tnum` when used alongside our
+   * `font-tabular` utility — no editorial-alternate feature flag needed. */
   h1,
   h2,
   h3 {
-    font-family:
-      var(--font-fraunces), var(--font-frank-ruhl), "Frank Ruhl Libre", ui-serif, Georgia, serif;
+    font-family: var(--font-frank-ruhl), "Frank Ruhl Libre", ui-serif, Georgia, serif;
     letter-spacing: -0.025em;
-    font-feature-settings: "ss01", "ss02"; /* Fraunces editorial alternates */
   }
 }
 

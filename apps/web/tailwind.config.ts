@@ -51,18 +51,11 @@ const config: Config = {
           "Segoe UI",
           "sans-serif",
         ],
-        // Editorial — Fraunces for Latin headings; Frank Ruhl Libre takes
-        // over for Hebrew code points (its native script) inside the same
-        // stack. The CSS-level unicode-range on Frank Ruhl Libre is set in
-        // layout.tsx so the swap is automatic per character.
-        serif: [
-          "var(--font-fraunces)",
-          "var(--font-frank-ruhl)",
-          '"Frank Ruhl Libre"',
-          "ui-serif",
-          "Georgia",
-          "serif",
-        ],
+        // Editorial — Frank Ruhl Libre for every heading (Hebrew + Latin).
+        // Single editorial face; no separate Latin display font (Fraunces
+        // dropped — the site is Hebrew-first and the pairing was
+        // over-engineering for negligible polish gain).
+        serif: ["var(--font-frank-ruhl)", '"Frank Ruhl Libre"', "ui-serif", "Georgia", "serif"],
         // Monospace — system stack only. Never a fourth web font (per CLAUDE.md §4).
         mono: [
           "ui-monospace",

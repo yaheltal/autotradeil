@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Frank_Ruhl_Libre, Fraunces, Inter } from "next/font/google";
+import { Frank_Ruhl_Libre, Inter } from "next/font/google";
 
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
@@ -9,33 +9,18 @@ import "./globals.css";
 /**
  * Typography stack — locked per CLAUDE.md §4.
  *
- *   Inter (body)            → all paragraph + UI copy, Latin + Hebrew.
- *   Fraunces (display)      → editorial Latin headings; the one font
- *                             with visible personality on the page.
- *   Frank Ruhl Libre (he)   → Hebrew heading fallback inside the same
- *                             `font-serif` stack. Fraunces has no Hebrew
- *                             subset, so without Frank Ruhl, RTL pages
- *                             would render headings in the system fallback.
+ *   Inter (body)        → all paragraph + UI copy, Latin + Hebrew.
+ *   Frank Ruhl Libre    → all headings (Hebrew + Latin). Single editorial
+ *                         face — the site is Hebrew-first so a separate
+ *                         Latin display font (Fraunces, previously paired)
+ *                         was over-engineering for negligible polish gain.
  *
- * No fourth font, ever. Monospace lives in the system stack only.
+ * No third font, ever. Monospace lives in the system stack only.
  */
 const inter = Inter({
   subsets: ["latin", "latin-ext"],
   variable: "--font-inter",
   display: "swap",
-});
-
-const fraunces = Fraunces({
-  subsets: ["latin"],
-  variable: "--font-fraunces",
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-  // NOTE: We previously declared `axes: ["opsz", "SOFT", "WONK"]` to pull
-  // Fraunces' optical-sizing axis. next/font rejects that combo because the
-  // explicit `weight` array forces a static fetch, and `axes` is only honored
-  // when the font is loaded as a true variable. The discrete weights below
-  // still give us Fraunces' editorial feel; if we ever want the full
-  // variable axis playground we drop the `weight` array entirely.
 });
 
 const frankRuhl = Frank_Ruhl_Libre({
@@ -169,7 +154,7 @@ export default function RootLayout({
         ) : null}
       </head>
       <body
-        className={`${inter.variable} ${fraunces.variable} ${frankRuhl.variable} bg-paper text-ink font-sans antialiased`}
+        className={`${inter.variable} ${frankRuhl.variable} bg-paper text-ink font-sans antialiased`}
       >
         {/* Skip link — paper bg, ink text, accent ring. */}
         <a
