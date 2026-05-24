@@ -1,9 +1,12 @@
+import { ArrowLeft, Check } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 
 import { LandingNav } from "@/components/LandingNav";
 import { StackedFeatureCards } from "@/components/landing/StackedFeatureCards";
 import { RenderKeepAlive } from "@/components/RenderKeepAlive";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 /*
  * AutoTradeIL — landing page (premium B2B trading infrastructure).
@@ -36,10 +39,10 @@ import { RenderKeepAlive } from "@/components/RenderKeepAlive";
  *     AT skips them from tab order.
  *
  * Contrast (audited):
- *   text-brand-navy on bg-brand-cream    → 15.9:1 (AAA)
- *   text-brand-cream on bg-brand-navy    → 15.9:1 (AAA)
- *   text-brand-gold on bg-brand-navy     →  7.6:1 (AAA)
- *   bg-brand-gold + text-brand-navy      → 11.4:1 (AAA)
+ *   text-ink on bg-paper    → 15.9:1 (AAA)
+ *   text-paper on bg-ink    → 15.9:1 (AAA)
+ *   text-accent on bg-ink     →  7.6:1 (AAA)
+ *   bg-accent + text-ink      → 11.4:1 (AAA)
  */
 
 // ============================================================================
@@ -328,34 +331,26 @@ const securityPillars: Array<{ icon: SecurityKey; title: string; body: string }>
   },
 ];
 
-const tiers: Array<{
-  name: string;
-  hue: string;
-  text: string;
-  benefits: string[];
-}> = [
+// Trust tiers — uniform border-hairline cards on paper. The
+// differentiator is typography (the rank number + tier name in
+// Frank Ruhl), not a tinted background. The original tier-tinted
+// hues (amber-700/15, slate-300/30, amber-300/30, ink/10) were
+// the only non-locked colors on the entire page.
+const tiers: Array<{ name: string; benefits: string[] }> = [
   {
     name: "Bronze",
-    hue: "bg-amber-700/15 border-amber-700/40",
-    text: "text-amber-800",
     benefits: ["סוחר חדש מאומת", "גישה מלאה לשוק B2B", "5 העלאות תמונה לרכב"],
   },
   {
     name: "Silver",
-    hue: "bg-slate-300/30 border-slate-400/50",
-    text: "text-slate-700",
     benefits: ["10+ עסקאות סגורות", "10 העלאות תמונה לרכב", "סדר עדיפות בפניות תמיכה"],
   },
   {
     name: "Gold",
-    hue: "bg-amber-300/30 border-amber-500/50",
-    text: "text-amber-900",
     benefits: ["50+ עסקאות סגורות", "Priority Listing במרקטפלייס", "ניתוח שוק מורחב"],
   },
   {
     name: "Platinum",
-    hue: "bg-brand-navy/10 border-brand-navy/40",
-    text: "text-brand-navy",
     benefits: ["100+ עסקאות סגורות", "תג Platinum מובלט בכל מודעה", "Account Manager אישי"],
   },
 ];
@@ -397,7 +392,7 @@ export default function Home() {
             aria-hidden="true"
             className="pointer-events-none absolute end-0 top-0 h-24 w-1.5 overflow-hidden sm:h-32"
           >
-            <div className="bg-brand-gold absolute inset-0" />
+            <div className="bg-accent absolute inset-0" />
             <div className="absolute inset-0 bg-gradient-to-b from-transparent via-white/60 to-transparent motion-safe:animate-[shine_3.5s_ease-in-out_infinite]" />
           </div>
 
@@ -406,58 +401,54 @@ export default function Home() {
                 prominently above the H1. Tracking widened so the
                 Hebrew line breathes; pulse dot keeps the "live" feel
                 from the previous chip. */}
-            <span className="border-brand-navy/15 bg-brand-cream/70 text-brand-navy inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold tracking-wide backdrop-blur sm:text-sm">
+            <span className="border-hairline bg-paper/70 text-ink inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold tracking-wide backdrop-blur sm:text-sm">
               <span
                 aria-hidden="true"
-                className="bg-brand-gold inline-flex h-2 w-2 shrink-0 rounded-full motion-safe:animate-pulse"
+                className="bg-accent inline-flex h-2 w-2 shrink-0 rounded-full motion-safe:animate-pulse"
               />
               <span>זירת מסחר הרכב של ישראל</span>
             </span>
 
             <h1
               id="hero-heading"
-              className="text-brand-navy mt-5 text-balance font-serif text-[2.5rem] font-bold leading-[1.05] tracking-tight sm:mt-7 sm:text-6xl lg:text-7xl"
+              className="text-ink mt-5 text-balance font-serif text-[2.5rem] font-bold leading-[1.05] tracking-tight sm:mt-7 sm:text-6xl lg:text-7xl"
             >
               <span className="block">זירת המסחר</span>
-              <span className="text-brand-navy/90 block">
-                של סוחרי<span className="text-brand-gold"> · </span>הרכב.
+              <span className="text-ink/90 block">
+                של סוחרי<span className="text-accent"> · </span>הרכב.
               </span>
             </h1>
 
-            <p className="text-brand-ink/80 mx-auto mt-5 max-w-2xl text-balance text-[15px] leading-relaxed sm:mt-7 sm:text-xl">
+            <p className="text-muted mx-auto mt-5 max-w-2xl text-balance text-[15px] leading-relaxed sm:mt-7 sm:text-xl">
               פלטפורמה מקצועית למסחר ברכבים בין סוחרים מוסמכים — מלאי משותף, הצעות מתועדות, וזירה
               אחת לכל מחזור החיים של העסקה.
             </p>
 
-            <div className="mt-7 flex flex-col items-stretch justify-center gap-3 sm:mt-10 sm:flex-row">
-              <Link
-                href="/signup/dealer"
-                className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/15 group inline-flex min-h-[56px] w-full items-center justify-center gap-2 rounded-lg px-5 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:w-auto sm:px-7 sm:text-lg"
-              >
-                <span>אני סוחר — הצטרפות</span>
-                <span
-                  aria-hidden="true"
-                  className="transition-transform group-hover:-translate-x-1"
-                >
-                  ←
-                </span>
-              </Link>
+            <div className="gap-sm mt-xl sm:mt-2xl flex flex-col items-stretch justify-center sm:flex-row">
+              <Button asChild size="lg" className="group">
+                <Link href="/signup/dealer">
+                  <span>אני סוחר — הצטרפות</span>
+                  <ArrowLeft
+                    aria-hidden="true"
+                    className="duration-fast transition-transform group-hover:-translate-x-0.5"
+                  />
+                </Link>
+              </Button>
 
-              <button
+              <Button
                 type="button"
+                size="lg"
+                variant="outline"
                 disabled
                 title="ממש ממש עוד מעט, סבלנות"
                 aria-describedby="buyer-cta-hint"
-                className="bg-brand-navy/5 text-brand-navy/60 border-brand-navy/10 inline-flex min-h-[56px] w-full cursor-not-allowed items-center justify-center gap-2.5 rounded-lg border px-5 py-3.5 text-base font-semibold sm:w-auto sm:px-7 sm:text-lg"
+                className="gap-sm"
               >
                 <span>אני קונה</span>
-                <span
-                  aria-hidden="true"
-                  className="bg-brand-navy/10 text-brand-navy/70 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold tracking-wide"
-                >
+                <Badge variant="outline" className="font-normal">
                   בקרוב
-                </span>
-              </button>
+                </Badge>
+              </Button>
               <span id="buyer-cta-hint" className="sr-only">
                 ממש ממש עוד מעט, סבלנות. השוק לקונים פרטיים נפתח בקרוב.
               </span>
@@ -469,20 +460,15 @@ export default function Home() {
                 under the CTAs. */}
             <ul
               aria-label="הבטחות הפלטפורמה"
-              className="text-brand-ink/70 mx-auto mt-7 grid max-w-md grid-cols-3 items-start gap-2 text-[11px] font-medium sm:mt-9 sm:flex sm:max-w-none sm:flex-wrap sm:justify-center sm:gap-x-5 sm:gap-y-2 sm:text-sm"
+              className="text-muted mx-auto mt-7 grid max-w-md grid-cols-3 items-start gap-2 text-[11px] font-medium sm:mt-9 sm:flex sm:max-w-none sm:flex-wrap sm:justify-center sm:gap-x-5 sm:gap-y-2 sm:text-sm"
             >
               {["ללא עמלת רישום", "אישור סוחר תוך 24 שעות", "אימות KYC חכם בעזרת AI"].map(
                 (line) => (
                   <li
                     key={line}
-                    className="inline-flex items-start justify-center gap-1.5 leading-snug"
+                    className="gap-xxs inline-flex items-start justify-center leading-snug"
                   >
-                    <span
-                      aria-hidden="true"
-                      className="bg-brand-gold/15 text-brand-gold inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold"
-                    >
-                      ✓
-                    </span>
+                    <Check aria-hidden="true" className="text-accent mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span>{line}</span>
                   </li>
                 ),
@@ -496,19 +482,16 @@ export default function Home() {
             =================================================================== */}
         <section
           aria-labelledby="stats-heading"
-          className="bg-brand-navy text-brand-cream relative overflow-hidden"
+          className="bg-ink text-paper relative overflow-hidden"
         >
           <h2 id="stats-heading" className="sr-only">
             נתוני הפלטפורמה
           </h2>
           {/* Top + bottom gold hairlines frame the strip */}
+          <div aria-hidden="true" className="bg-accent absolute inset-x-0 top-0 h-px opacity-60" />
           <div
             aria-hidden="true"
-            className="bg-brand-gold absolute inset-x-0 top-0 h-px opacity-60"
-          />
-          <div
-            aria-hidden="true"
-            className="bg-brand-gold absolute inset-x-0 bottom-0 h-px opacity-30"
+            className="bg-accent absolute inset-x-0 bottom-0 h-px opacity-30"
           />
 
           <div className="relative mx-auto flex max-w-3xl items-stretch px-4 py-9 sm:px-6 sm:py-14">
@@ -517,19 +500,19 @@ export default function Home() {
                 key={s.label}
                 className={[
                   "relative flex min-w-0 flex-1 flex-col items-center justify-center text-center",
-                  i > 0 ? "border-brand-cream/20 border-s" : "",
+                  i > 0 ? "border-paper/20 border-s" : "",
                 ].join(" ")}
               >
-                <p className="text-brand-gold inline-flex items-baseline gap-2 font-serif text-4xl font-bold leading-none sm:text-5xl lg:text-6xl">
+                <p className="text-accent inline-flex items-baseline gap-2 font-serif text-4xl font-bold leading-none sm:text-5xl lg:text-6xl">
                   {s.value}
                   {s.live ? (
                     <span aria-hidden="true" className="relative inline-flex h-2 w-2 self-center">
-                      <span className="bg-brand-gold absolute inline-flex h-full w-full rounded-full opacity-75 motion-safe:animate-ping" />
-                      <span className="bg-brand-gold relative inline-flex h-2 w-2 rounded-full" />
+                      <span className="bg-accent absolute inline-flex h-full w-full rounded-full opacity-75 motion-safe:animate-ping" />
+                      <span className="bg-accent relative inline-flex h-2 w-2 rounded-full" />
                     </span>
                   ) : null}
                 </p>
-                <p className="text-brand-cream/85 mt-3 text-sm font-medium uppercase tracking-[0.18em] sm:text-base">
+                <p className="text-paper/85 mt-3 text-sm font-medium uppercase tracking-[0.18em] sm:text-base">
                   {s.label}
                 </p>
               </div>
@@ -547,18 +530,18 @@ export default function Home() {
         >
           <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
             <div className="text-center">
-              <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              <p className="text-muted flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
                 לסוחרים
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
               </p>
               <h2
                 id="dealers-heading"
-                className="text-brand-navy mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
+                className="text-ink mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
               >
                 כל מה שסוחר מקצועי צריך — במקום אחד.
               </h2>
-              <p className="text-brand-ink/75 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+              <p className="text-muted mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
                 לא עוד שילוב של 4 כלים, אקסל ו-WhatsApp. תשתית מסחר אחת שעוברת איתך מתחילת היום ועד
                 סגירת העסקה.
               </p>
@@ -588,18 +571,18 @@ export default function Home() {
         <section
           id="ai"
           aria-labelledby="ai-heading"
-          className="bg-brand-navy text-brand-cream relative flex min-h-[100dvh] flex-col justify-center overflow-hidden"
+          className="bg-ink text-paper relative flex min-h-[100dvh] flex-col justify-center overflow-hidden"
         >
           <div
             aria-hidden="true"
-            className="bg-brand-gold pointer-events-none absolute end-0 top-0 h-1.5 w-32 sm:w-48"
+            className="bg-accent pointer-events-none absolute end-0 top-0 h-1.5 w-32 sm:w-48"
           />
           <div className="mx-auto max-w-5xl px-4 py-20 sm:px-6 sm:py-28">
             <div className="text-center">
-              <p className="text-brand-gold flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              <p className="text-accent flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
                 סוכן AI
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
               </p>
               <h2
                 id="ai-heading"
@@ -607,7 +590,7 @@ export default function Home() {
               >
                 הסוכן החכם שעובד בשבילך.
               </h2>
-              <p className="text-brand-cream/80 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+              <p className="text-paper/80 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
                 AI מובנה לכל אורך הזרימה — מהעלאת הרכב, דרך החיפוש, ועד ניתוח התמחור. בעברית.
               </p>
             </div>
@@ -616,17 +599,17 @@ export default function Home() {
                 Pure CSS — no API call. Uses motion-safe gating so reduced-motion
                 users see the final state without the typing animation. */}
             <div className="mx-auto mt-12 max-w-2xl">
-              <div className="border-brand-cream/15 bg-brand-cream/5 rounded-xl border p-4 shadow-2xl backdrop-blur sm:p-5">
-                <div className="border-brand-cream/15 flex items-center gap-2 rounded-lg border bg-white/5 px-3 py-2.5">
-                  <IconSearch className="text-brand-gold h-5 w-5 shrink-0" />
+              <div className="border-paper/15 bg-paper/5 rounded-xl border p-4 backdrop-blur sm:p-5">
+                <div className="border-paper/15 flex items-center gap-2 rounded-lg border bg-white/5 px-3 py-2.5">
+                  <IconSearch className="text-accent h-5 w-5 shrink-0" />
                   <span
                     aria-hidden="true"
-                    className="text-brand-cream font-mono text-sm motion-safe:animate-[typecaret_4s_steps(40,end)_infinite] motion-safe:overflow-hidden motion-safe:whitespace-nowrap motion-safe:[border-inline-end:2px_solid_theme(colors.brand.gold)] sm:text-base"
+                    className="text-paper font-mono text-sm motion-safe:animate-[typecaret_4s_steps(40,end)_infinite] motion-safe:overflow-hidden motion-safe:whitespace-nowrap motion-safe:[border-inline-end:2px_solid_theme(colors.brand.gold)] sm:text-base"
                   >
                     BMW 2020 מתחת ל-80 אלף
                   </span>
                 </div>
-                <p className="text-brand-cream/60 mt-3 text-center text-xs">
+                <p className="text-paper/60 mt-3 text-center text-xs">
                   כך מחפשים — בלי טפסים, בלי dropdown, בלי מילוי 8 שדות.
                 </p>
               </div>
@@ -638,18 +621,18 @@ export default function Home() {
                 return (
                   <li
                     key={c.title}
-                    className="border-brand-cream/12 bg-brand-cream/5 rounded-xl border p-6 sm:p-7"
+                    className="border-paper/12 bg-paper/5 rounded-xl border p-6 sm:p-7"
                   >
                     <div
                       aria-hidden="true"
-                      className="bg-brand-gold/15 text-brand-gold inline-flex h-11 w-11 items-center justify-center rounded-lg"
+                      className="bg-accent/15 text-accent inline-flex h-11 w-11 items-center justify-center rounded-lg"
                     >
                       <Icon className="h-5 w-5" />
                     </div>
-                    <h3 className="text-brand-cream mt-4 font-serif text-lg font-bold sm:text-xl">
+                    <h3 className="text-paper mt-4 font-serif text-lg font-bold sm:text-xl">
                       {c.title}
                     </h3>
-                    <p className="text-brand-cream/75 mt-2 text-sm leading-relaxed">{c.body}</p>
+                    <p className="text-paper/75 mt-2 text-sm leading-relaxed">{c.body}</p>
                   </li>
                 );
               })}
@@ -657,9 +640,9 @@ export default function Home() {
 
             {/* Small "Powered by" credit — Anthropic brand-safe attribution
                 without using their wordmark prominently. */}
-            <p className="text-brand-cream/55 mt-12 text-center text-xs">
+            <p className="text-paper/55 mt-12 text-center text-xs">
               Powered by{" "}
-              <span lang="en" className="text-brand-cream/70 font-semibold tracking-wide">
+              <span lang="en" className="text-paper/70 font-semibold tracking-wide">
                 Claude AI
               </span>{" "}
               · Anthropic
@@ -673,7 +656,7 @@ export default function Home() {
         <section
           id="security"
           aria-labelledby="security-heading"
-          className="bg-brand-ink text-brand-cream relative flex min-h-[100dvh] flex-col justify-center"
+          className="bg-ink text-paper relative flex min-h-[100dvh] flex-col justify-center"
           style={{ backgroundColor: "#0d1224" }}
         >
           {/* Subtle grid background — reads as "infrastructure" not "marketing" */}
@@ -688,10 +671,10 @@ export default function Home() {
           />
           <div className="relative mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
             <div className="text-center">
-              <p className="text-brand-gold flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              <p className="text-accent flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
                 אבטחה
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
               </p>
               <h2
                 id="security-heading"
@@ -699,7 +682,7 @@ export default function Home() {
               >
                 אבטחה ברמה בנקאית.
               </h2>
-              <p className="text-brand-cream/75 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+              <p className="text-paper/75 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
                 כי מסחר ברכבים דורש אמון אמיתי.
               </p>
             </div>
@@ -710,19 +693,19 @@ export default function Home() {
                 return (
                   <li
                     key={p.title}
-                    className="border-brand-cream/15 bg-brand-cream/[0.03] flex gap-4 rounded-xl border p-6 sm:p-7"
+                    className="border-paper/15 bg-paper/5 flex gap-4 rounded-xl border p-6 sm:p-7"
                   >
                     <div
                       aria-hidden="true"
-                      className="bg-brand-gold/10 text-brand-gold inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg"
+                      className="bg-accent/10 text-accent inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg"
                     >
                       <Icon className="h-6 w-6" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-brand-cream font-serif text-lg font-bold sm:text-xl">
+                      <h3 className="text-paper font-serif text-lg font-bold sm:text-xl">
                         {p.title}
                       </h3>
-                      <p className="text-brand-cream/75 mt-2 text-sm leading-relaxed">{p.body}</p>
+                      <p className="text-paper/75 mt-2 text-sm leading-relaxed">{p.body}</p>
                     </div>
                   </li>
                 );
@@ -741,59 +724,53 @@ export default function Home() {
         >
           <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28">
             <div className="text-center">
-              <p className="text-brand-navy/70 flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              <p className="text-muted flex items-center justify-center gap-2 text-xs font-semibold uppercase tracking-[0.2em]">
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
                 Trust Score
-                <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+                <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
               </p>
               <h2
                 id="tiers-heading"
-                className="text-brand-navy mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
+                className="text-ink mx-auto mt-5 max-w-3xl font-serif text-3xl font-bold leading-[1.1] tracking-tight sm:text-5xl"
               >
                 ככל שמוכרים יותר — הדירוג עולה.
               </h2>
-              <p className="text-brand-ink/75 mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
+              <p className="text-muted mx-auto mt-5 max-w-2xl text-sm leading-relaxed sm:text-base">
                 ארבע רמות. כל עסקה סגורה, כל ביקורת חיובית, כל חודש ללא תלונות — מקדמים אותך.
               </p>
             </div>
 
-            <ul className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <ul className="gap-md mt-2xl grid sm:grid-cols-2 lg:grid-cols-4">
               {tiers.map((t, i) => (
                 <li
                   key={t.name}
-                  className={[
-                    "rounded-xl border p-6 transition-transform hover:-translate-y-1 motion-reduce:transition-none sm:p-7",
-                    t.hue,
-                  ].join(" ")}
+                  className="border-hairline bg-paper p-lg sm:p-xl duration-fast rounded-xl border transition-transform hover:-translate-y-0.5 motion-reduce:transition-none"
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="gap-xs flex items-center">
                     <span
                       aria-hidden="true"
-                      className={["text-brand-navy/40 font-serif text-2xl font-bold", t.text].join(
-                        " ",
-                      )}
+                      className="text-subtle font-tabular font-serif text-2xl font-medium"
                     >
                       {String(i + 1).padStart(2, "0")}
                     </span>
-                    <IconAward className={["h-5 w-5", t.text].join(" ")} />
+                    <IconAward className="text-accent h-5 w-5" />
                   </div>
                   <p
                     lang="en"
-                    className={["mt-4 font-serif text-2xl font-bold tracking-wide", t.text].join(
-                      " ",
-                    )}
+                    className="text-ink mt-md font-serif text-2xl font-medium tracking-widest"
                   >
                     {t.name}
                   </p>
-                  <ul className="mt-4 space-y-2">
+                  <ul className="mt-md space-y-2">
                     {t.benefits.map((b) => (
                       <li
                         key={b}
-                        className="text-brand-ink/85 flex items-start gap-2 text-sm leading-snug"
+                        className="text-muted gap-xs flex items-start text-sm leading-snug"
                       >
-                        <span aria-hidden="true" className="text-brand-gold mt-1 shrink-0">
-                          ✓
-                        </span>
+                        <Check
+                          aria-hidden="true"
+                          className="text-accent mt-1 h-3.5 w-3.5 shrink-0"
+                        />
                         <span>{b}</span>
                       </li>
                     ))}
@@ -809,78 +786,70 @@ export default function Home() {
             =================================================================== */}
         <section
           aria-labelledby="future-heading"
-          className="bg-brand-navy/[0.04] border-brand-navy/10 relative flex min-h-[100dvh] flex-col justify-center border-y"
+          className="bg-muted/5 border-hairline relative flex min-h-[100dvh] flex-col justify-center border-y"
         >
           <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
             <p
               lang="en"
-              className="text-brand-navy/70 flex items-center justify-center gap-2 text-center text-xs font-semibold uppercase tracking-[0.2em]"
+              className="text-muted flex items-center justify-center gap-2 text-center text-xs font-semibold uppercase tracking-[0.2em]"
             >
-              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
               Coming Soon
-              <span aria-hidden="true" className="bg-brand-gold inline-block h-px w-8" />
+              <span aria-hidden="true" className="bg-accent inline-block h-px w-8" />
             </p>
             <h2 id="future-heading" className="sr-only">
               מה בעבודה
             </h2>
             <div className="mt-8 grid gap-5 lg:grid-cols-2">
               {/* Damaged-cars market */}
-              <article className="border-brand-navy/15 rounded-xl border bg-white p-6 sm:p-8">
+              <article className="border-hairline rounded-xl border bg-white p-6 sm:p-8">
                 <div className="flex items-center gap-3">
                   <div
                     aria-hidden="true"
-                    className="bg-brand-navy/5 text-brand-navy inline-flex h-12 w-12 items-center justify-center rounded-lg"
+                    className="bg-muted/10 text-ink inline-flex h-12 w-12 items-center justify-center rounded-lg"
                   >
                     <IconCar className="h-6 w-6" />
                   </div>
-                  <span className="bg-brand-navy text-brand-gold inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
+                  <span className="bg-ink text-accent inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
                     בקרוב
                   </span>
                 </div>
-                <h3 className="text-brand-navy mt-5 font-serif text-xl font-bold sm:text-2xl">
+                <h3 className="text-ink mt-5 font-serif text-xl font-bold sm:text-2xl">
                   שוק רכבים פגועים
                 </h3>
-                <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-[15px]">
+                <p className="text-muted mt-3 text-sm leading-relaxed sm:text-[15px]">
                   סוחרים יוכלו לקנות ולמכור רכבים שעברו תאונה במחיר מתחת למחירון — עם דוח נזק מתועד
                   וזירה מקצועית בלבד.
                 </p>
               </article>
 
               {/* Mobile app */}
-              <article className="border-brand-navy/15 rounded-xl border bg-white p-6 sm:p-8">
+              <article className="border-hairline rounded-xl border bg-white p-6 sm:p-8">
                 <div className="flex items-center gap-3">
                   <div
                     aria-hidden="true"
-                    className="bg-brand-navy/5 text-brand-navy inline-flex h-12 w-12 items-center justify-center rounded-lg"
+                    className="bg-muted/10 text-ink inline-flex h-12 w-12 items-center justify-center rounded-lg"
                   >
                     <IconPhone className="h-6 w-6" />
                   </div>
-                  <span className="bg-brand-navy text-brand-gold inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
+                  <span className="bg-ink text-accent inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
                     בקרוב
                   </span>
                 </div>
-                <h3 className="text-brand-navy mt-5 font-serif text-xl font-bold sm:text-2xl">
+                <h3 className="text-ink mt-5 font-serif text-xl font-bold sm:text-2xl">
                   אפליקציה מובילית
                 </h3>
-                <p className="text-brand-ink/75 mt-3 text-sm leading-relaxed sm:text-[15px]">
+                <p className="text-muted mt-3 text-sm leading-relaxed sm:text-[15px]">
                   iOS + Android — התראות native, מצלמת KYC, וצפייה בשוק במהירות מירבית. בינתיים:
                   האתר מותקן כ-PWA למסך הבית.
                 </p>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled
-                    className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/60 inline-flex min-h-9 cursor-not-allowed items-center rounded-md border px-3 py-1.5 text-xs font-semibold"
-                  >
+                <div className="gap-xs mt-md flex flex-wrap">
+                  <Button type="button" variant="outline" size="sm" disabled>
                     App Store · בקרוב
-                  </button>
-                  <button
-                    type="button"
-                    disabled
-                    className="border-brand-navy/15 bg-brand-navy/5 text-brand-navy/60 inline-flex min-h-9 cursor-not-allowed items-center rounded-md border px-3 py-1.5 text-xs font-semibold"
-                  >
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" disabled>
                     Google Play · בקרוב
-                  </button>
+                  </Button>
                 </div>
               </article>
             </div>
@@ -895,46 +864,43 @@ export default function Home() {
           className="relative flex min-h-[100dvh] flex-col justify-center"
         >
           <div className="mx-auto max-w-5xl px-4 pb-24 pt-20 sm:px-6">
-            <div className="border-brand-navy/15 from-brand-cream to-brand-cream/40 relative overflow-hidden rounded-2xl border bg-gradient-to-br p-6 sm:p-12 lg:p-16">
-              <div
-                aria-hidden="true"
-                className="bg-brand-gold absolute start-0 top-0 h-1.5 w-32 sm:w-48"
-              />
+            <div className="bg-accent text-accent-ink p-xl sm:p-3xl lg:p-3xl relative overflow-hidden rounded-2xl">
               <div className="text-center lg:grid lg:grid-cols-[1.4fr_1fr] lg:items-center lg:gap-12 lg:text-start">
                 <div>
-                  <span className="bg-brand-gold/15 text-brand-navy inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wider">
+                  <span className="bg-accent-ink/15 text-accent-ink gap-xxs px-md inline-flex items-center rounded-full py-1 text-xs font-medium uppercase tracking-widest">
                     <span
                       aria-hidden="true"
-                      className="bg-brand-gold inline-flex h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
+                      className="bg-accent-ink inline-flex h-1.5 w-1.5 rounded-full motion-safe:animate-pulse"
                     />
                     מקומות מוגבלים · שלב הבטא
                   </span>
                   <h2
                     id="cta-heading"
-                    className="text-brand-navy mt-4 font-serif text-[1.75rem] font-bold leading-tight sm:text-4xl lg:text-5xl"
+                    className="text-accent-ink mt-md font-serif text-[1.75rem] font-medium leading-tight sm:text-4xl lg:text-5xl"
                   >
                     מוכן להתחיל לסחור באופן מקצועי?
                   </h2>
-                  <p className="text-brand-ink/75 mx-auto mt-5 max-w-xl text-base leading-relaxed sm:text-lg lg:mx-0">
+                  <p className="text-accent-ink/85 mt-lg mx-auto max-w-xl text-base leading-relaxed sm:text-lg lg:mx-0">
                     הצטרפות בשלב הבטא חינמית לחלוטין — וכוללת liaison אישי לאורך 30 יום ראשונים.
                   </p>
                 </div>
-                <div className="mt-8 flex flex-col items-stretch gap-3 lg:mt-0">
-                  <Link
-                    href="/signup/dealer"
-                    className="bg-brand-navy text-brand-cream hover:bg-brand-navy/90 focus-visible:outline-brand-navy shadow-brand-navy/10 group inline-flex min-h-[52px] w-full items-center justify-center gap-2 rounded-md px-5 py-3.5 text-base font-semibold shadow-lg transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 sm:text-lg"
+                <div className="gap-sm mt-xl flex flex-col items-stretch lg:mt-0">
+                  <Button
+                    asChild
+                    size="lg"
+                    className="bg-accent-ink text-accent hover:bg-accent-ink/90 group"
                   >
-                    <span>פתיחת חשבון סוחר</span>
-                    <span
-                      aria-hidden="true"
-                      className="transition-transform group-hover:-translate-x-1"
-                    >
-                      ←
-                    </span>
-                  </Link>
+                    <Link href="/signup/dealer">
+                      <span>פתיחת חשבון סוחר</span>
+                      <ArrowLeft
+                        aria-hidden="true"
+                        className="duration-fast transition-transform group-hover:-translate-x-0.5"
+                      />
+                    </Link>
+                  </Button>
                   <Link
                     href="/login"
-                    className="text-brand-navy hover:bg-brand-navy/5 focus-visible:outline-brand-navy decoration-brand-gold inline-flex min-h-11 w-full items-center justify-center rounded-md px-4 py-2 text-sm font-semibold underline decoration-2 underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-accent-ink/85 hover:text-accent-ink focus-visible:outline-accent-ink duration-fast px-md inline-flex min-h-11 w-full items-center justify-center rounded-md py-2 text-sm font-medium underline underline-offset-4 transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     כבר יש לי חשבון — כניסה
                   </Link>
@@ -948,10 +914,10 @@ export default function Home() {
       {/* =====================================================================
           FOOTER
           ===================================================================== */}
-      <footer className="bg-brand-navy text-brand-cream relative">
+      <footer className="bg-ink text-paper relative">
         <div
           aria-hidden="true"
-          className="bg-brand-gold pointer-events-none absolute inset-x-0 top-0 h-px opacity-60"
+          className="bg-accent pointer-events-none absolute inset-x-0 top-0 h-px opacity-60"
         />
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
@@ -963,21 +929,21 @@ export default function Home() {
                 height={361}
                 className="h-12 w-auto sm:h-14"
               />
-              <p className="text-brand-cream/75 mt-5 max-w-xs text-sm leading-relaxed">
+              <p className="text-paper/75 mt-5 max-w-xs text-sm leading-relaxed">
                 זירת המסחר של סוחרי הרכב בישראל. פלטפורמה B2B מקצועית עם הצעות מתועדות, מלאי משותף
                 ואימות KYC.
               </p>
             </div>
 
             <nav aria-label="קישורי פלטפורמה">
-              <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
+              <p className="text-accent text-xs font-semibold uppercase tracking-[0.18em]">
                 פלטפורמה
               </p>
               <ul className="mt-4 space-y-2">
                 <li>
                   <a
                     href="#dealers"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     לסוחרים
                   </a>
@@ -985,7 +951,7 @@ export default function Home() {
                 <li>
                   <a
                     href="#ai"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     סוכן AI
                   </a>
@@ -993,7 +959,7 @@ export default function Home() {
                 <li>
                   <a
                     href="#security"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     אבטחה
                   </a>
@@ -1001,7 +967,7 @@ export default function Home() {
                 <li>
                   <a
                     href="#tiers"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     דירוגים
                   </a>
@@ -1010,14 +976,12 @@ export default function Home() {
             </nav>
 
             <nav aria-label="חשבון">
-              <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
-                חשבון
-              </p>
+              <p className="text-accent text-xs font-semibold uppercase tracking-[0.18em]">חשבון</p>
               <ul className="mt-4 space-y-2">
                 <li>
                   <Link
                     href="/login"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     כניסה
                   </Link>
@@ -1025,7 +989,7 @@ export default function Home() {
                 <li>
                   <Link
                     href="/signup/dealer"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     הרשמת סוחר
                   </Link>
@@ -1033,7 +997,7 @@ export default function Home() {
                 <li>
                   <Link
                     href="/forgot-password"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     שחזור סיסמה
                   </Link>
@@ -1042,14 +1006,12 @@ export default function Home() {
             </nav>
 
             <nav aria-label="חוקי">
-              <p className="text-brand-gold text-xs font-semibold uppercase tracking-[0.18em]">
-                חוקי
-              </p>
+              <p className="text-accent text-xs font-semibold uppercase tracking-[0.18em]">חוקי</p>
               <ul className="mt-4 space-y-2">
                 <li>
                   <Link
                     href="/terms"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     תנאי שימוש
                   </Link>
@@ -1057,7 +1019,7 @@ export default function Home() {
                 <li>
                   <Link
                     href="/privacy"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     פרטיות
                   </Link>
@@ -1065,7 +1027,7 @@ export default function Home() {
                 <li>
                   <Link
                     href="/contact"
-                    className="text-brand-cream/85 hover:text-brand-cream focus-visible:outline-brand-gold inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+                    className="text-paper/85 hover:text-paper focus-visible:outline-accent inline-flex min-h-11 items-center rounded text-sm focus-visible:outline-2 focus-visible:outline-offset-2"
                   >
                     יצירת קשר
                   </Link>
@@ -1074,9 +1036,9 @@ export default function Home() {
             </nav>
           </div>
 
-          <div className="border-brand-cream/15 mt-12 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-brand-cream/60 text-xs">© 2026 AutoTradeIL · כל הזכויות שמורות</p>
-            <p className="text-brand-cream/60 text-xs">נבנה בישראל · גרסה 1.0</p>
+          <div className="border-paper/15 mt-12 flex flex-col gap-3 border-t pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-paper/60 text-xs">© 2026 AutoTradeIL · כל הזכויות שמורות</p>
+            <p className="text-paper/60 text-xs">נבנה בישראל · גרסה 1.0</p>
           </div>
         </div>
       </footer>

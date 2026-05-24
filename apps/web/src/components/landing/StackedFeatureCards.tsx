@@ -261,7 +261,7 @@ export function StackedFeatureCards({
               key={card.key}
               aria-hidden={isFront ? undefined : true}
               className={[
-                "border-brand-navy/15 absolute inset-x-0 top-0 rounded-2xl border bg-white p-6 shadow-xl transition-all duration-500 ease-out motion-reduce:transition-none sm:p-7",
+                "border-hairline absolute inset-x-0 top-0 rounded-2xl border bg-white p-6 shadow-sm transition-all duration-500 ease-out motion-reduce:transition-none sm:p-7",
                 isFront ? "" : "pointer-events-none",
               ].join(" ")}
               style={{
@@ -274,21 +274,21 @@ export function StackedFeatureCards({
               {/* Gold top accent stripe */}
               <span
                 aria-hidden="true"
-                className="bg-brand-gold absolute inset-x-6 top-0 h-1 rounded-b-full"
+                className="bg-accent absolute inset-x-6 top-0 h-1 rounded-b-full"
               />
               <div
                 aria-hidden="true"
-                className="bg-brand-gold/15 text-brand-navy inline-flex h-14 w-14 items-center justify-center rounded-xl"
+                className="bg-accent/15 text-ink inline-flex h-14 w-14 items-center justify-center rounded-xl"
               >
                 <Icon className="h-7 w-7" />
               </div>
-              <h3 className="text-brand-navy mt-5 font-serif text-2xl font-bold leading-tight sm:text-[1.7rem]">
+              <h3 className="text-ink mt-5 font-serif text-2xl font-bold leading-tight sm:text-[1.7rem]">
                 {card.title}
               </h3>
-              <p className="text-brand-ink/75 mt-3 text-[15px] leading-relaxed sm:text-base">
+              <p className="text-muted mt-3 text-[15px] leading-relaxed sm:text-base">
                 {card.body}
               </p>
-              <p aria-hidden="true" className="text-brand-ink/40 mt-6 font-mono text-xs" lang="en">
+              <p aria-hidden="true" className="text-subtle mt-6 font-mono text-xs" lang="en">
                 {String(i + 1).padStart(2, "0")} / {String(total).padStart(2, "0")}
               </p>
             </article>
@@ -302,7 +302,7 @@ export function StackedFeatureCards({
           type="button"
           onClick={goPrev}
           aria-label="כרטיס קודם"
-          className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 hover:border-brand-navy focus-visible:outline-brand-navy inline-flex h-11 w-11 items-center justify-center rounded-full border bg-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="border-hairline text-ink hover:bg-muted/10 hover:border-ink focus-visible:outline-ink inline-flex h-11 w-11 items-center justify-center rounded-full border bg-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           <span aria-hidden="true">→</span>
         </button>
@@ -319,8 +319,8 @@ export function StackedFeatureCards({
                   aria-current={isActive ? "true" : undefined}
                   className={[
                     "inline-block h-2 rounded-full transition-all motion-reduce:transition-none",
-                    "focus-visible:outline-brand-navy focus-visible:outline-2 focus-visible:outline-offset-2",
-                    isActive ? "bg-brand-gold w-6" : "bg-brand-navy/25 hover:bg-brand-navy/45 w-2",
+                    "focus-visible:outline-ink focus-visible:outline-2 focus-visible:outline-offset-2",
+                    isActive ? "bg-accent w-6" : "bg-subtle hover:bg-muted w-2",
                   ].join(" ")}
                 />
               </li>
@@ -332,7 +332,7 @@ export function StackedFeatureCards({
           type="button"
           onClick={goNext}
           aria-label="כרטיס הבא"
-          className="border-brand-navy/20 text-brand-navy hover:bg-brand-navy/5 hover:border-brand-navy focus-visible:outline-brand-navy inline-flex h-11 w-11 items-center justify-center rounded-full border bg-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
+          className="border-hairline text-ink hover:bg-muted/10 hover:border-ink focus-visible:outline-ink inline-flex h-11 w-11 items-center justify-center rounded-full border bg-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2"
         >
           <span aria-hidden="true">←</span>
         </button>
@@ -340,7 +340,7 @@ export function StackedFeatureCards({
 
       {/* Below-stack hint — only visible on mobile to teach the gesture
           on first paint. Desktop users see the prev/next buttons. */}
-      <p aria-hidden="true" className="text-brand-ink/55 mt-3 text-center text-xs sm:hidden">
+      <p aria-hidden="true" className="text-subtle mt-3 text-center text-xs sm:hidden">
         החלק כדי לעבור בין הכרטיסיות
       </p>
     </div>
