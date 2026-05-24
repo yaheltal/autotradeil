@@ -10,9 +10,10 @@ import type { Config } from "tailwindcss";
  * code review rather than by Tailwind config (replacing the whole scale
  * silently broke 100+ existing class call sites).
  *
- * Fonts come from layout.tsx via CSS variables (Fraunces for editorial
- * headings, Inter for body, Frank Ruhl Libre as the Hebrew heading
- * fallback inside the same font-serif stack).
+ * Fonts come from layout.tsx via CSS variables: Inter for body
+ * (Latin + Hebrew) and Frank Ruhl Libre for every heading. The
+ * earlier pairing with a Latin-only display face (Fraunces) was
+ * retired — a single Hebrew-first editorial face covers both scripts.
  */
 const config: Config = {
   // Light-only. No darkMode strategy → no `dark:` utility ever triggers.
@@ -138,7 +139,7 @@ const config: Config = {
       },
       letterSpacing: {
         tightest: "-0.04em",
-        editorial: "-0.025em", // Fraunces tightening for big display headings
+        editorial: "-0.025em", // Frank Ruhl Libre tightening for big display headings
       },
       // Custom hover transition timing — capped at 200ms per CLAUDE.md §4.
       transitionDuration: {
