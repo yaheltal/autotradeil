@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   BarChart3,
@@ -14,7 +15,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 
 import { SuspensionBanner } from "@/components/SuspensionBanner";
+import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api";
+import { queryKeys } from "@/lib/query-keys";
 import { createClient } from "@/lib/supabase";
 
 /*
@@ -142,55 +145,62 @@ function DashboardPageInner() {
     window.history.replaceState({}, "", url.toString());
   }, [errorCode]);
 
-  // -- Auth + dealer profile load ------------------------------------------
-  const [dealer, setDealer] = useState<Dealer | null>(null);
+  // -- Auth bootstrap: pull session once, then let TanStack cache the API
+  // calls. Supabase's session lives outside React Query (it has its own
+  // listener), so we keep token in local state and gate every useQuery on
+  // its presence via `enabled`.
   const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [sessionResolved, setSessionResolved] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
+    void (async () => {
       const supabase = createClient();
       const {
         data: { session },
       } = await supabase.auth.getSession();
+      if (cancelled) return;
       if (!session) {
         router.push("/login");
         return;
       }
-      try {
-        const who = await apiFetch<{ user_type: string }>("/api/v1/auth/whoami", {
-          token: session.access_token,
-        });
-        if (who.user_type === "admin") {
-          router.replace("/admin");
-          return;
-        }
-      } catch {
-        /* fall through; the dealer fetch will surface its own error */
-      }
-      try {
-        const me = await apiFetch<Dealer>("/api/v1/dealers/me", {
-          token: session.access_token,
-        });
-        if (!cancelled) {
-          setDealer(me);
-          setToken(session.access_token);
-          setLoading(false);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : "שגיאה בטעינת הפרופיל");
-          setLoading(false);
-        }
-      }
-    };
-    void load();
+      setToken(session.access_token);
+      setSessionResolved(true);
+    })();
     return () => {
       cancelled = true;
     };
   }, [router]);
+
+  // Admin-redirect gate. Cheap query, doesn't need long staleness — admins
+  // shouldn't be hitting /dashboard at all, so we run on every mount.
+  const whoami = useQuery({
+    queryKey: ["auth", "whoami"],
+    queryFn: () => apiFetch<{ user_type: string }>("/api/v1/auth/whoami", { token: token! }),
+    enabled: !!token,
+    staleTime: 0,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (whoami.data?.user_type === "admin") router.replace("/admin");
+  }, [whoami.data, router]);
+
+  const isAdmin = whoami.data?.user_type === "admin";
+
+  const dealerQuery = useQuery({
+    queryKey: queryKeys.dealer.me(),
+    queryFn: () => apiFetch<Dealer>("/api/v1/dealers/me", { token: token! }),
+    enabled: !!token && whoami.isFetched && !isAdmin,
+  });
+
+  const dealer = dealerQuery.data ?? null;
+  const loading = !sessionResolved || whoami.isLoading || (!isAdmin && dealerQuery.isLoading);
+  const error = dealerQuery.error
+    ? dealerQuery.error instanceof Error
+      ? dealerQuery.error.message
+      : "שגיאה בטעינת הפרופיל"
+    : null;
 
   useEffect(() => {
     if (!loading) headingRef.current?.focus();
@@ -212,13 +222,24 @@ function DashboardPageInner() {
   // -- Loading / error states ----------------------------------------------
   if (loading) {
     return (
-      <div
-        className="px-lg py-2xl mx-auto flex min-h-[60vh] max-w-5xl items-center justify-center"
+      <main
+        id="main"
+        tabIndex={-1}
+        className="px-lg pb-3xl pt-2xl sm:px-2xl mx-auto max-w-5xl focus:outline-none"
         role="status"
         aria-live="polite"
+        aria-label="טוען לוח בקרה"
       >
-        <p className="text-muted text-sm">טוען…</p>
-      </div>
+        <header className="mb-2xl">
+          <Skeleton className="h-10 w-48 sm:h-12" />
+          <Skeleton className="mt-sm h-4 w-72" />
+        </header>
+        <Skeleton className="mb-xl h-[260px] w-full rounded-2xl" />
+        <div className="gap-xl grid grid-cols-1 sm:grid-cols-2">
+          <Skeleton className="h-72 w-full rounded-xl" />
+          <Skeleton className="h-72 w-full rounded-xl" />
+        </div>
+      </main>
     );
   }
 
