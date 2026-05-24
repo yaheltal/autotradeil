@@ -5,6 +5,12 @@ const nextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
 
+  // Transpile the workspace shared-types package so its `.js` (built
+  // ESM, declared as `"type": "module"`) is consumable by both the
+  // Next.js server bundle and the browser bundle without webpack
+  // tripping over the workspace symlink layout.
+  transpilePackages: ["@autotradeil/shared-types"],
+
   images: {
     // next/image handles AVIF / WebP encoding automatically. Listing
     // both formats here means the browser picks the smallest variant
