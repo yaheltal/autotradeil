@@ -3,51 +3,124 @@
 @tailwind utilities;
 
 /* ============================================================
- * Design system CSS variables — mirror the Tailwind tokens in
- * tailwind.config.ts. shadcn/ui primitives (scaffolded in Phase 6)
- * read these directly; component code reads via Tailwind classes.
- * Two sources of truth are intentional — Tailwind owns utility
- * classes, CSS variables own component internals.
+ * Design system CSS variables.
+ *
+ * Tokens are stored as **RGB triplets** (space-separated) so they
+ * compose with Tailwind's alpha modifier syntax. In tailwind.config.ts
+ * we wrap each color in `rgb(var(--X) / <alpha-value>)` — that lets
+ * classes like `bg-paper/10` or `border-ink/30` resolve to the
+ * correct alpha while the underlying hue still comes from the
+ * variable. Flip the variable in `.dark` and every consumer follows.
+ *
+ * Two palettes live here:
+ *   Editorial — ink / paper / muted / subtle / accent / hairline
+ *               + status (ok / warn / danger). These are the locked
+ *               tokens our pages reference via Tailwind classes.
+ *   shadcn    — background / foreground / card / popover / primary /
+ *               secondary / muted (bg) / accent (hover) / destructive /
+ *               border / input / ring. These are what the primitives
+ *               in components/ui/* reference. Both surfaces stay in
+ *               sync via overlapping values.
  * ============================================================ */
 @layer base {
   :root {
-    /* Surfaces */
-    --background: 0 0% 100%; /* #FFFFFF — paper */
-    --foreground: 0 0% 4%; /* #0A0A0A — ink */
+    /* ---- Editorial palette (light) ---- */
+    --ink: 10 10 10; /* #0A0A0A */
+    --paper: 255 255 255; /* #FFFFFF */
+    --muted-color: 107 107 110; /* #6B6B6E — secondary body text */
+    --subtle-color: 154 154 157; /* #9A9A9D — tertiary / metadata */
+    --hairline-color: 10 10 10 / 0.08; /* tonal-ink divider */
+    --accent-color: 168 114 58; /* #A8723A — oxidized bronze CTA */
+    --accent-ink-color: 255 255 255; /* text on accent surfaces */
+    --accent-subtle-color: 244 236 223; /* #F4ECDF — accent-tinted callout */
 
-    /* Components */
-    --card: 0 0% 100%;
-    --card-foreground: 0 0% 4%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 4%;
+    /* ---- Status — light ---- */
+    --ok-color: 31 143 92;
+    --ok-fg-color: 14 59 38;
+    --ok-bg-color: 230 245 236;
+    --warn-color: 154 103 0;
+    --warn-fg-color: 63 42 0;
+    --warn-bg-color: 255 247 214;
+    --danger-color: 181 48 42;
+    --danger-fg-color: 90 24 21;
+    --danger-bg-color: 252 230 228;
 
-    /* Primary CTA (ink on paper) */
-    --primary: 0 0% 4%;
-    --primary-foreground: 0 0% 100%;
-
-    /* Secondary surface (faint ink wash) */
-    --secondary: 240 5% 96%;
-    --secondary-foreground: 0 0% 4%;
-
-    /* Muted (tonal ink) */
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 2% 42%; /* #6B6B6E */
-
-    /* Accent — oxidized bronze. Reserved for highlights, NOT body text. */
-    --accent: 28 50% 44%; /* #A8723A */
-    --accent-foreground: 0 0% 100%;
-
-    /* Status — destructive only; ok/warn use Tailwind tokens directly */
-    --destructive: 3 62% 44%; /* #B5302A */
-    --destructive-foreground: 0 0% 100%;
-
-    /* Hairlines */
-    --border: 0 0% 4% / 0.08;
-    --input: 0 0% 4% / 0.12;
-    --ring: 28 50% 44%; /* accent ring on focus */
+    /* ---- shadcn semantic — light ----
+     * Mapped to the editorial palette so primitives inherit the locked
+     * system. Stored as RGB triplets to match the editorial tokens. */
+    --background: 255 255 255;
+    --foreground: 10 10 10;
+    --card: 255 255 255;
+    --card-foreground: 10 10 10;
+    --popover: 255 255 255;
+    --popover-foreground: 10 10 10;
+    --primary: 10 10 10; /* ink button */
+    --primary-foreground: 255 255 255;
+    --secondary: 244 244 245; /* faint ink wash */
+    --secondary-foreground: 10 10 10;
+    --muted: 244 244 245; /* shadcn muted = subtle bg surface */
+    --muted-foreground: 107 107 110;
+    --accent: 168 114 58; /* hover surface for dropdown items, sheet close, etc. */
+    --accent-foreground: 255 255 255;
+    --destructive: 181 48 42;
+    --destructive-foreground: 255 255 255;
+    --border: 10 10 10 / 0.08;
+    --input: 10 10 10 / 0.12;
+    --ring: 168 114 58;
 
     /* Radius — 10px standard (matches mobile radii.md for parity) */
     --radius: 0.625rem;
+  }
+
+  /* ============================================================
+   * Dark theme — activates when next-themes places `.dark` on <html>.
+   * Surface palette inverts (near-black paper, off-white ink); accent
+   * brightens slightly to maintain contrast on dark surfaces. Status
+   * tints flip from light backgrounds with dark text to deep
+   * backgrounds with light text.
+   * ============================================================ */
+  .dark {
+    /* ---- Editorial palette (dark) ---- */
+    --ink: 244 244 245; /* zinc-100 — body text on dark paper */
+    --paper: 15 15 18; /* near-black, cooler than pure ink */
+    --muted-color: 161 161 170; /* zinc-400 — secondary text */
+    --subtle-color: 113 113 122; /* zinc-500 — tertiary */
+    --hairline-color: 255 255 255 / 0.1; /* tonal-paper divider */
+    --accent-color: 200 148 95; /* slightly brighter bronze for dark contrast */
+    --accent-ink-color: 15 15 18; /* dark text on accent in dark mode */
+    --accent-subtle-color: 60 41 21; /* deep bronze tint for callouts */
+
+    /* ---- Status — dark ---- */
+    --ok-color: 74 222 128;
+    --ok-fg-color: 187 247 208;
+    --ok-bg-color: 5 46 22;
+    --warn-color: 251 191 36;
+    --warn-fg-color: 254 240 138;
+    --warn-bg-color: 69 26 3;
+    --danger-color: 248 113 113;
+    --danger-fg-color: 254 202 202;
+    --danger-bg-color: 69 10 10;
+
+    /* ---- shadcn semantic — dark ---- */
+    --background: 15 15 18; /* paper */
+    --foreground: 244 244 245; /* ink */
+    --card: 24 24 27; /* zinc-900 — slightly lighter than paper for elevation */
+    --card-foreground: 244 244 245;
+    --popover: 24 24 27;
+    --popover-foreground: 244 244 245;
+    --primary: 244 244 245; /* primary CTA inverts — paper-on-ink */
+    --primary-foreground: 15 15 18;
+    --secondary: 39 39 42; /* zinc-800 */
+    --secondary-foreground: 244 244 245;
+    --muted: 39 39 42;
+    --muted-foreground: 161 161 170;
+    --accent: 200 148 95; /* hover surface — brighter bronze */
+    --accent-foreground: 15 15 18;
+    --destructive: 248 113 113;
+    --destructive-foreground: 15 15 18;
+    --border: 255 255 255 / 0.1;
+    --input: 255 255 255 / 0.15;
+    --ring: 200 148 95;
   }
 
   /* Editorial typography defaults — applied globally so any text inherits
@@ -170,16 +243,17 @@ header {
 
 /* WebKit autofill overrides — Chrome / Safari / iOS apply a light
  * yellow/green tint to fields they auto-fill (saved passwords, email
- * completions). The override masks that tint with the locked paper
- * background + ink text. The 9999s transition is the long-standing
- * trick to keep the override sticky across focus events. */
+ * completions). The override masks that tint with the active paper
+ * background + ink text. CSS vars (set on :root + .dark) make the
+ * tint follow the theme automatically. The 9999s transition is the
+ * long-standing trick to keep the override sticky across focus events. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px #ffffff inset !important;
-  -webkit-text-fill-color: #0a0a0a !important;
-  caret-color: #0a0a0a !important;
+  -webkit-box-shadow: 0 0 0 30px rgb(var(--paper)) inset !important;
+  -webkit-text-fill-color: rgb(var(--ink)) !important;
+  caret-color: rgb(var(--ink)) !important;
   transition: background-color 9999s ease-out 0s;
 }
 

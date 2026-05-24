@@ -5,7 +5,13 @@ import { Bell } from "lucide-react";
 import { BottomNav } from "@/components/dashboard/BottomNav";
 import { MobileSidebarSheet } from "@/components/dashboard/MobileSidebarSheet";
 import { Sidebar } from "@/components/dashboard/Sidebar";
-import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
+// Dark mode infrastructure ready (Phase 1 complete — next-themes wired,
+// tailwind darkMode: "class" enabled, RGB-triplet CSS vars declared in
+// globals.css). Toggle hidden until Phase 2-3 add `dark:*` variants to
+// every page or migrate Tailwind config to consume the dark-aware vars.
+// TODO: restore <ThemeToggle /> render in the mobile header below once
+// the dark palette ships.
+// import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
 import { TopBar } from "@/components/dashboard/TopBar";
 
 /**
@@ -59,7 +65,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           >
             <Bell className="h-5 w-5" aria-hidden />
           </button>
-          <ThemeToggle />
+          {/* <ThemeToggle /> — hidden, see import comment above */}
         </header>
 
         {/* Page content. Bottom padding leaves room for BottomNav on
