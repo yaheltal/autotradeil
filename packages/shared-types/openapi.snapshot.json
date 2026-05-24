@@ -8,7 +8,9 @@
   "paths": {
     "/health": {
       "get": {
-        "tags": ["health"],
+        "tags": [
+          "health"
+        ],
         "summary": "Health",
         "operationId": "health_health_get",
         "responses": {
@@ -28,7 +30,9 @@
     },
     "/api/v1/auth/oauth/check": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Oauth Check",
         "description": "Classify the current Supabase-authenticated caller as existing\ndealer or new OAuth user. Used by the /auth/callback page.",
         "operationId": "oauth_check_api_v1_auth_oauth_check_post",
@@ -48,7 +52,9 @@
     },
     "/api/v1/auth/admin-login-verify": {
       "post": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Admin Login Verify",
         "description": "Web /login (email+password break-glass) calls this immediately after\nSupabase signInWithPassword to confirm the freshly-authenticated user is\nan admin. Returns 200 if admin, 403 otherwise.\n\nWhy a server check (vs. trusting the JWT user_metadata)? user_type lives\nin public.users, not in the Supabase JWT. The token only proves identity;\nthe role gate has to query our own DB.\n\nWeb flow:\n    1. supabase.auth.signInWithPassword({ email, password })\n    2. POST /api/v1/auth/admin-login-verify  (with the bearer token)\n    3. If 200 → continue to /admin\n    4. If 403 → supabase.auth.signOut() + show \"use the mobile app\"",
         "operationId": "admin_login_verify_api_v1_auth_admin_login_verify_post",
@@ -68,7 +74,9 @@
     },
     "/api/v1/auth/whoami": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Whoami",
         "operationId": "whoami_api_v1_auth_whoami_get",
         "responses": {
@@ -88,7 +96,9 @@
     },
     "/api/v1/auth/admin-only": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Admin Only",
         "operationId": "admin_only_api_v1_auth_admin_only_get",
         "responses": {
@@ -108,7 +118,9 @@
     },
     "/api/v1/auth/dealer-only": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Dealer Only",
         "operationId": "dealer_only_api_v1_auth_dealer_only_get",
         "responses": {
@@ -128,7 +140,9 @@
     },
     "/api/v1/auth/test/send-email": {
       "get": {
-        "tags": ["auth"],
+        "tags": [
+          "auth"
+        ],
         "summary": "Test Send Email",
         "description": "Dev-only: send both template emails to the admin address.",
         "operationId": "test_send_email_api_v1_auth_test_send_email_get",
@@ -149,7 +163,9 @@
     },
     "/api/v1/auth/signup/dealer": {
       "post": {
-        "tags": ["signup"],
+        "tags": [
+          "signup"
+        ],
         "summary": "Signup Dealer",
         "description": "Create a pending dealer account. Returns 201 on success.\n\nFailure mapping (so the UI can show a useful message):\n  * 409 with Hebrew detail — duplicate business_id, license_number, or email\n  * 502 — Supabase Admin API error (network, rate limit, etc.)\n  * 500 — unexpected; the auth user AND public.users orphan are both purged",
         "operationId": "signup_dealer_api_v1_auth_signup_dealer_post",
@@ -189,7 +205,9 @@
     },
     "/api/v1/auth/login": {
       "post": {
-        "tags": ["signup"],
+        "tags": [
+          "signup"
+        ],
         "summary": "Login",
         "description": "Forward to Supabase's password grant endpoint.\n\nOn success returns the standard Supabase access/refresh tokens. On\ninvalid credentials returns 401 with a Hebrew-localized message.",
         "operationId": "login_api_v1_auth_login_post",
@@ -229,7 +247,9 @@
     },
     "/api/v1/auth/login/totp": {
       "post": {
-        "tags": ["signup"],
+        "tags": [
+          "signup"
+        ],
         "summary": "Login Totp",
         "description": "Second login step — verify TOTP code and release the access token.",
         "operationId": "login_totp_api_v1_auth_login_totp_post",
@@ -269,7 +289,9 @@
     },
     "/api/v1/auth/forgot-password": {
       "post": {
-        "tags": ["signup"],
+        "tags": [
+          "signup"
+        ],
         "summary": "Forgot Password",
         "description": "Trigger a password-reset email. Always returns 200 so callers can\nnot enumerate valid emails.",
         "operationId": "forgot_password_api_v1_auth_forgot_password_post",
@@ -313,7 +335,9 @@
     },
     "/api/v1/auth/otp/request": {
       "post": {
-        "tags": ["signup"],
+        "tags": [
+          "signup"
+        ],
         "summary": "Public Otp Request",
         "description": "Public — generate a 6-digit code and deliver it to the dealer.\n\nDelivery method comes from the request body (`email` | `sms`).\nAlways returns 200 with a generic message to prevent enumeration.\nMirrors the /security/otp/send pattern but is callable without a\nsession because the user is trying to log IN.",
         "operationId": "public_otp_request_api_v1_auth_otp_request_post",
@@ -357,7 +381,9 @@
     },
     "/api/v1/auth/otp/verify": {
       "post": {
-        "tags": ["signup"],
+        "tags": [
+          "signup"
+        ],
         "summary": "Public Otp Verify",
         "description": "Public — verify OTP, mint a Supabase session via admin link.\n\nAccepts either `email` or `phone` to identify the dealer (matching\nwhichever was used in /otp/request).\n\nOn success:\n  - Clear the consumed OTP (single-use).\n  - Use Supabase admin `generate_link` (type=magiclink) to mint a real\n    session, then exchange the action_link for tokens via the verify\n    endpoint. Cleaner: just call admin generate_link with `type=magiclink`\n    and parse the action link's hash params — but Supabase exposes\n    `properties.access_token`+`refresh_token` directly on the response.",
         "operationId": "public_otp_verify_api_v1_auth_otp_verify_post",
@@ -397,7 +423,9 @@
     },
     "/api/v1/dealers/me": {
       "get": {
-        "tags": ["dealers"],
+        "tags": [
+          "dealers"
+        ],
         "summary": "Get My Dealer Profile",
         "description": "Return the dealer profile for the currently authenticated user.",
         "operationId": "get_my_dealer_profile_api_v1_dealers_me_get",
@@ -415,7 +443,9 @@
         }
       },
       "patch": {
-        "tags": ["dealers"],
+        "tags": [
+          "dealers"
+        ],
         "summary": "Update My Dealer Profile",
         "description": "Free update of dealer-editable fields (Phase 4.4).\n\n`business_name`, `city`, `phone`, `description`, and 3 notification\npreferences are dealer-owned. business_id, license_number, contact_name\nrequire an admin operation and are NOT changeable here.",
         "operationId": "update_my_dealer_profile_api_v1_dealers_me_patch",
@@ -455,7 +485,9 @@
     },
     "/api/v1/dealers/me/logo": {
       "post": {
-        "tags": ["dealers"],
+        "tags": [
+          "dealers"
+        ],
         "summary": "Upload My Logo",
         "description": "Upload (or replace) the dealer's business logo. Cloudinary, public URL.",
         "operationId": "upload_my_logo_api_v1_dealers_me_logo_post",
@@ -495,7 +527,9 @@
     },
     "/api/v1/admin/dealers": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "List Dealers",
         "description": "List dealers with optional status / tier / KYC filters + search.",
         "operationId": "list_dealers_api_v1_admin_dealers_get",
@@ -616,7 +650,9 @@
     },
     "/api/v1/admin/dealers/archived": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "List Archived Dealers",
         "description": "List dealers that have been archived (soft-deleted). Phase 6.7.",
         "operationId": "list_archived_dealers_api_v1_admin_dealers_archived_get",
@@ -671,7 +707,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Get Dealer",
         "operationId": "get_dealer_api_v1_admin_dealers__dealer_id__get",
         "parameters": [
@@ -712,7 +750,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}/verify": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Verify Dealer",
         "operationId": "verify_dealer_api_v1_admin_dealers__dealer_id__verify_post",
         "parameters": [
@@ -754,7 +794,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}/reject": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Reject Dealer",
         "operationId": "reject_dealer_api_v1_admin_dealers__dealer_id__reject_post",
         "parameters": [
@@ -806,7 +848,9 @@
     },
     "/api/v1/admin/stats": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Get Stats",
         "operationId": "get_stats_api_v1_admin_stats_get",
         "responses": {
@@ -825,7 +869,9 @@
     },
     "/api/v1/admin/impersonate/end": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Impersonate End",
         "description": "Record the end of an impersonation session. Token expiry is client-side.\n\nNOTE: Must be registered BEFORE `/impersonate/{dealer_id}` — otherwise\nFastAPI routes POST /impersonate/end to the UUID param handler and\nreturns 422 on the literal string \"end\".",
         "operationId": "impersonate_end_api_v1_admin_impersonate_end_post",
@@ -849,7 +895,9 @@
     },
     "/api/v1/admin/impersonate/verify": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Impersonate Verify",
         "description": "Decode + validate an impersonation token. Admin-only.",
         "operationId": "impersonate_verify_api_v1_admin_impersonate_verify_get",
@@ -892,7 +940,9 @@
     },
     "/api/v1/admin/impersonate/{dealer_id}": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Impersonate Dealer",
         "description": "Issue a 1-hour impersonation token so the admin can act as the dealer.",
         "operationId": "impersonate_dealer_api_v1_admin_impersonate__dealer_id__post",
@@ -934,7 +984,9 @@
     },
     "/api/v1/admin/audit-log": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Get Audit Log",
         "operationId": "get_audit_log_api_v1_admin_audit_log_get",
         "parameters": [
@@ -988,7 +1040,9 @@
     },
     "/api/v1/admin/inventory/{inventory_id}": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Admin Get Inventory Item",
         "description": "Admin view of a single vehicle: every column on the row + the\nowning dealer's identity + every image (including hidden ones,\nsince admins audit content the dealer hides). Buyer + trade-in\ncolumns from the P6.8.4 migration are surfaced when present.\n\nPath is registered BEFORE /inventory (the list route below) so\nFastAPI routes /inventory/{uuid} here instead of treating \"{uuid}\"\nas a query param to the list.",
         "operationId": "admin_get_inventory_item_api_v1_admin_inventory__inventory_id__get",
@@ -1031,7 +1085,9 @@
     },
     "/api/v1/admin/inventory": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Admin List Inventory",
         "description": "Admin sees ALL inventory from ALL dealers — every status, every\nvisibility, including paused rows. Scoped by filters below.",
         "operationId": "admin_list_inventory_api_v1_admin_inventory_get",
@@ -1172,7 +1228,9 @@
     },
     "/api/v1/admin/settings": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Get Settings",
         "operationId": "get_settings_api_v1_admin_settings_get",
         "responses": {
@@ -1190,7 +1248,9 @@
         }
       },
       "patch": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Update Settings",
         "operationId": "update_settings_api_v1_admin_settings_patch",
         "requestBody": {
@@ -1230,7 +1290,9 @@
     },
     "/api/v1/admin/admins": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "List Admins",
         "operationId": "list_admins_api_v1_admin_admins_get",
         "responses": {
@@ -1251,7 +1313,9 @@
         }
       },
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Promote Admin",
         "description": "Flip an EXISTING user's user_type to 'admin'. Does not create a user.",
         "operationId": "promote_admin_api_v1_admin_admins_post",
@@ -1295,7 +1359,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}/suspend": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Suspend Dealer",
         "description": "Suspend a dealer. Requires admin password re-auth.\n\nTwo modes:\n* `silent=false` (default): records the reason, sends a notification\n  email to the dealer (\"החשבון שלך הושעה — סיבה: ___\"), and\n  `require_verified_dealer` returns 403 with that reason on every\n  authenticated request.\n* `silent=true`: no reason, no email, `require_verified_dealer`\n  returns 503 \"שירות לא זמין\" (the dealer doesn't get a clear\n  explanation — used during investigation).",
         "operationId": "suspend_dealer_api_v1_admin_dealers__dealer_id__suspend_post",
@@ -1348,7 +1414,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}/unsuspend": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Unsuspend Dealer",
         "operationId": "unsuspend_dealer_api_v1_admin_dealers__dealer_id__unsuspend_post",
         "parameters": [
@@ -1403,7 +1471,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}/archive": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Archive Dealer",
         "description": "Soft-delete a dealer: keeps history, frees the email so they can\nre-register. Requires admin password re-auth + a reason. Calls the\nSupabase admin API to delete the auth user.",
         "operationId": "archive_dealer_api_v1_admin_dealers__dealer_id__archive_post",
@@ -1456,7 +1526,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}/unarchive": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Unarchive Dealer",
         "description": "Restore an archived dealer row. Note: the auth user was deleted on\narchive, so the dealer would need a re-invite to log in again. Out of\nscope for this endpoint — for now, restore the row only.",
         "operationId": "unarchive_dealer_api_v1_admin_dealers__dealer_id__unarchive_post",
@@ -1512,7 +1584,9 @@
     },
     "/api/v1/admin/suspension-reasons": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "List Suspension Reasons",
         "description": "Predefined Hebrew reason chips. Filter by kind.",
         "operationId": "list_suspension_reasons_api_v1_admin_suspension_reasons_get",
@@ -1563,7 +1637,9 @@
         }
       },
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Create Suspension Reason",
         "operationId": "create_suspension_reason_api_v1_admin_suspension_reasons_post",
         "requestBody": {
@@ -1602,7 +1678,9 @@
     },
     "/api/v1/admin/dealers/{dealer_id}/reset-password": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Admin Reset Password",
         "description": "Trigger a Supabase recovery link + send our Hebrew RTL email.",
         "operationId": "admin_reset_password_api_v1_admin_dealers__dealer_id__reset_password_post",
@@ -1648,7 +1726,9 @@
     },
     "/api/v1/admin/transactions-in-progress": {
       "get": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Admin List Transactions In Progress",
         "description": "List every deal whose vehicle is still in_transaction.",
         "operationId": "admin_list_transactions_in_progress_api_v1_admin_transactions_in_progress_get",
@@ -1669,7 +1749,9 @@
     },
     "/api/v1/admin/transactions/{deal_id}/complete": {
       "post": {
-        "tags": ["admin"],
+        "tags": [
+          "admin"
+        ],
         "summary": "Admin Complete Transaction",
         "description": "Mark an in-flight deal as fully closed.\n\n- vehicle.status: in_transaction → sold\n- both dealers' deals_completed += 1\n- trust scores recalculated for both\n- audit log entry written\n- notifications fan out",
         "operationId": "admin_complete_transaction_api_v1_admin_transactions__deal_id__complete_post",
@@ -1712,7 +1794,9 @@
     },
     "/api/v1/inventory": {
       "get": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "List Inventory",
         "operationId": "list_inventory_api_v1_inventory_get",
         "parameters": [
@@ -1901,7 +1985,9 @@
         }
       },
       "post": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Create Inventory Item",
         "operationId": "create_inventory_item_api_v1_inventory_post",
         "requestBody": {
@@ -1940,7 +2026,9 @@
     },
     "/api/v1/inventory/stats": {
       "get": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Inventory Stats",
         "description": "Per-dealer rollup: active count, sold count, revenue, profit, margin,\navg days to sell, and how many sold rows lack purchase_cost.",
         "operationId": "inventory_stats_api_v1_inventory_stats_get",
@@ -1983,7 +2071,9 @@
     },
     "/api/v1/inventory/{item_id}": {
       "get": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Get Inventory Item",
         "operationId": "get_inventory_item_api_v1_inventory__item_id__get",
         "parameters": [
@@ -2022,7 +2112,9 @@
         }
       },
       "put": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Update Inventory Item",
         "operationId": "update_inventory_item_api_v1_inventory__item_id__put",
         "parameters": [
@@ -2071,7 +2163,9 @@
         }
       },
       "delete": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Delete Inventory Item",
         "description": "Delete an inventory item.\n\n`mode=soft` (default) sets `status='hidden'` so the item remains\nrecoverable by filtering. `mode=hard` removes the row permanently.",
         "operationId": "delete_inventory_item_api_v1_inventory__item_id__delete",
@@ -2125,7 +2219,9 @@
     },
     "/api/v1/inventory/{inventory_id}/images": {
       "get": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "List Images",
         "description": "List images for a vehicle owned by the caller.",
         "operationId": "list_images_api_v1_inventory__inventory_id__images_get",
@@ -2169,7 +2265,9 @@
         }
       },
       "post": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Upload Image",
         "description": "Upload an image. Max 10 images per vehicle, 10MB per file.",
         "operationId": "upload_image_api_v1_inventory__inventory_id__images_post",
@@ -2222,7 +2320,9 @@
     },
     "/api/v1/inventory/{inventory_id}/images/{image_id}": {
       "patch": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Patch Image",
         "description": "Toggle a specific image's `hidden` flag. Owner-only.\n\nHidden images stay in the dealer's view but are skipped by the\nmarketplace primary-image lookup.",
         "operationId": "patch_image_api_v1_inventory__inventory_id__images__image_id__patch",
@@ -2283,7 +2383,9 @@
         }
       },
       "delete": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Delete Image",
         "operationId": "delete_image_api_v1_inventory__inventory_id__images__image_id__delete",
         "parameters": [
@@ -2335,7 +2437,9 @@
     },
     "/api/v1/inventory/{item_id}/pause": {
       "post": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Pause Item",
         "description": "Pause a vehicle temporarily — hides it from marketplace/B2C until\npaused_until (or until /unpause for indefinite pauses).",
         "operationId": "pause_item_api_v1_inventory__item_id__pause_post",
@@ -2387,7 +2491,9 @@
     },
     "/api/v1/inventory/{item_id}/unpause": {
       "post": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Unpause Item",
         "operationId": "unpause_item_api_v1_inventory__item_id__unpause_post",
         "parameters": [
@@ -2428,7 +2534,9 @@
     },
     "/api/v1/inventory/{inventory_id}/sell": {
       "post": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Sell Item",
         "description": "Mark an active inventory row as sold.\n\nCaptures sale_price, optional purchase_cost, sold_to (b2b/b2c/external),\nand timestamp. If a B2B Deal exists for this inventory and the supplied\nprice differs, the response includes a non-blocking warning.",
         "operationId": "sell_item_api_v1_inventory__inventory_id__sell_post",
@@ -2480,7 +2588,9 @@
     },
     "/api/v1/inventory/lookup/price-hint": {
       "get": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Lookup Price Hint",
         "description": "Live market-price hint for a given make/model/year.\n\nUsed by the inventory form dialog to display a non-binding hint\nbelow the price field as the dealer fills in identity fields.\nNever fails — returns `{\"price\": null}` when nothing is found.",
         "operationId": "lookup_price_hint_api_v1_inventory_lookup_price_hint_get",
@@ -2556,7 +2666,9 @@
     },
     "/api/v1/inventory/lookup/plate/{plate_number}": {
       "get": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Lookup By Plate",
         "description": "Israeli transport-ministry lookup (data.gov.il vehicle registry).",
         "operationId": "lookup_by_plate_api_v1_inventory_lookup_plate__plate_number__get",
@@ -2598,7 +2710,9 @@
     },
     "/api/v1/inventory/lookup/image": {
       "post": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Lookup By Image",
         "description": "Identify a vehicle from a user-supplied image.\n\nTwo-pass strategy:\n  1. Claude vision extracts a visual guess (make/model/year/color) AND\n     attempts OCR on the license plate, if visible.\n  2. If a plausible plate number was extracted (6–9 digits), call the\n     gov.il registry — its data is authoritative and overrides the\n     visual guess for any field it returns.\n\n`source` in the response says which path was used:\n  * `\"plate+vision\"` — both succeeded; gov.il fields took priority\n  * `\"vision\"`       — no plate detected (or gov.il lookup failed)",
         "operationId": "lookup_by_image_api_v1_inventory_lookup_image_post",
@@ -2647,7 +2761,9 @@
     },
     "/api/v1/inventory/scan-registration": {
       "post": {
-        "tags": ["inventory"],
+        "tags": [
+          "inventory"
+        ],
         "summary": "Scan Registration",
         "description": "Extract structured fields from an Israeli vehicle-registration document\n(רישיון רכב) using Claude Vision.\n\nAccepts JPEG/PNG/WebP/HEIC. Sends the image to Claude with a strict\nprompt that asks for plate, make, model, year, engine_volume,\nfuel_type, color, weight, seats, ownership_type, and license expiry —\neach with a confidence label per field. Falls back to nulls for\nfields it can't read.",
         "operationId": "scan_registration_api_v1_inventory_scan_registration_post",
@@ -2696,7 +2812,9 @@
     },
     "/api/v1/marketplace/search": {
       "get": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Search Vehicles",
         "description": "Browse the B2B marketplace. Returns only vehicles published as B2B\n(is_b2b=true, status='active') and excludes the caller's own inventory.\n\nAdmin callers (caller_dealer=None) see every B2B-visible listing —\nthey have no own inventory to exclude.",
         "operationId": "search_vehicles_api_v1_marketplace_search_get",
@@ -2957,7 +3075,9 @@
     },
     "/api/v1/marketplace/vehicles/{inventory_id}": {
       "get": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Get Vehicle Detail",
         "operationId": "get_vehicle_detail_api_v1_marketplace_vehicles__inventory_id__get",
         "parameters": [
@@ -2998,7 +3118,9 @@
     },
     "/api/v1/marketplace/vehicles/{inventory_id}/offers": {
       "post": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Make Offer",
         "operationId": "make_offer_api_v1_marketplace_vehicles__inventory_id__offers_post",
         "parameters": [
@@ -3049,7 +3171,9 @@
     },
     "/api/v1/marketplace/offers/received": {
       "get": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "List Offers Received",
         "operationId": "list_offers_received_api_v1_marketplace_offers_received_get",
         "parameters": [
@@ -3119,7 +3243,9 @@
     },
     "/api/v1/marketplace/offers/sent": {
       "get": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "List Offers Sent",
         "operationId": "list_offers_sent_api_v1_marketplace_offers_sent_get",
         "parameters": [
@@ -3189,7 +3315,9 @@
     },
     "/api/v1/marketplace/offers/{offer_id}/accept": {
       "post": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Accept Offer",
         "operationId": "accept_offer_api_v1_marketplace_offers__offer_id__accept_post",
         "parameters": [
@@ -3230,7 +3358,9 @@
     },
     "/api/v1/marketplace/offers/{offer_id}/reject": {
       "post": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Reject Offer",
         "operationId": "reject_offer_api_v1_marketplace_offers__offer_id__reject_post",
         "parameters": [
@@ -3271,7 +3401,9 @@
     },
     "/api/v1/marketplace/offers/{offer_id}/counter": {
       "post": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Counter Offer",
         "operationId": "counter_offer_api_v1_marketplace_offers__offer_id__counter_post",
         "parameters": [
@@ -3322,7 +3454,9 @@
     },
     "/api/v1/marketplace/offers/{offer_id}/cancel": {
       "post": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Cancel Offer",
         "operationId": "cancel_offer_api_v1_marketplace_offers__offer_id__cancel_post",
         "parameters": [
@@ -3363,7 +3497,9 @@
     },
     "/api/v1/marketplace/offers/{offer_id}/confirm-deal": {
       "post": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Confirm Deal",
         "description": "Called by the buyer OR seller after an offer has been accepted.\n\nBoth sides must confirm. When the second confirmation arrives we:\n  - mark the offer closed (closed_at = now)\n  - create a `deals` row\n  - flip the inventory status to 'in_transaction' (admin escort)\n  - fan out \"in transit\" notifications to both sides\n\nAdmin completion (/admin/transactions/{id}/complete) bumps\ndeals_completed + recalculates trust + flips status to 'sold'.\n\nA.3 — body MUST carry `{\"agreed\": true}` so each side has a\ntimestamped digital signature on the agreement. We stamp\n{role}_agreement_at + {role}_agreement_ip on the Offer; if both\nsigned by the time we create the Deal we copy them across.",
         "operationId": "confirm_deal_api_v1_marketplace_offers__offer_id__confirm_deal_post",
@@ -3422,7 +3558,9 @@
     },
     "/api/v1/marketplace/deals": {
       "get": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "List Deals",
         "description": "Dealer's own deal history — as buyer or seller.",
         "operationId": "list_deals_api_v1_marketplace_deals_get",
@@ -3442,7 +3580,9 @@
     },
     "/api/v1/marketplace/dealers/{dealer_id}/profile": {
       "get": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Dealer Public Profile",
         "operationId": "dealer_public_profile_api_v1_marketplace_dealers__dealer_id__profile_get",
         "parameters": [
@@ -3483,7 +3623,9 @@
     },
     "/api/v1/marketplace/analytics": {
       "get": {
-        "tags": ["marketplace"],
+        "tags": [
+          "marketplace"
+        ],
         "summary": "Dealer Analytics",
         "description": "Self-analytics for the calling dealer.",
         "operationId": "dealer_analytics_api_v1_marketplace_analytics_get",
@@ -3504,7 +3646,9 @@
     },
     "/api/v1/notifications": {
       "get": {
-        "tags": ["notifications"],
+        "tags": [
+          "notifications"
+        ],
         "summary": "List Notifications",
         "operationId": "list_notifications_api_v1_notifications_get",
         "parameters": [
@@ -3547,7 +3691,9 @@
     },
     "/api/v1/notifications/{notification_id}/read": {
       "post": {
-        "tags": ["notifications"],
+        "tags": [
+          "notifications"
+        ],
         "summary": "Mark Notification Read",
         "operationId": "mark_notification_read_api_v1_notifications__notification_id__read_post",
         "parameters": [
@@ -3589,7 +3735,9 @@
     },
     "/api/v1/notifications/push/subscribe": {
       "post": {
-        "tags": ["notifications"],
+        "tags": [
+          "notifications"
+        ],
         "summary": "Subscribe Push",
         "description": "Persist a Web Push browser subscription for the calling user.\n\nBody shape mirrors the JSON returned by `pushManager.subscribe()`:\n    { endpoint, keys: { p256dh, auth }, user_agent? }\n\nIdempotent — re-subscribing from the same browser updates the keys\nin place via the (user_id, endpoint) unique index.",
         "operationId": "subscribe_push_api_v1_notifications_push_subscribe_post",
@@ -3631,7 +3779,9 @@
     },
     "/api/v1/notifications/push/unsubscribe": {
       "post": {
-        "tags": ["notifications"],
+        "tags": [
+          "notifications"
+        ],
         "summary": "Unsubscribe Push",
         "description": "Remove the calling user's subscription matching the given endpoint.",
         "operationId": "unsubscribe_push_api_v1_notifications_push_unsubscribe_post",
@@ -3673,7 +3823,9 @@
     },
     "/api/v1/notifications/push/vapid-key": {
       "get": {
-        "tags": ["notifications"],
+        "tags": [
+          "notifications"
+        ],
         "summary": "Get Vapid Public Key",
         "description": "Returns the VAPID public key used by the browser to call\npushManager.subscribe(). Empty string when not yet configured —\nthe frontend treats that as \"push not available\" and hides the\ntoggle so dealers don't see a non-functional control.",
         "operationId": "get_vapid_public_key_api_v1_notifications_push_vapid_key_get",
@@ -3697,7 +3849,9 @@
     },
     "/api/v1/notifications/read-all": {
       "post": {
-        "tags": ["notifications"],
+        "tags": [
+          "notifications"
+        ],
         "summary": "Mark All Notifications Read",
         "operationId": "mark_all_notifications_read_api_v1_notifications_read_all_post",
         "responses": {
@@ -3717,7 +3871,9 @@
     },
     "/api/v1/security/otp/send": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Otp Send",
         "operationId": "otp_send_api_v1_security_otp_send_post",
         "requestBody": {
@@ -3760,7 +3916,9 @@
     },
     "/api/v1/security/otp/verify": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Otp Verify",
         "operationId": "otp_verify_api_v1_security_otp_verify_post",
         "requestBody": {
@@ -3803,7 +3961,9 @@
     },
     "/api/v1/security/2fa/setup": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Totp Setup",
         "description": "Generate a fresh TOTP secret + provisioning URI + QR data URL.\n\nThe secret is returned to the client but NOT persisted yet — only\nafter the dealer proves possession by calling /2fa/enable with a\nmatching code.",
         "operationId": "totp_setup_api_v1_security_2fa_setup_post",
@@ -3827,7 +3987,9 @@
     },
     "/api/v1/security/2fa/enable": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Totp Enable",
         "operationId": "totp_enable_api_v1_security_2fa_enable_post",
         "requestBody": {
@@ -3870,7 +4032,9 @@
     },
     "/api/v1/security/2fa/disable": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Totp Disable",
         "operationId": "totp_disable_api_v1_security_2fa_disable_post",
         "requestBody": {
@@ -3913,7 +4077,9 @@
     },
     "/api/v1/security/2fa/verify": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Totp Verify",
         "operationId": "totp_verify_api_v1_security_2fa_verify_post",
         "requestBody": {
@@ -3956,7 +4122,9 @@
     },
     "/api/v1/security/kyc/upload": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Kyc Upload",
         "operationId": "kyc_upload_api_v1_security_kyc_upload_post",
         "requestBody": {
@@ -3999,7 +4167,9 @@
     },
     "/api/v1/security/kyc/finalize": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Kyc Finalize",
         "description": "Phase 6.8.6 — dealer presses \"סיום תהליך\" to flip pending → submitted.\n\nRequires all 3 KYC documents present. Idempotent: a second call when\nalready submitted returns the same status without re-emitting events.\nEmails the support inbox so the team gets a heads-up.",
         "operationId": "kyc_finalize_api_v1_security_kyc_finalize_post",
@@ -4023,7 +4193,9 @@
     },
     "/api/v1/security/kyc/status": {
       "get": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Kyc Status",
         "operationId": "kyc_status_api_v1_security_kyc_status_get",
         "responses": {
@@ -4043,7 +4215,9 @@
     },
     "/api/v1/security/kyc/pending": {
       "get": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Kyc Pending",
         "operationId": "kyc_pending_api_v1_security_kyc_pending_get",
         "responses": {
@@ -4066,7 +4240,9 @@
     },
     "/api/v1/security/kyc/{dealer_id}/approve": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Kyc Approve",
         "operationId": "kyc_approve_api_v1_security_kyc__dealer_id__approve_post",
         "parameters": [
@@ -4111,7 +4287,9 @@
     },
     "/api/v1/security/kyc/{dealer_id}/reject": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Kyc Reject",
         "operationId": "kyc_reject_api_v1_security_kyc__dealer_id__reject_post",
         "parameters": [
@@ -4166,7 +4344,9 @@
     },
     "/api/v1/security/phone": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Update Phone",
         "description": "Save dealer phone (Israeli format). Normalizes to E.164.",
         "operationId": "update_phone_api_v1_security_phone_post",
@@ -4210,7 +4390,9 @@
     },
     "/api/v1/security/otp/method": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Set Otp Method",
         "operationId": "set_otp_method_api_v1_security_otp_method_post",
         "requestBody": {
@@ -4253,7 +4435,9 @@
     },
     "/api/v1/security/kyc/extract": {
       "post": {
-        "tags": ["security"],
+        "tags": [
+          "security"
+        ],
         "summary": "Kyc Extract",
         "description": "Extract personal info from three KYC documents using Claude vision.\n\nPublic — called during signup BEFORE the user exists. Rate-limited to\n5/hour/IP. Always returns 200 with the best-effort fields; missing\nfields are null so the wizard can fall back to manual entry.",
         "operationId": "kyc_extract_api_v1_security_kyc_extract_post",
@@ -4293,7 +4477,9 @@
     },
     "/api/v1/ai/search": {
       "post": {
-        "tags": ["ai"],
+        "tags": [
+          "ai"
+        ],
         "summary": "Ai Search",
         "description": "Hebrew NL search. Claude parses filters; we run the marketplace query.",
         "operationId": "ai_search_api_v1_ai_search_post",
@@ -4333,7 +4519,9 @@
     },
     "/api/v1/ai/parse-filters": {
       "post": {
-        "tags": ["ai"],
+        "tags": [
+          "ai"
+        ],
         "summary": "Ai Parse Filters",
         "description": "Pure Hebrew NL → structured filters. No DB query, no caller-scoped\ndata — same parser as /search but only returns the AISearchFilters\nobject so any list page can apply them to its own dataset.\n\nReturns the original query as fallback_q when Claude couldn't pull\nout a single structured filter, so the caller can still do a\nsubstring fallback against make/model.",
         "operationId": "ai_parse_filters_api_v1_ai_parse_filters_post",
@@ -4373,7 +4561,9 @@
     },
     "/api/v1/ai/inventory/price-estimate": {
       "post": {
-        "tags": ["ai"],
+        "tags": [
+          "ai"
+        ],
         "summary": "Price Estimate",
         "description": "AI-driven market-price estimate for a specific (make, model, year,\nmileage, hand, ownership_type) combination.\n\nCalls Claude with the Israeli used-car market context and asks for a\nsingle ILS integer + a confidence label + a one-line breakdown in\nHebrew. Empty / failed responses degrade gracefully to a deterministic\nformula so the form always shows SOMETHING under the price field.",
         "operationId": "price_estimate_api_v1_ai_inventory_price_estimate_post",
@@ -4413,7 +4603,9 @@
     },
     "/api/v1/ai/parse-dealer-filters": {
       "post": {
-        "tags": ["ai"],
+        "tags": [
+          "ai"
+        ],
         "summary": "Ai Parse Dealer Filters",
         "description": "Hebrew NL → admin dealer-list filters.\n\nAdmin-gated since dealer listings are admin-only. Reuses the\nAISearchRequest body shape for consistency.",
         "operationId": "ai_parse_dealer_filters_api_v1_ai_parse_dealer_filters_post",
@@ -4453,7 +4645,9 @@
     },
     "/api/v1/ai/dashboard-assistant": {
       "post": {
-        "tags": ["ai"],
+        "tags": [
+          "ai"
+        ],
         "summary": "Dashboard Assistant",
         "description": "Conversational assistant for the dealer command center.\n\nPre-fetches a snapshot of the caller's own data (active inventory\ncount, sold-this-month, open offers in/out, latest deal) and feeds\nit to Claude as system context. Claude answers in Hebrew, may\nsuggest one navigation CTA in JSON.\n\nFalls back to a deterministic answer when the API key is missing\nor Claude errors — the dashboard must never break when AI is down.",
         "operationId": "dashboard_assistant_api_v1_ai_dashboard_assistant_post",
@@ -4493,7 +4687,9 @@
     },
     "/api/v1/ai/price-analysis": {
       "post": {
-        "tags": ["ai"],
+        "tags": [
+          "ai"
+        ],
         "summary": "Price Analysis",
         "description": "Compare a listing's price to comparable B2B listings. 1h memory cache.",
         "operationId": "price_analysis_api_v1_ai_price_analysis_post",
@@ -4533,7 +4729,9 @@
     },
     "/api/v1/ai/recommendations": {
       "post": {
-        "tags": ["ai"],
+        "tags": [
+          "ai"
+        ],
         "summary": "Recommendations",
         "description": "Recommend B2B listings based on the dealer's offer + deal history.\n\nHeuristic: collect (make, model) pairs from past offers and closed deals.\nSurface up to 12 active B2B listings matching any of those make/models the\ncaller hasn't already offered on. Falls back to \"newest\" when there is no\nhistory yet.",
         "operationId": "recommendations_api_v1_ai_recommendations_post",
@@ -4702,7 +4900,9 @@
           }
         },
         "type": "object",
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "title": "AISearchRequest"
       },
       "AISearchResponse": {
@@ -4715,7 +4915,10 @@
           }
         },
         "type": "object",
-        "required": ["filters", "results"],
+        "required": [
+          "filters",
+          "results"
+        ],
         "title": "AISearchResponse"
       },
       "AdminLoginVerifyResponse": {
@@ -4730,7 +4933,10 @@
           }
         },
         "type": "object",
-        "required": ["ok", "user_type"],
+        "required": [
+          "ok",
+          "user_type"
+        ],
         "title": "AdminLoginVerifyResponse"
       },
       "AdminStatsResponse": {
@@ -4884,7 +5090,10 @@
           }
         },
         "type": "object",
-        "required": ["items", "total"],
+        "required": [
+          "items",
+          "total"
+        ],
         "title": "AuditLogResponse"
       },
       "Body_kyc_extract_api_v1_security_kyc_extract_post": {
@@ -4906,7 +5115,11 @@
           }
         },
         "type": "object",
-        "required": ["id_front", "id_back", "license_doc"],
+        "required": [
+          "id_front",
+          "id_back",
+          "license_doc"
+        ],
         "title": "Body_kyc_extract_api_v1_security_kyc_extract_post"
       },
       "Body_kyc_upload_api_v1_security_kyc_upload_post": {
@@ -4922,7 +5135,10 @@
           }
         },
         "type": "object",
-        "required": ["document_type", "file"],
+        "required": [
+          "document_type",
+          "file"
+        ],
         "title": "Body_kyc_upload_api_v1_security_kyc_upload_post"
       },
       "Body_lookup_by_image_api_v1_inventory_lookup_image_post": {
@@ -4934,7 +5150,9 @@
           }
         },
         "type": "object",
-        "required": ["file"],
+        "required": [
+          "file"
+        ],
         "title": "Body_lookup_by_image_api_v1_inventory_lookup_image_post"
       },
       "Body_scan_registration_api_v1_inventory_scan_registration_post": {
@@ -4946,7 +5164,9 @@
           }
         },
         "type": "object",
-        "required": ["file"],
+        "required": [
+          "file"
+        ],
         "title": "Body_scan_registration_api_v1_inventory_scan_registration_post"
       },
       "Body_upload_image_api_v1_inventory__inventory_id__images_post": {
@@ -4958,7 +5178,9 @@
           }
         },
         "type": "object",
-        "required": ["file"],
+        "required": [
+          "file"
+        ],
         "title": "Body_upload_image_api_v1_inventory__inventory_id__images_post"
       },
       "Body_upload_my_logo_api_v1_dealers_me_logo_post": {
@@ -4970,7 +5192,9 @@
           }
         },
         "type": "object",
-        "required": ["file"],
+        "required": [
+          "file"
+        ],
         "title": "Body_upload_my_logo_api_v1_dealers_me_logo_post"
       },
       "CounterOfferCreate": {
@@ -4994,7 +5218,9 @@
           }
         },
         "type": "object",
-        "required": ["counter_price"],
+        "required": [
+          "counter_price"
+        ],
         "title": "CounterOfferCreate"
       },
       "DashboardAskAction": {
@@ -5009,7 +5235,10 @@
           }
         },
         "type": "object",
-        "required": ["label", "href"],
+        "required": [
+          "label",
+          "href"
+        ],
         "title": "DashboardAskAction",
         "description": "Optional structured CTA the model wants to surface alongside its\ntext answer. Frontend treats this as a hint — it can render a\nbutton that navigates to `href` with a Hebrew label."
       },
@@ -5023,7 +5252,9 @@
           }
         },
         "type": "object",
-        "required": ["query"],
+        "required": [
+          "query"
+        ],
         "title": "DashboardAskRequest",
         "description": "Free-form Hebrew query the dealer types into the dashboard search bar."
       },
@@ -5042,7 +5273,9 @@
           }
         },
         "type": "object",
-        "required": ["answer"],
+        "required": [
+          "answer"
+        ],
         "title": "DashboardAskResponse"
       },
       "DealListResponse": {
@@ -5060,7 +5293,10 @@
           }
         },
         "type": "object",
-        "required": ["items", "total"],
+        "required": [
+          "items",
+          "total"
+        ],
         "title": "DealListResponse"
       },
       "DealResponse": {
@@ -5487,7 +5723,13 @@
           }
         },
         "type": "object",
-        "required": ["items", "total", "page", "pages", "per_page"],
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages",
+          "per_page"
+        ],
         "title": "DealerListResponse"
       },
       "DealerProfileUpdate": {
@@ -5980,7 +6222,9 @@
           }
         },
         "type": "object",
-        "required": ["email"],
+        "required": [
+          "email"
+        ],
         "title": "ForgotPasswordRequest"
       },
       "HTTPValidationError": {
@@ -6004,7 +6248,9 @@
           }
         },
         "type": "object",
-        "required": ["hidden"],
+        "required": [
+          "hidden"
+        ],
         "title": "ImagePatchRequest"
       },
       "ImpersonationResponse": {
@@ -6028,7 +6274,12 @@
           }
         },
         "type": "object",
-        "required": ["impersonation_token", "dealer_id", "business_name", "expires_in_seconds"],
+        "required": [
+          "impersonation_token",
+          "dealer_id",
+          "business_name",
+          "expires_in_seconds"
+        ],
         "title": "ImpersonationResponse"
       },
       "InventoryItemCreate": {
@@ -6188,7 +6439,13 @@
           }
         },
         "type": "object",
-        "required": ["make", "model", "year", "mileage", "price"],
+        "required": [
+          "make",
+          "model",
+          "year",
+          "mileage",
+          "price"
+        ],
         "title": "InventoryItemCreate"
       },
       "InventoryItemResponse": {
@@ -6759,7 +7016,13 @@
           }
         },
         "type": "object",
-        "required": ["items", "total", "page", "pages", "per_page"],
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages",
+          "per_page"
+        ],
         "title": "InventoryListResponse"
       },
       "KYCExtractResponse": {
@@ -6845,7 +7108,11 @@
           },
           "confidence": {
             "type": "string",
-            "enum": ["high", "medium", "low"],
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
             "title": "Confidence",
             "default": "low"
           },
@@ -6871,7 +7138,9 @@
           }
         },
         "type": "object",
-        "required": ["reason"],
+        "required": [
+          "reason"
+        ],
         "title": "KycRejectBody"
       },
       "LoginRequest": {
@@ -6887,7 +7156,10 @@
           }
         },
         "type": "object",
-        "required": ["email", "password"],
+        "required": [
+          "email",
+          "password"
+        ],
         "title": "LoginRequest"
       },
       "LoginResponse": {
@@ -7185,7 +7457,11 @@
           }
         },
         "type": "object",
-        "required": ["id", "url", "position"],
+        "required": [
+          "id",
+          "url",
+          "position"
+        ],
         "title": "MarketplaceVehicleImage"
       },
       "NotificationListResponse": {
@@ -7203,7 +7479,10 @@
           }
         },
         "type": "object",
-        "required": ["items", "unread_count"],
+        "required": [
+          "items",
+          "unread_count"
+        ],
         "title": "NotificationListResponse"
       },
       "NotificationResponse": {
@@ -7255,7 +7534,15 @@
           }
         },
         "type": "object",
-        "required": ["id", "type", "title", "body", "data", "read_at", "created_at"],
+        "required": [
+          "id",
+          "type",
+          "title",
+          "body",
+          "data",
+          "read_at",
+          "created_at"
+        ],
         "title": "NotificationResponse"
       },
       "OAuthCheckResponse": {
@@ -7343,7 +7630,9 @@
           }
         },
         "type": "object",
-        "required": ["existing_user"],
+        "required": [
+          "existing_user"
+        ],
         "title": "OAuthCheckResponse"
       },
       "OfferCreate": {
@@ -7367,7 +7656,9 @@
           }
         },
         "type": "object",
-        "required": ["offered_price"],
+        "required": [
+          "offered_price"
+        ],
         "title": "OfferCreate"
       },
       "OfferDealerSummary": {
@@ -7398,7 +7689,12 @@
           }
         },
         "type": "object",
-        "required": ["id", "business_name", "city", "tier"],
+        "required": [
+          "id",
+          "business_name",
+          "city",
+          "tier"
+        ],
         "title": "OfferDealerSummary"
       },
       "OfferListResponse": {
@@ -7428,7 +7724,13 @@
           }
         },
         "type": "object",
-        "required": ["items", "total", "page", "pages", "per_page"],
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages",
+          "per_page"
+        ],
         "title": "OfferListResponse"
       },
       "OfferResponse": {
@@ -7565,7 +7867,13 @@
           }
         },
         "type": "object",
-        "required": ["id", "make", "model", "year", "primary_image_url"],
+        "required": [
+          "id",
+          "make",
+          "model",
+          "year",
+          "primary_image_url"
+        ],
         "title": "OfferVehicleSummary",
         "description": "Light vehicle payload embedded in offer list rows."
       },
@@ -7573,12 +7881,17 @@
         "properties": {
           "method": {
             "type": "string",
-            "enum": ["email", "sms"],
+            "enum": [
+              "email",
+              "sms"
+            ],
             "title": "Method"
           }
         },
         "type": "object",
-        "required": ["method"],
+        "required": [
+          "method"
+        ],
         "title": "OtpMethodBody"
       },
       "OtpRequestBody": {
@@ -7620,14 +7933,19 @@
           }
         },
         "type": "object",
-        "required": ["id_number"],
+        "required": [
+          "id_number"
+        ],
         "title": "OtpRequestBody"
       },
       "OtpSendBody": {
         "properties": {
           "method": {
             "type": "string",
-            "enum": ["email", "sms"],
+            "enum": [
+              "email",
+              "sms"
+            ],
             "title": "Method",
             "default": "email"
           }
@@ -7642,7 +7960,9 @@
           }
         },
         "type": "object",
-        "required": ["filters"],
+        "required": [
+          "filters"
+        ],
         "title": "ParseDealerFiltersResponse"
       },
       "ParseFiltersResponse": {
@@ -7663,7 +7983,9 @@
           }
         },
         "type": "object",
-        "required": ["filters"],
+        "required": [
+          "filters"
+        ],
         "title": "ParseFiltersResponse"
       },
       "PhoneUpdateBody": {
@@ -7676,7 +7998,9 @@
           }
         },
         "type": "object",
-        "required": ["phone"],
+        "required": [
+          "phone"
+        ],
         "title": "PhoneUpdateBody"
       },
       "PriceAnalysisRequest": {
@@ -7688,7 +8012,9 @@
           }
         },
         "type": "object",
-        "required": ["inventory_id"],
+        "required": [
+          "inventory_id"
+        ],
         "title": "PriceAnalysisRequest"
       },
       "PriceAnalysisResponse": {
@@ -7730,7 +8056,10 @@
           }
         },
         "type": "object",
-        "required": ["assessment", "explanation"],
+        "required": [
+          "assessment",
+          "explanation"
+        ],
         "title": "PriceAnalysisResponse"
       },
       "PriceEstimateRequest": {
@@ -7785,7 +8114,12 @@
           }
         },
         "type": "object",
-        "required": ["make", "model", "year", "mileage"],
+        "required": [
+          "make",
+          "model",
+          "year",
+          "mileage"
+        ],
         "title": "PriceEstimateRequest"
       },
       "PriceEstimateResponse": {
@@ -7822,7 +8156,11 @@
           }
         },
         "type": "object",
-        "required": ["estimated_price", "confidence", "breakdown"],
+        "required": [
+          "estimated_price",
+          "confidence",
+          "breakdown"
+        ],
         "title": "PriceEstimateResponse"
       },
       "RecommendationsResponse": {
@@ -7840,7 +8178,10 @@
           }
         },
         "type": "object",
-        "required": ["vehicles", "reason"],
+        "required": [
+          "vehicles",
+          "reason"
+        ],
         "title": "RecommendationsResponse"
       },
       "RejectDealerRequest": {
@@ -7853,7 +8194,9 @@
           }
         },
         "type": "object",
-        "required": ["reason"],
+        "required": [
+          "reason"
+        ],
         "title": "RejectDealerRequest"
       },
       "SellRequest": {
@@ -7996,7 +8339,10 @@
           }
         },
         "type": "object",
-        "required": ["sale_price", "sold_to"],
+        "required": [
+          "sale_price",
+          "sold_to"
+        ],
         "title": "SellRequest"
       },
       "SellResponse": {
@@ -8016,7 +8362,9 @@
           }
         },
         "type": "object",
-        "required": ["inventory"],
+        "required": [
+          "inventory"
+        ],
         "title": "SellResponse"
       },
       "SellWarning": {
@@ -8061,7 +8409,12 @@
           }
         },
         "type": "object",
-        "required": ["message", "dealer_id", "user_id", "status"],
+        "required": [
+          "message",
+          "dealer_id",
+          "user_id",
+          "status"
+        ],
         "title": "SignupResponse"
       },
       "StatsResponse": {
@@ -8130,7 +8483,9 @@
           }
         },
         "type": "object",
-        "required": ["code"],
+        "required": [
+          "code"
+        ],
         "title": "TotpCodeBody"
       },
       "TotpEnableBody": {
@@ -8150,7 +8505,10 @@
           }
         },
         "type": "object",
-        "required": ["secret", "code"],
+        "required": [
+          "secret",
+          "code"
+        ],
         "title": "TotpEnableBody"
       },
       "TotpStepRequest": {
@@ -8168,7 +8526,10 @@
           }
         },
         "type": "object",
-        "required": ["partial_token", "code"],
+        "required": [
+          "partial_token",
+          "code"
+        ],
         "title": "TotpStepRequest"
       },
       "ValidationError": {
@@ -8197,7 +8558,11 @@
           }
         },
         "type": "object",
-        "required": ["loc", "msg", "type"],
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
         "title": "ValidationError"
       },
       "VehicleSearchResponse": {
@@ -8227,7 +8592,13 @@
           }
         },
         "type": "object",
-        "required": ["items", "total", "page", "pages", "per_page"],
+        "required": [
+          "items",
+          "total",
+          "page",
+          "pages",
+          "per_page"
+        ],
         "title": "VehicleSearchResponse"
       },
       "VehicleSearchResult": {
@@ -8393,7 +8764,10 @@
           }
         },
         "type": "object",
-        "required": ["reason", "admin_password"],
+        "required": [
+          "reason",
+          "admin_password"
+        ],
         "title": "_ArchiveBody"
       },
       "_ConfirmDealBody": {
@@ -8419,7 +8793,10 @@
           }
         },
         "type": "object",
-        "required": ["text_he", "kind"],
+        "required": [
+          "text_he",
+          "kind"
+        ],
         "title": "_CreateSuspensionReasonBody"
       },
       "_PauseBody": {
@@ -8459,7 +8836,9 @@
           }
         },
         "type": "object",
-        "required": ["email"],
+        "required": [
+          "email"
+        ],
         "title": "_PromoteAdminBody"
       },
       "_SettingsUpdate": {
@@ -8537,7 +8916,9 @@
           }
         },
         "type": "object",
-        "required": ["admin_password"],
+        "required": [
+          "admin_password"
+        ],
         "title": "_SuspendBody"
       },
       "_SuspensionReasonOut": {
@@ -8561,7 +8942,12 @@
           }
         },
         "type": "object",
-        "required": ["id", "text_he", "kind", "active"],
+        "required": [
+          "id",
+          "text_he",
+          "kind",
+          "active"
+        ],
         "title": "_SuspensionReasonOut"
       },
       "_UnarchiveBody": {
@@ -8572,7 +8958,9 @@
           }
         },
         "type": "object",
-        "required": ["admin_password"],
+        "required": [
+          "admin_password"
+        ],
         "title": "_UnarchiveBody"
       },
       "_UnsuspendBody": {
@@ -8583,7 +8971,9 @@
           }
         },
         "type": "object",
-        "required": ["admin_password"],
+        "required": [
+          "admin_password"
+        ],
         "title": "_UnsuspendBody"
       },
       "app__routers__security__OtpVerifyBody": {
@@ -8597,7 +8987,9 @@
           }
         },
         "type": "object",
-        "required": ["code"],
+        "required": [
+          "code"
+        ],
         "title": "OtpVerifyBody"
       },
       "app__routers__signup__OtpVerifyBody": {
@@ -8640,7 +9032,10 @@
           }
         },
         "type": "object",
-        "required": ["id_number", "code"],
+        "required": [
+          "id_number",
+          "code"
+        ],
         "title": "OtpVerifyBody"
       }
     }
