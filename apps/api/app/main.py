@@ -85,6 +85,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    # Regex covers Vercel preview deployments (per-commit URLs that
+    # an explicit allowlist can't track). Starlette returns the
+    # matched origin in the response header, so this stays compatible
+    # with allow_credentials=True (which forbids the "*" wildcard).
+    allow_origin_regex=settings.cors_origin_regex or None,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],

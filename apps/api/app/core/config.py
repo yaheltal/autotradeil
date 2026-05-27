@@ -40,8 +40,29 @@ class Settings(BaseSettings):
     # `source .env` (CORS_ORIGINS=["a","b"] → [a,b] in os.environ).
     # With NoDecode the raw string flows through to _parse_cors which
     # accepts any of: JSON list, comma-separated, or bracket-stripped.
+    #
+    # Default covers localhost dev + every known production frontend
+    # surface (autotradeil.com canonical, www mirror, the Vercel main
+    # production deployment). Vercel preview URLs are matched via the
+    # regex below — preview URLs include a per-commit slug so an
+    # explicit allowlist would go stale every push.
     cors_origins: Annotated[list[str], NoDecode] = Field(
-        default_factory=lambda: ["http://localhost:3000"]
+        default_factory=lambda: [
+            "http://localhost:3000",
+            "https://autotradeil.com",
+            "https://www.autotradeil.com",
+            "https://autotradeil-web.vercel.app",
+        ]
+    )
+
+    # Regex matcher for additional allowed origins. Defaults to the
+    # Vercel preview pattern for the `autotradeil-web` project so PR
+    # preview deployments work without manual allowlist updates.
+    # Starlette returns the actual matched origin in the response
+    # header (not "*"), so this is safe with allow_credentials=True.
+    # Set CORS_ORIGIN_REGEX="" in env to disable.
+    cors_origin_regex: str = Field(
+        default=r"https://autotradeil-web-[a-z0-9-]+\.vercel\.app"
     )
 
     # Frontend base URL — used for password-reset and other email
