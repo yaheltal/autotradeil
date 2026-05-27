@@ -64,3 +64,13 @@ services:
         value: production
       - key: WEB_CONCURRENCY
         value: "2"
+      # CORS — optional overrides. When unset on Render, the code
+      # default in apps/api/app/core/config.py covers prod + the
+      # Vercel main deployment, with a regex for Vercel previews.
+      # Set CORS_ORIGINS in the Render dashboard if you need to add
+      # a custom domain. Set CORS_ORIGIN_REGEX="" to disable the
+      # Vercel preview match.
+      - key: CORS_ORIGINS
+        sync: false
+      - key: CORS_ORIGIN_REGEX
+        sync: false
