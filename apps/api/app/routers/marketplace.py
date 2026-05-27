@@ -1368,6 +1368,10 @@ async def list_deals(
         seller = dealers.get(d.seller_dealer_id)
         if veh is None or buyer is None or seller is None:
             continue
+        # model_validate picks up every field the schema declares from the
+        # ORM object via from_attributes=True. The previous explicit-kwargs
+        # form silently dropped `tier` (added to OfferDealerSummary later)
+        # and crashed list_deals with a Pydantic ValidationError → 500.
         items.append(
             DealResponse(
                 id=d.id,
@@ -1385,12 +1389,8 @@ async def list_deals(
                     year=veh.year,
                     primary_image_url=primary_images.get(veh.id),
                 ),
-                buyer=OfferDealerSummary(
-                    id=buyer.id, business_name=buyer.business_name, city=buyer.city
-                ),
-                seller=OfferDealerSummary(
-                    id=seller.id, business_name=seller.business_name, city=seller.city
-                ),
+                buyer=OfferDealerSummary.model_validate(buyer),
+                seller=OfferDealerSummary.model_validate(seller),
             )
         )
 
