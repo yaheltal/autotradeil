@@ -1,8 +1,19 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import dynamic from "next/dynamic";
 import { useState } from "react";
+
+// Devtools only in dev. The `process.env.NODE_ENV === "production"` check
+// is statically replaced at build time (Webpack DefinePlugin), so in prod
+// the entire next/dynamic call collapses to `() => null` and the
+// @tanstack/react-query-devtools chunk never enters the bundle.
+const ReactQueryDevtools =
+  process.env.NODE_ENV === "production"
+    ? ((() => null) as () => null)
+    : dynamic(() => import("@tanstack/react-query-devtools").then((m) => m.ReactQueryDevtools), {
+        ssr: false,
+      });
 
 /**
  * Root TanStack Query provider for the Next.js App Router.
@@ -54,9 +65,7 @@ export function QueryProvider({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      {process.env.NODE_ENV === "development" ? (
-        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
-      ) : null}
+      <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-left" />
     </QueryClientProvider>
   );
 }
