@@ -16,6 +16,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { LogoutButton } from "@/components/dashboard/LogoutButton";
 
 type NavItem = {
   href: string;
@@ -147,9 +148,10 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      <div className="border-brand-navy/10 border-t px-3 py-3 dark:border-white/10">
+      <div className="border-brand-navy/10 border-t px-2 py-2 dark:border-white/10">
+        <LogoutButton collapsed={collapsed} />
         {!collapsed ? (
-          <p className="text-brand-ink/40 dark:text-brand-cream/40 px-2 text-[11px]">
+          <p className="text-brand-ink/40 dark:text-brand-cream/40 mt-2 px-2 text-[11px]">
             AutoTradeIL · v0.1
           </p>
         ) : null}

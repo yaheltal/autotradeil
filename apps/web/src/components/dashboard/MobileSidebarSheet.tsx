@@ -15,6 +15,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import {
   Sheet,
   SheetContent,
@@ -85,14 +86,14 @@ export function MobileSidebarSheet() {
           <Menu className="h-5 w-5" aria-hidden="true" />
         </button>
       </SheetTrigger>
-      <SheetContent side="right" className="bg-paper p-0 sm:max-w-xs">
-        <SheetHeader className="px-lg py-lg border-hairline border-b text-start">
+      <SheetContent side="right" className="bg-paper flex h-full flex-col p-0 sm:max-w-xs">
+        <SheetHeader className="px-lg py-lg border-hairline shrink-0 border-b text-start">
           <SheetTitle className="text-ink tracking-editorial font-serif text-xl font-medium">
             AutoTradeIL
           </SheetTitle>
           <SheetDescription className="sr-only">תפריט ניווט ראשי של לוח הבקרה</SheetDescription>
         </SheetHeader>
-        <nav aria-label="ניווט ראשי" className="px-md py-md">
+        <nav aria-label="ניווט ראשי" className="px-md py-md flex-1 overflow-y-auto">
           <ul className="space-y-xxs flex flex-col">
             {ITEMS.map((item) => {
               const active = isActive(pathname, item);
@@ -121,6 +122,12 @@ export function MobileSidebarSheet() {
             })}
           </ul>
         </nav>
+        {/* Footer — pinned to the bottom of the drawer. shrink-0 so the
+            nav above scrolls when content overflows; the logout button
+            stays anchored where the thumb expects it on phones. */}
+        <div className="border-hairline px-md py-md shrink-0 border-t">
+          <LogoutButton />
+        </div>
       </SheetContent>
     </Sheet>
   );
