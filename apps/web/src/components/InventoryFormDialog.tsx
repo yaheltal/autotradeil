@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useForm, type UseFormRegisterReturn } from "react-hook-form";
+import { toast } from "sonner";
 import { z } from "zod";
 
 import { FormField } from "@/components/FormField";
@@ -1091,25 +1092,51 @@ export function InventoryFormDialog({
       onOpenChange(false);
       reset(toFormValues(null));
       if (newId && token) {
-        // Fire-and-forget uploads. AI identification photo first (so it
+        // Background uploads. AI identification photo first (so it
         // becomes position 1), then any queued gallery files in order.
-        // Non-fatal failures — vehicle exists, dealer can re-upload.
-        const uploadOne = (file: File) => {
-          const form = new FormData();
-          form.append("file", file);
-          return fetch(
-            `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/inventory/${newId}/images`,
-            {
-              method: "POST",
-              headers: { Authorization: `Bearer ${token}` },
-              body: form,
-            },
-          ).catch(() => {
-            // Silent — non-fatal
+        // We don't block the dialog close on these — but we DO track
+        // failures and surface them via Sonner toast. Previously the
+        // catch was silent (`.catch(() => {})`) which is how vehicles
+        // ended up created without their photos when the network
+        // blipped during this fire-and-forget window. The dealer now
+        // gets a visible warning + a hint to retry via "ניהול תמונות".
+        const allFiles: File[] = [...(fileToAttach ? [fileToAttach] : []), ...queuedToAttach];
+        if (allFiles.length > 0) {
+          const uploadOne = async (file: File): Promise<boolean> => {
+            try {
+              const form = new FormData();
+              form.append("file", file);
+              const res = await fetch(
+                `${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/v1/inventory/${newId}/images`,
+                {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${token}` },
+                  body: form,
+                },
+              );
+              return res.ok;
+            } catch {
+              return false;
+            }
+          };
+          void Promise.all(allFiles.map(uploadOne)).then((results) => {
+            const failed = results.filter((ok) => !ok).length;
+            const total = results.length;
+            if (failed === 0) return;
+            // Partial or total failure — tell the dealer something
+            // is missing so they don't discover empty thumbnails in
+            // the marketplace later. Action button opens the same
+            // dialog they would have reached manually.
+            toast.warning(
+              failed === total ? "התמונות לא הועלו" : `${failed} מתוך ${total} תמונות לא הועלו`,
+              {
+                description:
+                  "הרכב נשמר. כדי להוסיף את התמונות החסרות, פתח אותו ובחר 'ניהול תמונות'.",
+                duration: 8000,
+              },
+            );
           });
-        };
-        if (fileToAttach) void uploadOne(fileToAttach);
-        for (const f of queuedToAttach) void uploadOne(f);
+        }
       }
     } catch (e) {
       setFieldError("root", {

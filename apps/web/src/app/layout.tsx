@@ -3,6 +3,7 @@ import { Frank_Ruhl_Libre, Inter } from "next/font/google";
 
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
+import { Toaster } from "@/components/ui/sonner";
 import { QueryProvider } from "@/providers/query-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
 
@@ -171,6 +172,12 @@ export default function RootLayout({
             <ImpersonationBanner />
             {children}
             <PWAInstallPrompt />
+            {/* Global Sonner toaster — fires from anywhere via
+                `import { toast } from "sonner"`. position=top-center
+                so RTL users see toasts above content rather than
+                tucked into the bottom-right corner where the mobile
+                bottom-nav already sits. */}
+            <Toaster position="top-center" />
           </QueryProvider>
         </ThemeProvider>
       </body>
