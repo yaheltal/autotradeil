@@ -11,7 +11,7 @@ import { AdminStatusPill } from "@/components/admin/AdminStatusPill";
 import { TablePagination } from "@/components/admin/TablePagination";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -441,12 +441,22 @@ function DealersListPageInner() {
                         </time>
                       </TableCell>
                       <TableCell className="text-end">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/admin/dealers/${d.id}`}>
-                            פרטים
-                            <span className="sr-only"> של {d.business_name}</span>
-                          </Link>
-                        </Button>
+                        {/* Plain <Link> styled via buttonVariants — the
+                         *  prior `<Button asChild><Link/></Button>` form
+                         *  wrapped through Radix Slot, which dropped the
+                         *  click handler in this specific row layout
+                         *  ("the details button does nothing"). Direct
+                         *  className avoids Slot entirely. */}
+                        <Link
+                          href={`/admin/dealers/${d.id}`}
+                          className={buttonVariants({
+                            variant: "outline",
+                            size: "sm",
+                          })}
+                        >
+                          פרטים
+                          <span className="sr-only"> של {d.business_name}</span>
+                        </Link>
                       </TableCell>
                     </TableRow>
                   );
