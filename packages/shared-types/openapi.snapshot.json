@@ -3495,6 +3495,50 @@
         }
       }
     },
+    "/api/v1/marketplace/offers/{offer_id}/history": {
+      "get": {
+        "tags": [
+          "marketplace"
+        ],
+        "summary": "Get Offer History",
+        "description": "Negotiation timeline for a single offer.\n\nReads from the `events` append-only stream (aggregate_type='offer').\nReturns a chronological list of state-transition entries:\nopened → countered* → (accepted | rejected | cancelled).\n\nAuthorization mirrors the offer write endpoints: only the buyer or\nseller of the offer may read its history. Anyone else gets 403.\n\nMessage preservation is partial: the original buyer message and the\nmost recent counter message survive on the offers row; per-counter\nmessages from older rounds are not recoverable (see schema comment).",
+        "operationId": "get_offer_history_api_v1_marketplace_offers__offer_id__history_get",
+        "parameters": [
+          {
+            "name": "offer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Offer Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OfferHistoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/marketplace/offers/{offer_id}/confirm-deal": {
       "post": {
         "tags": [
@@ -7696,6 +7740,81 @@
           "tier"
         ],
         "title": "OfferDealerSummary"
+      },
+      "OfferHistoryEntry": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "opened",
+              "countered",
+              "accepted",
+              "rejected",
+              "cancelled"
+            ],
+            "title": "Kind"
+          },
+          "by_role": {
+            "type": "string",
+            "enum": [
+              "buyer",
+              "seller"
+            ],
+            "title": "By Role"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "by_role",
+          "price",
+          "message",
+          "at"
+        ],
+        "title": "OfferHistoryEntry"
+      },
+      "OfferHistoryResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/OfferHistoryEntry"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "OfferHistoryResponse"
       },
       "OfferListResponse": {
         "properties": {
