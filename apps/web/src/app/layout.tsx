@@ -106,6 +106,14 @@ export const metadata: Metadata = {
     title: "AutoTradeIL",
     statusBarStyle: "default",
   },
+  // Next 14's `appleWebApp.capable` emits only the legacy
+  // <meta name="apple-mobile-web-app-capable">. Both Safari and
+  // Chromium support (and prefer) the modern
+  // <meta name="mobile-web-app-capable">. Emit both so the manifest
+  // survives the deprecation — silences the iOS console warning.
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
   robots: {
     index: true,
     follow: true,
