@@ -12,8 +12,6 @@ import { NextResponse, type NextRequest } from "next/server";
  * That keeps server state out of the edge runtime.
  */
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next();
-
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   // Accept either the legacy ANON_KEY or the new PUBLISHABLE_KEY name
   // Supabase v2 introduced. Failing closed on a name mismatch causes the
@@ -27,10 +25,27 @@ export async function middleware(request: NextRequest) {
     return redirectToLogin(request);
   }
 
+  // Canonical Supabase SSR template. The prior implementation skipped
+  // two steps that matter for the access-token refresh flow:
+  //   1. NextResponse.next({ request }) — preserves request headers so
+  //      downstream route handlers see the same request context.
+  //   2. setAll() writes cookies to BOTH request and a freshly-rebuilt
+  //      response. Without rebuilding `response` inside setAll(), the
+  //      refreshed access-token cookie wasn't always making it back to
+  //      the browser — which is exactly the symptom reported as
+  //      "session expires during navigation". The 1-hour access token
+  //      would expire mid-session and the auto-refresh that getUser()
+  //      triggers had nowhere to persist its result.
+  let response = NextResponse.next({ request });
+
   const supabase = createServerClient(url, anon, {
     cookies: {
       getAll: () => request.cookies.getAll(),
       setAll: (cookies) => {
+        cookies.forEach(({ name, value }) => {
+          request.cookies.set(name, value);
+        });
+        response = NextResponse.next({ request });
         cookies.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);
         });
