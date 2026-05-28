@@ -1,12 +1,14 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCircle2, TriangleAlert } from "lucide-react";
+import { Car, Check, CheckCircle2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { CounterOfferDialog } from "@/components/CounterOfferDialog";
+import { OfferDetailDialog } from "@/components/OfferDetailDialog";
+import { OfferStatusPill } from "@/components/OfferStatusPill";
 import { type OfferStatus } from "@/components/StatusBadge";
 import { TrustBadge, type Tier } from "@/components/TrustBadge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -123,6 +125,12 @@ export default function OffersPage() {
     originalSideLabel: string;
   }>(null);
 
+  // Detail-dialog state — open/close keyed by offer id so the dialog
+  // re-mounts cleanly between offers (avoiding stale query data leaking
+  // across selections). The id is sourced; the full offer is looked up
+  // from the appropriate list query so it stays in sync with mutations.
+  const [selectedOfferId, setSelectedOfferId] = useState<string | null>(null);
+
   const receivedQuery = useQuery({
     queryKey: queryKeys.offers.list("received"),
     queryFn: () =>
@@ -138,6 +146,18 @@ export default function OffersPage() {
 
   const received = receivedQuery.data ?? null;
   const sent = sentQuery.data ?? null;
+
+  // Resolve the currently-open detail offer from whichever list it's in.
+  // Looked up live so accept/counter mutations that invalidate the lists
+  // also refresh the dialog body.
+  const selected = useMemo(() => {
+    if (!selectedOfferId) return null;
+    const fromReceived = received?.items.find((o) => o.id === selectedOfferId);
+    if (fromReceived) return { offer: fromReceived, direction: "received" as const };
+    const fromSent = sent?.items.find((o) => o.id === selectedOfferId);
+    if (fromSent) return { offer: fromSent, direction: "sent" as const };
+    return null;
+  }, [selectedOfferId, received, sent]);
 
   useEffect(() => {
     if (receivedQuery.error || sentQuery.error) {
@@ -330,6 +350,7 @@ export default function OffersPage() {
                 key={o.id}
                 offer={o}
                 direction="received"
+                onOpenDetail={() => setSelectedOfferId(o.id)}
                 onAccept={() => setConfirm({ action: "accept", offer: o })}
                 onReject={() => setConfirm({ action: "reject", offer: o })}
                 onCancel={() => setConfirm({ action: "cancel", offer: o })}
@@ -374,6 +395,7 @@ export default function OffersPage() {
                 key={o.id}
                 offer={o}
                 direction="sent"
+                onOpenDetail={() => setSelectedOfferId(o.id)}
                 onAccept={() => setConfirm({ action: "accept", offer: o })}
                 onReject={() => setConfirm({ action: "reject", offer: o })}
                 onCancel={() => setConfirm({ action: "cancel", offer: o })}
@@ -458,6 +480,28 @@ export default function OffersPage() {
           }}
         />
       ) : null}
+
+      <OfferDetailDialog
+        open={selected != null}
+        onOpenChange={(v) => !v && setSelectedOfferId(null)}
+        offer={selected?.offer ?? null}
+        direction={selected?.direction ?? "received"}
+        token={token}
+        onAccept={(o) => setConfirm({ action: "accept", offer: o })}
+        onReject={(o) => setConfirm({ action: "reject", offer: o })}
+        onCancel={(o) => setConfirm({ action: "cancel", offer: o })}
+        onCounter={(o) =>
+          setCounter({
+            offer: o,
+            originalPrice:
+              selected?.direction === "received"
+                ? o.offered_price
+                : (o.counter_price ?? o.offered_price),
+            originalSideLabel: selected?.direction === "received" ? "הצעת הקונה" : "הצעת המוכר",
+          })
+        }
+        onConfirmDeal={(o) => setConfirm({ action: "confirm-deal", offer: o })}
+      />
     </main>
   );
 }
@@ -470,6 +514,7 @@ export default function OffersPage() {
 function OfferCard({
   offer,
   direction,
+  onOpenDetail,
   onAccept,
   onReject,
   onCancel,
@@ -478,6 +523,7 @@ function OfferCard({
 }: {
   offer: Offer;
   direction: "received" | "sent";
+  onOpenDetail: () => void;
   onAccept: () => void;
   onReject: () => void;
   onCancel: () => void;
@@ -517,15 +563,33 @@ function OfferCard({
     showCancelSent;
 
   return (
-    <li className="border-hairline bg-paper px-lg py-lg rounded-md border">
-      <article aria-labelledby={titleId}>
-        {/* Header: title + status pill */}
-        <header className="gap-md flex flex-wrap items-start justify-between">
-          <h3 id={titleId} className="text-ink font-serif text-lg font-medium leading-tight">
-            {offer.vehicle.make} {offer.vehicle.model}{" "}
-            <span className="text-muted font-tabular font-normal">· {offer.vehicle.year}</span>
-          </h3>
-          <StatusPill status={offer.status} />
+    <li className="border-hairline bg-paper px-lg py-lg hover:border-ink/30 duration-fast group relative rounded-md border transition-colors">
+      {/* Overlay button — receives card-level taps to open the detail
+          dialog. Sits behind the content (z-0) so visible elements
+          stay readable; the content layer disables pointer events so
+          taps pass through to this button. Action buttons re-enable
+          pointer events for themselves so they keep working. */}
+      <button
+        type="button"
+        onClick={onOpenDetail}
+        aria-label={`פתח פרטי ההצעה על ${label}`}
+        className="focus-visible:outline-accent absolute inset-0 z-0 rounded-md focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+      />
+
+      <article aria-labelledby={titleId} className="pointer-events-none relative z-10">
+        {/* Header: thumbnail + title + status pill */}
+        <header className="gap-md flex items-start justify-between">
+          <div className="gap-md flex min-w-0 items-start">
+            <OfferThumbnail url={offer.vehicle.primary_image_url} />
+            <h3
+              id={titleId}
+              className="text-ink mt-xxs font-serif text-lg font-medium leading-tight"
+            >
+              {offer.vehicle.make} {offer.vehicle.model}{" "}
+              <span className="text-muted font-tabular font-normal">· {offer.vehicle.year}</span>
+            </h3>
+          </div>
+          <OfferStatusPill status={offer.status} />
         </header>
 
         {/* Counterparty line */}
@@ -585,9 +649,10 @@ function OfferCard({
         {/* Deal-confirmation block (only when status==="accepted") */}
         <DealConfirmationBlock offer={offer} myRole={myRole} onConfirmClick={onConfirmDeal} />
 
-        {/* Actions */}
+        {/* Actions — re-enable pointer events so taps land here, not on
+            the underlying card-open button. */}
         {hasActions ? (
-          <div className="border-hairline mt-lg pt-lg gap-xs flex flex-wrap border-t">
+          <div className="border-hairline mt-lg pt-lg gap-xs pointer-events-auto flex flex-wrap border-t">
             {showAcceptReceived ? (
               <Button type="button" onClick={onAccept} aria-label={`אישור ההצעה על ${label}`}>
                 קבל
@@ -638,47 +703,29 @@ function OfferCard({
 }
 
 // ============================================================================
-// StatusPill — local to offers. ink/paper + accent on "countered" (the
-// editorial moment where the conversation is alive).
+// OfferThumbnail — 56px square hairline-framed vehicle photo, with a car
+// glyph fallback when there's no primary image. Decorative: alt="" so SR
+// users don't hear "Toyota Camry, image of Toyota Camry".
 // ============================================================================
 
-function StatusPill({ status }: { status: OfferStatus }) {
-  // OfferStatus from StatusBadge is currently "pending" | "accepted" |
-  // "rejected" | "countered" | "cancelled". The backend also emits
-  // "expired" — handle defensively.
-  const cls = (() => {
-    switch (status) {
-      case "accepted":
-        return "bg-ok-bg text-ok-fg border-ok/20";
-      case "rejected":
-        return "bg-danger-bg text-danger-fg border-danger/20";
-      case "countered":
-        return "bg-accent/10 text-accent border-accent/30";
-      case "cancelled":
-        return "bg-muted/10 text-muted border-hairline";
-      case "pending":
-      default:
-        return "bg-muted/10 text-muted border-hairline";
-    }
-  })();
-  const label = STATUS_LABELS[status] ?? status;
+function OfferThumbnail({ url }: { url: string | null }) {
+  if (!url) {
+    return (
+      <div
+        className="border-hairline bg-muted/5 flex h-14 w-14 shrink-0 items-center justify-center rounded-md border"
+        aria-hidden="true"
+      >
+        <Car className="text-subtle h-5 w-5" />
+      </div>
+    );
+  }
   return (
-    <span
-      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls}`}
-    >
-      {label}
-    </span>
+    <div className="border-hairline bg-muted/5 h-14 w-14 shrink-0 overflow-hidden rounded-md border">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={url} alt="" loading="lazy" className="h-full w-full object-cover" />
+    </div>
   );
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: "ממתינה",
-  accepted: "התקבלה",
-  rejected: "נדחתה",
-  countered: "הצעה נגדית",
-  cancelled: "בוטלה",
-  expired: "פגה",
-};
 
 // ============================================================================
 // OfferTimeline — horizontal step list. Current step in text-ink font-medium,

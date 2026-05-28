@@ -66,6 +66,8 @@ export type OfferCreate = Schemas["OfferCreate"];
 export type OfferListResponse = Schemas["OfferListResponse"];
 export type OfferDealerSummary = Schemas["OfferDealerSummary"];
 export type OfferVehicleSummary = Schemas["OfferVehicleSummary"];
+export type OfferHistoryEntry = Schemas["OfferHistoryEntry"];
+export type OfferHistoryResponse = Schemas["OfferHistoryResponse"];
 
 export type Deal = Schemas["DealResponse"];
 export type DealListResponse = Schemas["DealListResponse"];
