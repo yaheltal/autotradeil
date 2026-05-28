@@ -174,7 +174,7 @@ function Body({
   const profileQuery = useQuery({
     queryKey: queryKeys.marketplace.dealer(counterparty.id),
     queryFn: () =>
-      apiFetch<DealerProfile>(`/api/v1/marketplace/dealer/${counterparty.id}`, {
+      apiFetch<DealerProfile>(`/api/v1/marketplace/dealers/${counterparty.id}/profile`, {
         token: token!,
       }),
     enabled: !!token,
