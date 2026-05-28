@@ -1334,9 +1334,7 @@ async def confirm_deal(
     final_price = offer.counter_price or offer.offered_price
 
     if both_confirmed:
-        from datetime import datetime, timezone as _tz
-
-        now = datetime.now(tz=_tz.utc)
+        now = datetime.now(tz=timezone.utc)
         offer.closed_at = now
 
         # Create deal row — also copies both digital-agreement
