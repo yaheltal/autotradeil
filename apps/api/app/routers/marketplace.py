@@ -11,6 +11,7 @@ Routes (all require a verified dealer):
     POST /api/v1/marketplace/offers/{id}/reject
     POST /api/v1/marketplace/offers/{id}/counter
     POST /api/v1/marketplace/offers/{id}/cancel
+    GET  /api/v1/marketplace/offers/{id}/history  — typed timeline of the negotiation
 
     GET  /api/v1/notifications                — dealer inbox
     POST /api/v1/notifications/{id}/read
@@ -63,6 +64,7 @@ from app.database import get_db
 from app.models import (
     Deal,
     Dealer,
+    Event,
     Inventory,
     InventoryImage,
     Notification,
@@ -81,6 +83,8 @@ from app.schemas.marketplace import (
     NotificationResponse,
     OfferCreate,
     OfferDealerSummary,
+    OfferHistoryEntry,
+    OfferHistoryResponse,
     OfferListResponse,
     OfferResponse,
     OfferVehicleSummary,
@@ -1054,6 +1058,131 @@ async def cancel_offer(
 
     primary = await _primary_image_url_for(vehicle.id, db)
     return _offer_response(offer, vehicle, buyer, seller, primary)
+
+
+@marketplace_router.get(
+    "/offers/{offer_id}/history",
+    response_model=OfferHistoryResponse,
+)
+async def get_offer_history(
+    offer_id: uuid.UUID,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> OfferHistoryResponse:
+    """Negotiation timeline for a single offer.
+
+    Reads from the `events` append-only stream (aggregate_type='offer').
+    Returns a chronological list of state-transition entries:
+    opened → countered* → (accepted | rejected | cancelled).
+
+    Authorization mirrors the offer write endpoints: only the buyer or
+    seller of the offer may read its history. Anyone else gets 403.
+
+    Message preservation is partial: the original buyer message and the
+    most recent counter message survive on the offers row; per-counter
+    messages from older rounds are not recoverable (see schema comment).
+    """
+    _, dealer = ud
+
+    offer = (
+        await db.execute(select(Offer).where(Offer.id == offer_id))
+    ).scalar_one_or_none()
+    if offer is None:
+        raise HTTPException(status_code=404, detail="הצעה לא נמצאה")
+    _require_involved(offer, dealer)  # raises 403 if not buyer/seller
+
+    # Restrict to the five offer-lifecycle event types. deal.* events also
+    # land on this aggregate (post-acceptance double-confirmation flow)
+    # but are out of scope for the negotiation timeline.
+    KIND_EVENTS = (
+        "offer.created",
+        "offer.countered",
+        "offer.accepted",
+        "offer.rejected",
+        "offer.cancelled",
+    )
+
+    rows = (
+        await db.execute(
+            select(Event)
+            .where(
+                Event.aggregate_type == "offer",
+                Event.aggregate_id == offer_id,
+                Event.event_type.in_(KIND_EVENTS),
+            )
+            .order_by(Event.occurred_at.asc())
+        )
+    ).scalars().all()
+
+    entries: list[OfferHistoryEntry] = []
+    last_countered_index: int | None = None
+
+    for ev in rows:
+        p = ev.payload or {}
+        if ev.event_type == "offer.created":
+            # offer.created has no by_role in payload — buyers are the only
+            # actor that creates offers, so this is structurally always
+            # "buyer".
+            entries.append(
+                OfferHistoryEntry(
+                    kind="opened",
+                    by_role="buyer",
+                    price=int(p["offered_price"]),
+                    message=offer.message,
+                    at=ev.occurred_at,
+                )
+            )
+        elif ev.event_type == "offer.countered":
+            entries.append(
+                OfferHistoryEntry(
+                    kind="countered",
+                    by_role=p["by_role"],
+                    price=int(p["counter_price"]),
+                    # Historical counter messages aren't preserved — only
+                    # the most recent survives on offers.counter_message,
+                    # which we attach below to the last countered entry.
+                    message=None,
+                    at=ev.occurred_at,
+                )
+            )
+            last_countered_index = len(entries) - 1
+        elif ev.event_type == "offer.accepted":
+            entries.append(
+                OfferHistoryEntry(
+                    kind="accepted",
+                    by_role=p["by_role"],
+                    price=int(p["agreed_price"]),
+                    message=None,
+                    at=ev.occurred_at,
+                )
+            )
+        elif ev.event_type == "offer.rejected":
+            entries.append(
+                OfferHistoryEntry(
+                    kind="rejected",
+                    by_role=p["by_role"],
+                    price=None,
+                    message=None,
+                    at=ev.occurred_at,
+                )
+            )
+        elif ev.event_type == "offer.cancelled":
+            entries.append(
+                OfferHistoryEntry(
+                    kind="cancelled",
+                    by_role=p["by_role"],
+                    price=None,
+                    message=None,
+                    at=ev.occurred_at,
+                )
+            )
+
+    if last_countered_index is not None and offer.counter_message:
+        entries[last_countered_index] = entries[last_countered_index].model_copy(
+            update={"message": offer.counter_message}
+        )
+
+    return OfferHistoryResponse(items=entries)
 
 
 # =============================================================================

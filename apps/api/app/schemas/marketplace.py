@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -167,6 +167,40 @@ class OfferResponse(BaseModel):
     vehicle: OfferVehicleSummary
     buyer: OfferDealerSummary
     seller: OfferDealerSummary
+
+
+# =============================================================================
+# Offer history (read-only — sourced from the `events` append-only stream)
+# =============================================================================
+#
+# Per-counter messages from rounds BEFORE the most recent counter are not
+# recoverable: `offers.counter_message` is overwritten on every counter and
+# the `offer.countered` event payload does not carry the message text. The
+# `opened` entry's message comes from `offers.message` (preserved on the
+# row); the most recent `countered` entry's message comes from
+# `offers.counter_message` (still on the row); older entries return null.
+# Capturing counter_message into the event payload on the write side is a
+# tracked follow-up — see CHANGELOG / backlog, not done here.
+
+
+OfferHistoryKind = Literal[
+    "opened", "countered", "accepted", "rejected", "cancelled"
+]
+
+
+class OfferHistoryEntry(BaseModel):
+    kind: OfferHistoryKind
+    by_role: Literal["buyer", "seller"]
+    # `price` is offered_price (opened), counter_price (countered), or
+    # agreed_price (accepted). Null for rejected/cancelled — those
+    # transitions don't carry a price.
+    price: int | None
+    message: str | None
+    at: datetime
+
+
+class OfferHistoryResponse(BaseModel):
+    items: list[OfferHistoryEntry]
 
 
 class OfferListResponse(BaseModel):
