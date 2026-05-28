@@ -475,6 +475,30 @@ export function InventoryFormDialog({
   // ── Step state ─────────────────────────────────────────────────────
   const [step, setStep] = useState<StepNum>(1);
 
+  // Submit-arm state — disables the type="submit" footer button for a
+  // brief window after every step change. Prevents the "swap-under-tap"
+  // race on mobile: the same finger-down that fires "הבא" on step 2
+  // continues to dispatch synthetic events (trailing click, focus
+  // retargeting, keyboard activation) after React re-renders the submit
+  // button into the same DOM slot. Without this disarm, that residual
+  // event lands on the freshly-mounted submit button and saves the
+  // vehicle before the user has actually seen step 3.
+  //
+  // The disabled attribute also blocks HTML implicit form submission
+  // (per spec, a disabled button cannot serve as the form's default
+  // button), so iOS Safari's keyboard Done/Go key cannot submit during
+  // the window either.
+  //
+  // 500ms is long enough to absorb any plausible tap-leak (typical
+  // mobile tap durations are 100-300ms) and short enough that a
+  // deliberate user who wants to skip warranty/images barely notices.
+  const [submitArmed, setSubmitArmed] = useState(true);
+  useEffect(() => {
+    setSubmitArmed(false);
+    const t = window.setTimeout(() => setSubmitArmed(true), 500);
+    return () => window.clearTimeout(t);
+  }, [step]);
+
   // ── Autofill tracking ──────────────────────────────────────────────
   const [autofilledFields, setAutofilledFields] = useState<Set<string>>(new Set());
   const clearAutofill = useCallback((field: string) => {
@@ -1330,7 +1354,11 @@ export function InventoryFormDialog({
                   הבא
                 </Button>
               ) : (
-                <Button type="submit" disabled={isSubmitting} aria-busy={isSubmitting || undefined}>
+                <Button
+                  type="submit"
+                  disabled={isSubmitting || !submitArmed}
+                  aria-busy={isSubmitting || undefined}
+                >
                   {isSubmitting ? (
                     <>
                       <Loader2 aria-hidden="true" className="animate-spin" />
