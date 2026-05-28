@@ -53,6 +53,7 @@ export const queryKeys = {
   offers: {
     root: () => ["offers"] as const,
     list: (direction: "received" | "sent") => ["offers", direction] as const,
+    history: (offerId: string) => ["offers", "history", offerId] as const,
   },
 
   // ---- Deals -----------------------------------------------------
