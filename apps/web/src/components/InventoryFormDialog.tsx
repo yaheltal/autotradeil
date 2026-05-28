@@ -1048,6 +1048,20 @@ export function InventoryFormDialog({
 
   // ── Submit ─────────────────────────────────────────────────────────
   const submit = handleSubmit(async (values) => {
+    // Wizard contract: the form's onSubmit can fire on Steps 1/2 via
+    // paths that bypass the "הבא" button — most notably iOS Safari /
+    // Android Chrome implicit form submission when the user presses
+    // the on-screen keyboard's Done/Go/Enter key inside a text input.
+    // Because Step 3 holds only OPTIONAL fields (warranty + images),
+    // the schema-level validation passes with Step 1+2 inputs alone,
+    // so without this gate the vehicle is silently saved from partial
+    // data and the user never reaches אחריות + תמונות. Route any
+    // premature submit through goNext so the wizard advances.
+    if (step !== 3) {
+      await goNext();
+      return;
+    }
+
     const handDecoded = decodeHand(values.hand_combo ?? "");
     const payload: InventoryPayload = {
       make: values.make,
