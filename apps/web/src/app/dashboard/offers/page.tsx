@@ -198,28 +198,36 @@ export default function OffersPage() {
   };
 
   // -- Mutations (preserved from Phase 4) ----------------------------------
+  // The offers.history(id) invalidation below is technically redundant —
+  // invalidateQueries on offers.root() prefix-matches every key starting
+  // with ["offers"], which includes ["offers", "history", id]. Listing
+  // history explicitly documents intent and guards against a future
+  // refactor that narrows the prefix.
   const acceptMutation = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/v1/marketplace/offers/${id}/accept`, { method: "POST", token: token! }),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       setToast("ההצעה אושרה");
       void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.history(id) });
     },
   });
   const rejectMutation = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/v1/marketplace/offers/${id}/reject`, { method: "POST", token: token! }),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       setToast("ההצעה נדחתה");
       void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.history(id) });
     },
   });
   const cancelMutation = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/v1/marketplace/offers/${id}/cancel`, { method: "POST", token: token! }),
-    onSuccess: () => {
+    onSuccess: (_data, id) => {
       setToast("ההצעה בוטלה");
       void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.history(id) });
     },
   });
   const confirmDealMutation = useMutation({
@@ -229,13 +237,14 @@ export default function OffersPage() {
         token: token!,
         body: JSON.stringify({ agreed: true }),
       }),
-    onSuccess: (res) => {
+    onSuccess: (res, id) => {
       setToast(
         res.closed_at
           ? "העסקה אושרה — בתהליך, צוות AutoTradeIL מלווה את הסגירה"
           : "אישורך נשמר — ממתין לצד השני",
       );
       void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.history(id) });
       if (res.closed_at) void qc.invalidateQueries({ queryKey: queryKeys.deals.root() });
     },
   });

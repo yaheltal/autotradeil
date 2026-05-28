@@ -95,6 +95,9 @@ export function CounterOfferDialog({
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: queryKeys.offers.root() });
+      // Defensive — root() prefix already covers history(), but listing
+      // it explicitly survives a refactor that narrows the root key.
+      void qc.invalidateQueries({ queryKey: queryKeys.offers.history(offerId) });
       onSubmitted();
       onOpenChange(false);
     },
