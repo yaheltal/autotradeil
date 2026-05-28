@@ -12,6 +12,8 @@
 
 import { type OfferStatus } from "@/components/StatusBadge";
 
+export type OfferDirection = "received" | "sent";
+
 const STATUS_LABELS: Record<string, string> = {
   pending: "ממתינה",
   accepted: "התקבלה",
@@ -21,7 +23,28 @@ const STATUS_LABELS: Record<string, string> = {
   expired: "פגה",
 };
 
-export function OfferStatusPill({ status }: { status: OfferStatus }) {
+/**
+ * Offer status badge.
+ *
+ * When `direction` is provided AND status is `pending`/`countered`, the
+ * pill shows "whose move is next" instead of the generic status word.
+ * That's the single highest-signal question a dealer asks of an open
+ * offer ("is this on me?"). The color cue (accent on countered, muted
+ * on pending) still separates the two states visually.
+ *
+ * Heuristic: counter_price on the offer row reflects only the LAST
+ * counter, regardless of who made it. We infer "whose turn" from
+ * direction × status — correct for one round, gracefully wrong (off by
+ * one round) for multi-round counter chains. The exact who-countered-last
+ * lives in the history endpoint; this pill stays cheap.
+ */
+export function OfferStatusPill({
+  status,
+  direction,
+}: {
+  status: OfferStatus;
+  direction?: OfferDirection;
+}) {
   const cls = (() => {
     switch (status) {
       case "accepted":
@@ -37,7 +60,10 @@ export function OfferStatusPill({ status }: { status: OfferStatus }) {
         return "bg-muted/10 text-muted border-hairline";
     }
   })();
-  const label = STATUS_LABELS[status] ?? status;
+  const label =
+    direction && (status === "pending" || status === "countered")
+      ? waitingLabel(status, direction)
+      : (STATUS_LABELS[status] ?? status);
   return (
     <span
       className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${cls}`}
@@ -45,6 +71,17 @@ export function OfferStatusPill({ status }: { status: OfferStatus }) {
       {label}
     </span>
   );
+}
+
+function waitingLabel(status: "pending" | "countered", direction: OfferDirection): string {
+  // received + pending   → buyer just opened, my (seller's) move
+  // received + countered → I (seller) just countered, buyer's move
+  // sent     + pending   → I (buyer) just opened, seller's move
+  // sent     + countered → seller just countered, my move
+  const myMove =
+    (direction === "received" && status === "pending") ||
+    (direction === "sent" && status === "countered");
+  return myMove ? "ממתין לאישורך" : "ממתין לצד השני";
 }
 
 export function offerStatusLabel(status: string): string {
