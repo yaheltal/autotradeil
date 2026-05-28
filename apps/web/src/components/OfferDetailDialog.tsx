@@ -223,7 +223,7 @@ function Body({
             {vehicleLabel}{" "}
             <span className="text-muted font-tabular font-normal">· {offer.vehicle.year}</span>
           </DialogTitle>
-          <OfferStatusPill status={offer.status} />
+          <OfferStatusPill status={offer.status} direction={direction} />
         </div>
         <DialogDescription id="offer-detail-desc" className="sr-only">
           פרטי הצעה על {vehicleLabel} {offer.vehicle.year}, כולל פרטי הרכב, פרטי {counterpartyLabel}{" "}

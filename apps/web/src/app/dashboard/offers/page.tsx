@@ -598,7 +598,7 @@ function OfferCard({
               <span className="text-muted font-tabular font-normal">· {offer.vehicle.year}</span>
             </h3>
           </div>
-          <OfferStatusPill status={offer.status} />
+          <OfferStatusPill status={offer.status} direction={direction} />
         </header>
 
         {/* Counterparty line */}
