@@ -423,7 +423,7 @@ type ImageLookupResult = {
 
 const STEP_FIELDS = {
   1: ["make", "model", "year", "mileage"] as const,
-  2: ["price", "b2b_price", "b2c_price", "purchase_cost", "public_notes"] as const,
+  2: ["price", "b2b_price", "b2c_price", "purchase_cost", "public_notes", "private_notes"] as const,
   3: ["warranty_until"] as const,
 } as const;
 
@@ -1991,9 +1991,9 @@ function Step2(p: Step2Props) {
         </div>
 
         <div className="mt-lg">
-          <Label htmlFor="inv-public-notes">הערות</Label>
+          <Label htmlFor="inv-public-notes">הערות פומביות</Label>
           <p id="inv-public-notes-hint" className="text-muted mt-xxs text-xs">
-            עד <span className="font-tabular">2000</span> תווים. תוצג לסוחרים אחרים במרקטפלייס.
+            יוצג לסוחרים אחרים במרקטפלייס. עד <span className="font-tabular">2000</span> תווים.
           </p>
           <Textarea
             id="inv-public-notes"
@@ -2011,6 +2011,35 @@ function Step2(p: Step2Props) {
           {p.errors.public_notes?.message ? (
             <p id="inv-public-notes-error" className="text-danger-fg mt-xxs text-sm">
               {p.errors.public_notes.message}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Wave 2 — private notes. Owner-only, never returned to
+            non-owners by any API surface. Sits below public_notes so
+            the dealer reads "what the world sees" first, then
+            "what only I see". */}
+        <div className="mt-lg">
+          <Label htmlFor="inv-private-notes">הערות פנימיות</Label>
+          <p id="inv-private-notes-hint" className="text-muted mt-xxs text-xs">
+            רק לך — לא יוצג לאף אחד אחר. עד <span className="font-tabular">2000</span> תווים.
+          </p>
+          <Textarea
+            id="inv-private-notes"
+            rows={4}
+            maxLength={2000}
+            aria-describedby={
+              p.errors.private_notes?.message
+                ? "inv-private-notes-hint inv-private-notes-error"
+                : "inv-private-notes-hint"
+            }
+            aria-invalid={p.errors.private_notes?.message ? true : undefined}
+            {...p.register("private_notes")}
+            className="mt-xs"
+          />
+          {p.errors.private_notes?.message ? (
+            <p id="inv-private-notes-error" className="text-danger-fg mt-xxs text-sm">
+              {p.errors.private_notes.message}
             </p>
           ) : null}
         </div>

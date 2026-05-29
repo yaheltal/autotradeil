@@ -70,7 +70,9 @@ type Detail = {
   transmission: "automatic" | "manual" | null;
   fuel_type: "petrol" | "diesel" | "electric" | "hybrid" | null;
   engine_volume: number | string | null;
-  notes: string | null;
+  // Wave 2 — marketplace surface exposes only the public half of the
+  // notes split. private_notes is owner-only and never returned here.
+  public_notes: string | null;
   status: string;
   created_at: string;
   seller: Seller;
@@ -328,18 +330,18 @@ export default function MarketplaceDetailPage() {
             </dl>
           </section>
 
-          {/* Notes */}
-          {data.notes ? (
+          {/* Notes — Wave 2: only the public half is surfaced here. */}
+          {data.public_notes ? (
             <section aria-labelledby="notes-heading">
               <p className="text-muted text-xs font-medium uppercase tracking-widest">
-                הערות הסוחר
+                הערות מהמוכר
               </p>
               <h2 id="notes-heading" className="sr-only">
-                הערות הסוחר
+                הערות מהמוכר
               </h2>
               <div aria-hidden="true" className="bg-hairline mt-sm h-px w-full" />
               <p className="text-ink mt-lg whitespace-pre-wrap text-sm leading-relaxed">
-                {data.notes}
+                {data.public_notes}
               </p>
             </section>
           ) : null}
