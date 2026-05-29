@@ -118,7 +118,12 @@ export type InventoryPayload = {
   transmission: "automatic" | "manual" | null;
   fuel_type: "petrol" | "diesel" | "electric" | "hybrid" | null;
   engine_volume: number | null;
-  notes: string | null;
+  // Wave 2 — notes split. public_notes is rendered to other dealers on
+  // the marketplace; private_notes is owner-only and never returned to
+  // non-owners. The form surfaces a single visible textarea today; the
+  // second textarea lands in commit 5.
+  public_notes: string | null;
+  private_notes: string | null;
   visibility: Visibility;
   b2b_price: number | null;
   b2c_price: number | null;
@@ -315,7 +320,12 @@ const schema = z.object({
     "4.0",
     "0.0",
   ]),
-  notes: z.string().max(2000, "הערות ארוכות מדי").optional().or(z.literal("")),
+  // Wave 2 — public_notes drives the visible textarea today.
+  // private_notes is a passthrough field for now (no input bound to
+  // it) so we don't lose pre-existing private notes on edit. Commit 5
+  // adds the second textarea bound to register("private_notes").
+  public_notes: z.string().max(2000, "הערות ארוכות מדי").optional().or(z.literal("")),
+  private_notes: z.string().max(2000, "הערות פנימיות ארוכות מדי").optional().or(z.literal("")),
   visibility: z.enum(["private", "b2b", "b2c", "both"]),
   b2b_price: z
     .string()
@@ -368,7 +378,11 @@ function toFormValues(v: InventoryInitial | null | undefined): FormValues {
     transmission: (v?.transmission ?? "") as FormValues["transmission"],
     fuel_type: (v?.fuel_type ?? "") as FormValues["fuel_type"],
     engine_volume: normalizeEngineVolume(v?.engine_volume ?? null),
-    notes: v?.notes ?? "",
+    // Wave 2 — pull both halves of the notes split through to the form.
+    // public_notes drives the visible textarea; private_notes is a
+    // hidden passthrough until commit 5 adds its own input.
+    public_notes: v?.public_notes ?? "",
+    private_notes: v?.private_notes ?? "",
     visibility: (v?.visibility ?? "b2b") as Visibility,
     b2b_price: v?.b2b_price != null ? String(v.b2b_price) : "",
     b2c_price: v?.b2c_price != null ? String(v.b2c_price) : "",
@@ -409,7 +423,7 @@ type ImageLookupResult = {
 
 const STEP_FIELDS = {
   1: ["make", "model", "year", "mileage"] as const,
-  2: ["price", "b2b_price", "b2c_price", "purchase_cost", "notes"] as const,
+  2: ["price", "b2b_price", "b2c_price", "purchase_cost", "public_notes", "private_notes"] as const,
   3: ["warranty_until"] as const,
 } as const;
 
@@ -1100,7 +1114,11 @@ export function InventoryFormDialog({
         values.engine_volume && values.engine_volume !== "0.0"
           ? parseFloat(values.engine_volume)
           : null,
-      notes: values.notes ? values.notes : null,
+      // Wave 2 — split note halves. The visible textarea currently
+      // writes only public_notes; private_notes round-trips invisibly
+      // from initial until commit 5 adds its own textarea.
+      public_notes: values.public_notes ? values.public_notes : null,
+      private_notes: values.private_notes ? values.private_notes : null,
       visibility: values.visibility,
       b2b_price:
         (values.visibility === "b2b" || values.visibility === "both") && values.b2b_price
@@ -1973,24 +1991,55 @@ function Step2(p: Step2Props) {
         </div>
 
         <div className="mt-lg">
-          <Label htmlFor="inv-notes">הערות</Label>
-          <p id="inv-notes-hint" className="text-muted mt-xxs text-xs">
-            עד <span className="font-tabular">2000</span> תווים. ההערות אינן מופיעות לצרכנים.
+          <Label htmlFor="inv-public-notes">הערות פומביות</Label>
+          <p id="inv-public-notes-hint" className="text-muted mt-xxs text-xs">
+            יוצג לסוחרים אחרים במרקטפלייס. עד <span className="font-tabular">2000</span> תווים.
           </p>
           <Textarea
-            id="inv-notes"
+            id="inv-public-notes"
             rows={4}
             maxLength={2000}
             aria-describedby={
-              p.errors.notes?.message ? "inv-notes-hint inv-notes-error" : "inv-notes-hint"
+              p.errors.public_notes?.message
+                ? "inv-public-notes-hint inv-public-notes-error"
+                : "inv-public-notes-hint"
             }
-            aria-invalid={p.errors.notes?.message ? true : undefined}
-            {...p.register("notes")}
+            aria-invalid={p.errors.public_notes?.message ? true : undefined}
+            {...p.register("public_notes")}
             className="mt-xs"
           />
-          {p.errors.notes?.message ? (
-            <p id="inv-notes-error" className="text-danger-fg mt-xxs text-sm">
-              {p.errors.notes.message}
+          {p.errors.public_notes?.message ? (
+            <p id="inv-public-notes-error" className="text-danger-fg mt-xxs text-sm">
+              {p.errors.public_notes.message}
+            </p>
+          ) : null}
+        </div>
+
+        {/* Wave 2 — private notes. Owner-only, never returned to
+            non-owners by any API surface. Sits below public_notes so
+            the dealer reads "what the world sees" first, then
+            "what only I see". */}
+        <div className="mt-lg">
+          <Label htmlFor="inv-private-notes">הערות פנימיות</Label>
+          <p id="inv-private-notes-hint" className="text-muted mt-xxs text-xs">
+            רק לך — לא יוצג לאף אחד אחר. עד <span className="font-tabular">2000</span> תווים.
+          </p>
+          <Textarea
+            id="inv-private-notes"
+            rows={4}
+            maxLength={2000}
+            aria-describedby={
+              p.errors.private_notes?.message
+                ? "inv-private-notes-hint inv-private-notes-error"
+                : "inv-private-notes-hint"
+            }
+            aria-invalid={p.errors.private_notes?.message ? true : undefined}
+            {...p.register("private_notes")}
+            className="mt-xs"
+          />
+          {p.errors.private_notes?.message ? (
+            <p id="inv-private-notes-error" className="text-danger-fg mt-xxs text-sm">
+              {p.errors.private_notes.message}
             </p>
           ) : null}
         </div>

@@ -544,6 +544,236 @@ async def get_audit_log(
 
 
 # ==========================================================================
+# Wave 2 — admin deletion-request inbox
+#
+# Dealers open requests via /api/v1/inventory/{id}/request-deletion, which
+# sets status='pending_deletion'. From the admin side we:
+#   GET  /inventory/pending-deletion         — FIFO list of open requests
+#   POST /inventory/{id}/approve-deletion    — hard delete + Cloudinary cleanup
+#   POST /inventory/{id}/reject-deletion     — revert to previous_status
+#
+# The GET MUST register before /inventory/{inventory_id} below — FastAPI
+# matches in declaration order and would otherwise try to parse the literal
+# "pending-deletion" as a UUID, 422'ing.
+# ==========================================================================
+
+
+from pydantic import BaseModel as _PenDelBM  # noqa: E402
+
+
+class _RejectDeletionBody(_PenDelBM):
+    reason: str
+
+
+@router.get("/inventory/pending-deletion")
+async def admin_list_pending_deletion(
+    _admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Every inventory row currently in pending_deletion, ordered by
+    request time ascending — oldest request appears first so the
+    admin queue is FIFO."""
+    rows = (
+        await db.execute(
+            select(Inventory, Dealer, User)
+            .join(Dealer, Dealer.id == Inventory.dealer_id)
+            .join(User, User.id == Dealer.user_id)
+            .where(Inventory.status == "pending_deletion")
+            .order_by(Inventory.pending_deletion_requested_at.asc().nullslast())
+        )
+    ).all()
+
+    items = [
+        {
+            "id": str(inv.id),
+            "make": inv.make,
+            "model": inv.model,
+            "year": inv.year,
+            "previous_status": inv.previous_status,
+            "pending_deletion_reason": inv.pending_deletion_reason,
+            "pending_deletion_requested_at": (
+                inv.pending_deletion_requested_at.isoformat()
+                if inv.pending_deletion_requested_at
+                else None
+            ),
+            "dealer": {
+                "id": str(dealer.id),
+                "business_name": dealer.business_name,
+                "city": dealer.city,
+                "phone": dealer.phone,
+                "email": dealer_user.email,
+            },
+        }
+        for inv, dealer, dealer_user in rows
+    ]
+    return {"items": items, "total": len(items)}
+
+
+@router.post("/inventory/{inventory_id}/approve-deletion")
+async def admin_approve_deletion(
+    inventory_id: uuid.UUID,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Hard-delete a row that's been queued for deletion.
+
+    Cascades: offers (CASCADE), inventory_images (CASCADE),
+    inventory_views (CASCADE). deals references inventory_id without
+    CASCADE — so a row that ever closed a deal cannot be hard-deleted;
+    that's intentional for the audit chain. Such requests will fail at
+    the DB level and the admin should reject the request instead.
+
+    Cloudinary blobs are best-effort cleaned up after the DB commit so
+    CDN failures don't roll back the deletion.
+    """
+    from app.core.cloudinary_client import delete_vehicle_image as _del_img
+    from app.models import InventoryImage as _InventoryImage
+
+    item = (
+        await db.execute(select(Inventory).where(Inventory.id == inventory_id))
+    ).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=404, detail="רכב לא נמצא")
+    if item.status != "pending_deletion":
+        raise HTTPException(
+            status_code=409, detail="הרכב אינו בסטטוס בקשת מחיקה"
+        )
+
+    # Snapshot the image public_ids BEFORE the cascade fires so the
+    # CDN cleanup loop below has something to call.
+    image_rows = (
+        await db.execute(
+            select(_InventoryImage).where(
+                _InventoryImage.inventory_id == inventory_id
+            )
+        )
+    ).scalars().all()
+    public_ids = [img.public_id for img in image_rows if img.public_id]
+
+    dealer_id = item.dealer_id
+    dealer_reason = item.pending_deletion_reason
+
+    await emit_event(
+        db,
+        event_type="inventory.deletion.approved",
+        aggregate_type="inventory",
+        aggregate_id=inventory_id,
+        payload={
+            "dealer_id": str(dealer_id),
+            "reason": dealer_reason,
+            "image_count": len(public_ids),
+        },
+        actor_user_id=admin.id,
+    )
+    await log_admin_action(
+        db,
+        actor_user_id=admin.id,
+        action="admin.inventory.deletion.approved",
+        target_type="inventory",
+        target_id=inventory_id,
+        metadata={"dealer_id": str(dealer_id), "reason": dealer_reason},
+    )
+
+    await db.delete(item)
+    await db.commit()
+
+    failed_cleanups = 0
+    for public_id in public_ids:
+        try:
+            await _del_img(public_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "cloudinary cleanup failed inventory=%s public_id=%s err=%s",
+                inventory_id,
+                public_id,
+                exc,
+            )
+            failed_cleanups += 1
+
+    return {
+        "ok": True,
+        "id": str(inventory_id),
+        "images_cleaned": len(public_ids) - failed_cleanups,
+        "images_failed": failed_cleanups,
+    }
+
+
+@router.post("/inventory/{inventory_id}/reject-deletion")
+async def admin_reject_deletion(
+    inventory_id: uuid.UUID,
+    body: _RejectDeletionBody,
+    admin: Annotated[User, Depends(require_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> dict[str, object]:
+    """Reject a deletion request. Row reverts to previous_status
+    (active or hidden) and the dealer's pending_deletion_* fields are
+    cleared. The admin's rejection reason is captured in the event log
+    so it can be surfaced to the dealer."""
+    rejection_reason = (body.reason or "").strip()
+    if not rejection_reason:
+        raise HTTPException(
+            status_code=400, detail="חובה להזין סיבה לדחייה"
+        )
+
+    item = (
+        await db.execute(select(Inventory).where(Inventory.id == inventory_id))
+    ).scalar_one_or_none()
+    if item is None:
+        raise HTTPException(status_code=404, detail="רכב לא נמצא")
+    if item.status != "pending_deletion":
+        raise HTTPException(
+            status_code=409, detail="הרכב אינו בסטטוס בקשת מחיקה"
+        )
+
+    restore_to = (
+        item.previous_status
+        if item.previous_status in ("active", "hidden")
+        else "active"
+    )
+    dealer_id = item.dealer_id
+    dealer_reason = item.pending_deletion_reason
+
+    item.status = restore_to
+    item.previous_status = None
+    item.pending_deletion_reason = None
+    item.pending_deletion_requested_at = None
+
+    await emit_event(
+        db,
+        event_type="inventory.deletion.rejected",
+        aggregate_type="inventory",
+        aggregate_id=inventory_id,
+        payload={
+            "dealer_id": str(dealer_id),
+            "dealer_reason": dealer_reason,
+            "admin_reason": rejection_reason[:2000],
+            "restored_to": restore_to,
+        },
+        actor_user_id=admin.id,
+    )
+    await log_admin_action(
+        db,
+        actor_user_id=admin.id,
+        action="admin.inventory.deletion.rejected",
+        target_type="inventory",
+        target_id=inventory_id,
+        metadata={
+            "dealer_id": str(dealer_id),
+            "admin_reason": rejection_reason[:2000],
+            "restored_to": restore_to,
+        },
+    )
+    await db.commit()
+    await db.refresh(item)
+
+    return {
+        "id": str(item.id),
+        "status": item.status,
+        "previous_status": None,
+    }
+
+
+# ==========================================================================
 # Phase 4.3 — admin inventory: ALL vehicles from ALL dealers
 # ==========================================================================
 
@@ -614,18 +844,25 @@ async def admin_get_inventory_item(
         "transmission": inv.transmission,
         "fuel_type": inv.fuel_type,
         "engine_volume": str(inv.engine_volume) if inv.engine_volume is not None else None,
-        "notes": inv.notes,
+        # Wave 2 — notes split. Admins see both halves.
+        "public_notes": inv.public_notes,
+        "private_notes": inv.private_notes,
         "plate_number": getattr(inv, "plate_number", None),
         # Pricing
         "price": inv.price,
         "b2b_price": inv.b2b_price,
         "b2c_price": inv.b2c_price,
         "purchase_cost": inv.purchase_cost,
-        # Lifecycle
+        # Lifecycle (Wave 2 retired paused_until)
         "status": inv.status,
         "visibility": inv.visibility,
-        "paused_until": inv.paused_until.isoformat() if inv.paused_until else None,
-        "pause_reason": inv.pause_reason,
+        "pending_deletion_reason": inv.pending_deletion_reason,
+        "pending_deletion_requested_at": (
+            inv.pending_deletion_requested_at.isoformat()
+            if inv.pending_deletion_requested_at
+            else None
+        ),
+        "previous_status": inv.previous_status,
         "created_at": inv.created_at.isoformat(),
         "updated_at": inv.updated_at.isoformat(),
         # Sale closure (P6.5)
@@ -733,7 +970,6 @@ async def admin_list_inventory(
             "b2c_price": inv.b2c_price,
             "visibility": inv.visibility,
             "status": inv.status,
-            "paused_until": inv.paused_until.isoformat() if inv.paused_until else None,
             "dealer_id": str(dealer.id),
             "dealer_business_name": dealer.business_name,
             "dealer_city": dealer.city,

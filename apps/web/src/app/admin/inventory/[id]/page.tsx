@@ -50,16 +50,21 @@ type AdminVehicle = {
   transmission: "automatic" | "manual" | null;
   fuel_type: "petrol" | "diesel" | "electric" | "hybrid" | null;
   engine_volume: string | null;
-  notes: string | null;
+  // Wave 2 — notes split + retired paused mechanism. Admin sees both
+  // halves of the notes split.
+  public_notes: string | null;
+  private_notes: string | null;
   plate_number: string | null;
   price: number;
   b2b_price: number | null;
   b2c_price: number | null;
   purchase_cost: number | null;
-  status: "active" | "sold" | "hidden";
+  status: "active" | "sold" | "hidden" | "in_transaction" | "pending_deletion";
   visibility: "private" | "b2b" | "b2c" | "both";
-  paused_until: string | null;
-  pause_reason: string | null;
+  // Wave 2 — pending-deletion workflow fields.
+  pending_deletion_reason: string | null;
+  pending_deletion_requested_at: string | null;
+  previous_status: string | null;
   created_at: string;
   updated_at: string;
   sale_price: number | null;
@@ -100,6 +105,8 @@ const STATUS_LABEL: Record<AdminVehicle["status"], string> = {
   active: "פעיל",
   sold: "נמכר",
   hidden: "מוסתר",
+  in_transaction: "בעסקה פעילה",
+  pending_deletion: "ממתין למחיקה",
 };
 const SOLD_TO_LABEL: Record<NonNullable<AdminVehicle["sold_to"]>, string> = {
   b2b: "סוחר (B2B)",
@@ -110,6 +117,9 @@ const SOLD_TO_LABEL: Record<NonNullable<AdminVehicle["sold_to"]>, string> = {
 function statusVariant(s: AdminVehicle["status"]): "ink" | "neutral" | "danger" | "accent" {
   if (s === "active") return "ink";
   if (s === "sold") return "accent";
+  if (s === "in_transaction") return "neutral";
+  // hidden + pending_deletion both warrant attention — admin should
+  // see at a glance that something is off-marketplace.
   return "danger";
 }
 
@@ -163,7 +173,8 @@ export default function AdminVehicleDetailPage() {
               <Badge variant="outline" className="font-normal">
                 {VISIBILITY_LABEL[v.visibility]}
               </Badge>
-              {v.paused_until ? <AdminStatusPill variant="danger">מושהה</AdminStatusPill> : null}
+              {/* Wave 2 retired the paused mechanism; status drives the
+                  whole pill story now (hidden / pending_deletion etc). */}
             </span>
           ) : undefined
         }
@@ -377,18 +388,46 @@ export default function AdminVehicleDetailPage() {
               </DetailSection>
             ) : null}
 
-            {v.notes || v.pause_reason || v.paused_until ? (
-              <DetailSection title="הערות + סטטוס פעילות">
-                <DList>
-                  {v.paused_until ? (
-                    <DRow label="מושהה עד" value={fmtDate(v.paused_until)} />
-                  ) : null}
-                  {v.pause_reason ? <DRow label="סיבת השהיה" value={v.pause_reason} /> : null}
-                </DList>
-                {v.notes ? (
+            {/* Wave 2 — notes split. Admins see both halves and the
+                pending-deletion record (if any). The paused mechanism
+                is retired so its rows are gone. */}
+            {v.public_notes ||
+            v.private_notes ||
+            v.pending_deletion_requested_at ||
+            v.pending_deletion_reason ? (
+              <DetailSection title="הערות + בקשת מחיקה">
+                {v.pending_deletion_requested_at || v.pending_deletion_reason ? (
+                  <DList>
+                    {v.pending_deletion_requested_at ? (
+                      <DRow
+                        label="בקשת מחיקה הוגשה"
+                        value={fmtDate(v.pending_deletion_requested_at)}
+                      />
+                    ) : null}
+                    {v.previous_status ? (
+                      <DRow
+                        label="סטטוס לפני הבקשה"
+                        value={
+                          STATUS_LABEL[v.previous_status as AdminVehicle["status"]] ??
+                          v.previous_status
+                        }
+                      />
+                    ) : null}
+                    {v.pending_deletion_reason ? (
+                      <DRow label="סיבת הבקשה" value={v.pending_deletion_reason} />
+                    ) : null}
+                  </DList>
+                ) : null}
+                {v.public_notes ? (
                   <div className="mt-md">
-                    <p className="text-muted text-xs font-medium">הערות הסוחר</p>
-                    <p className="text-ink mt-xs whitespace-pre-line text-sm">{v.notes}</p>
+                    <p className="text-muted text-xs font-medium">הערות פומביות</p>
+                    <p className="text-ink mt-xs whitespace-pre-line text-sm">{v.public_notes}</p>
+                  </div>
+                ) : null}
+                {v.private_notes ? (
+                  <div className="mt-md">
+                    <p className="text-muted text-xs font-medium">הערות פנימיות</p>
+                    <p className="text-ink mt-xs whitespace-pre-line text-sm">{v.private_notes}</p>
                   </div>
                 ) : null}
               </DetailSection>

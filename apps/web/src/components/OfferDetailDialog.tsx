@@ -86,7 +86,9 @@ type VehicleDetail = {
   transmission: string | null;
   fuel_type: string | null;
   engine_volume: number | null;
-  notes: string | null;
+  // Wave 2 — offer dialog reads the marketplace vehicle detail shape,
+  // which exposes only public_notes (non-owner surface).
+  public_notes: string | null;
   seller: VehicleSeller;
   images: VehicleImage[];
 };
@@ -410,11 +412,11 @@ function VehicleSpecs({ vehicle }: { vehicle: VehicleDetail }) {
           <SpecRow label="נפח מנוע" value={`${vehicle.engine_volume} ליטר`} tabular />
         ) : null}
       </dl>
-      {vehicle.notes ? (
+      {vehicle.public_notes ? (
         <div className="border-s-hairline mt-md ps-md border-s-2">
-          <p className="text-muted text-xs font-medium uppercase tracking-widest">הערות</p>
+          <p className="text-muted text-xs font-medium uppercase tracking-widest">הערות מהמוכר</p>
           <p className="text-ink mt-xxs whitespace-pre-wrap text-sm leading-relaxed">
-            {vehicle.notes}
+            {vehicle.public_notes}
           </p>
         </div>
       ) : null}

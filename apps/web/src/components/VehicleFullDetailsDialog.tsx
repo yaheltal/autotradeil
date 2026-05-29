@@ -76,7 +76,10 @@ type Vehicle = {
   transmission: string | null;
   fuel_type: string | null;
   engine_volume: number | string | null;
-  notes: string | null;
+  // Wave 2 — notes split. Both halves are owner-facing here; the
+  // marketplace surface returns public_notes only.
+  public_notes: string | null;
+  private_notes: string | null;
   status: string;
   visibility: string;
   hand: number | null;
@@ -302,10 +305,18 @@ export function VehicleFullDetailsDialog({
                   </Card>
                 ) : null}
 
-                {data.notes ? (
+                {data.public_notes ? (
+                  <Card title="הערות פומביות">
+                    <p className="text-brand-ink whitespace-pre-line text-sm leading-relaxed">
+                      {data.public_notes}
+                    </p>
+                  </Card>
+                ) : null}
+
+                {data.private_notes ? (
                   <Card title="הערות פנימיות">
                     <p className="text-brand-ink whitespace-pre-line text-sm leading-relaxed">
-                      {data.notes}
+                      {data.private_notes}
                     </p>
                   </Card>
                 ) : null}

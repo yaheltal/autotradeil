@@ -69,31 +69,6 @@ async def _get_own_or_404(
     return item
 
 
-async def _auto_unpause_expired(dealer_id: uuid.UUID, db: AsyncSession) -> None:
-    """Flip paused-and-expired inventory rows back to active on list fetch.
-
-    Triggered on every /inventory list call. Uses a single UPDATE with
-    a predicate so we never touch rows that don't need it. Caller owns
-    the commit — we only flush here.
-    """
-    from sqlalchemy import update
-
-    from datetime import datetime, timezone as _tz
-
-    now = datetime.now(tz=_tz.utc)
-    await db.execute(
-        update(Inventory)
-        .where(
-            Inventory.dealer_id == dealer_id,
-            Inventory.status == "hidden",
-            Inventory.paused_until.isnot(None),
-            Inventory.paused_until <= now,
-        )
-        .values(status="active", paused_until=None, pause_reason=None)
-    )
-    await db.flush()
-
-
 @router.get("", response_model=InventoryListResponse)
 async def list_inventory(
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
@@ -112,9 +87,6 @@ async def list_inventory(
     per_page: int = Query(default=20, ge=1, le=100),
 ) -> InventoryListResponse:
     _, dealer = ud
-
-    # Phase 4.3: flip paused-and-expired rows back to active.
-    await _auto_unpause_expired(dealer.id, db)
 
     base_q = select(Inventory).where(Inventory.dealer_id == dealer.id)
     count_q = (
@@ -147,18 +119,23 @@ async def list_inventory(
         from sqlalchemy import or_
 
         like = f"%{q}%"
+        # Owner search matches both halves of the notes split — the
+        # dealer should find their own row by either public or private
+        # text.
         base_q = base_q.where(
             or_(
                 Inventory.make.ilike(like),
                 Inventory.model.ilike(like),
-                Inventory.notes.ilike(like),
+                Inventory.public_notes.ilike(like),
+                Inventory.private_notes.ilike(like),
             )
         )
         count_q = count_q.where(
             or_(
                 Inventory.make.ilike(like),
                 Inventory.model.ilike(like),
-                Inventory.notes.ilike(like),
+                Inventory.public_notes.ilike(like),
+                Inventory.private_notes.ilike(like),
             )
         )
 
@@ -218,7 +195,8 @@ async def create_inventory_item(
         transmission=payload.transmission,
         fuel_type=payload.fuel_type,
         engine_volume=payload.engine_volume,
-        notes=payload.notes,
+        public_notes=payload.public_notes,
+        private_notes=payload.private_notes,
         purchase_cost=payload.purchase_cost,
         warranty_type=payload.warranty_type,
         warranty_until=payload.warranty_until,
@@ -691,52 +669,143 @@ async def _get_govil_price(make: str, model: str, year: int) -> int | None:
 
 
 # ==========================================================================
-# Phase 4.3 — pause / unpause
+# Wave 2 — dealer-facing lifecycle endpoints
+#
+# hide / unhide        — owner-toggle off and back on. Does NOT pause
+#                        offers (auto-pause was retired in Wave 2).
+# request-deletion     — flips status to pending_deletion, snapshots
+#                        the prior state in previous_status, sets the
+#                        request timestamp + reason. Visible only to
+#                        the owner under "בקשות בטיפול" until admin acts.
+# cancel-deletion      — reverts a pending_deletion row to previous_status
+#                        (active or hidden) and clears the request fields.
 # ==========================================================================
 
+
+from datetime import datetime, timezone as _tz  # noqa: E402
 
 from pydantic import BaseModel as _BM  # noqa: E402
 
 
-class _PauseBody(_BM):
-    hours: int | None = None  # None = indefinite
-    reason: str | None = None
+class _RequestDeletionBody(_BM):
+    reason: str
 
 
-@router.post("/{item_id}/pause", response_model=InventoryItemResponse)
-async def pause_item(
+@router.post("/{item_id}/hide", response_model=InventoryItemResponse)
+async def hide_item(
     item_id: uuid.UUID,
-    body: _PauseBody,
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InventoryItemResponse:
-    """Pause a vehicle temporarily — hides it from marketplace/B2C until
-    paused_until (or until /unpause for indefinite pauses)."""
-    from datetime import datetime, timedelta, timezone as _tz
+    """Hide a vehicle from the marketplace. Owner-only.
 
+    Allowed only from status='active'. sold / in_transaction /
+    pending_deletion are terminal-ish states the owner cannot hide
+    directly — sold is permanent, in_transaction is admin-escorted,
+    pending_deletion has its own cancel flow.
+    """
     user, dealer = ud
     item = await _get_own_or_404(item_id, dealer, db)
 
-    if body.hours is not None and (body.hours < 1 or body.hours > 24 * 30):
-        raise HTTPException(status_code=400, detail="מספר שעות לא תקין")
+    if item.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ניתן להסתיר רק רכב במצב פעיל",
+        )
 
-    reason = (body.reason or "").strip()[:100] or None
-
-    item.paused_until = (
-        datetime.now(tz=_tz.utc) + timedelta(hours=body.hours) if body.hours else None
-    )
-    item.pause_reason = reason
     item.status = "hidden"
 
     await emit_event(
         db,
-        event_type="inventory.paused",
+        event_type="inventory.hidden",
+        aggregate_type="inventory",
+        aggregate_id=item.id,
+        payload={"dealer_id": str(dealer.id), "source": "hide"},
+        actor_user_id=user.id,
+    )
+    await db.commit()
+    await db.refresh(item)
+    return InventoryItemResponse.model_validate(item)
+
+
+@router.post("/{item_id}/unhide", response_model=InventoryItemResponse)
+async def unhide_item(
+    item_id: uuid.UUID,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> InventoryItemResponse:
+    """Move a vehicle back to active. Owner-only, hidden-only."""
+    user, dealer = ud
+    item = await _get_own_or_404(item_id, dealer, db)
+
+    if item.status != "hidden":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ניתן לבטל הסתרה רק לרכב מוסתר",
+        )
+
+    item.status = "active"
+
+    await emit_event(
+        db,
+        event_type="inventory.unhidden",
+        aggregate_type="inventory",
+        aggregate_id=item.id,
+        payload={"dealer_id": str(dealer.id)},
+        actor_user_id=user.id,
+    )
+    await db.commit()
+    await db.refresh(item)
+    return InventoryItemResponse.model_validate(item)
+
+
+@router.post(
+    "/{item_id}/request-deletion", response_model=InventoryItemResponse
+)
+async def request_deletion(
+    item_id: uuid.UUID,
+    body: _RequestDeletionBody,
+    ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> InventoryItemResponse:
+    """Open a deletion request. Admin must approve before the row is
+    actually removed. While pending the row is hidden from every
+    non-owner surface (marketplace, AI search, recommendations).
+
+    Allowed only from active or hidden. sold / in_transaction can't be
+    deleted — those need admin intervention via the transactions /
+    audit-log flow.
+    """
+    user, dealer = ud
+    item = await _get_own_or_404(item_id, dealer, db)
+
+    if item.status not in ("active", "hidden"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ניתן לבקש מחיקה רק לרכב פעיל או מוסתר",
+        )
+
+    reason = (body.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="חובה להזין סיבה",
+        )
+
+    item.previous_status = item.status
+    item.status = "pending_deletion"
+    item.pending_deletion_reason = reason[:2000]
+    item.pending_deletion_requested_at = datetime.now(tz=_tz.utc)
+
+    await emit_event(
+        db,
+        event_type="inventory.deletion.requested",
         aggregate_type="inventory",
         aggregate_id=item.id,
         payload={
             "dealer_id": str(dealer.id),
-            "hours": body.hours,
-            "reason": reason,
+            "previous_status": item.previous_status,
+            "reason": item.pending_deletion_reason,
         },
         actor_user_id=user.id,
     )
@@ -745,25 +814,39 @@ async def pause_item(
     return InventoryItemResponse.model_validate(item)
 
 
-@router.post("/{item_id}/unpause", response_model=InventoryItemResponse)
-async def unpause_item(
+@router.post("/{item_id}/cancel-deletion", response_model=InventoryItemResponse)
+async def cancel_deletion(
     item_id: uuid.UUID,
     ud: Annotated[tuple[User, Dealer], Depends(require_verified_dealer)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> InventoryItemResponse:
+    """Withdraw a pending deletion request. Restores the row to its
+    previous status (active or hidden). Allowed only while
+    status='pending_deletion' — once an admin approves there's nothing
+    left to cancel."""
     user, dealer = ud
     item = await _get_own_or_404(item_id, dealer, db)
 
-    item.paused_until = None
-    item.pause_reason = None
-    item.status = "active"
+    if item.status != "pending_deletion":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="אין בקשת מחיקה ממתינה לרכב זה",
+        )
+
+    # Defensive default — if previous_status got lost somehow, fall
+    # back to 'active' rather than leaving the row in pending_deletion.
+    restore_to = item.previous_status if item.previous_status in ("active", "hidden") else "active"
+    item.status = restore_to
+    item.previous_status = None
+    item.pending_deletion_reason = None
+    item.pending_deletion_requested_at = None
 
     await emit_event(
         db,
-        event_type="inventory.unpaused",
+        event_type="inventory.deletion.cancelled",
         aggregate_type="inventory",
         aggregate_id=item.id,
-        payload={"dealer_id": str(dealer.id)},
+        payload={"dealer_id": str(dealer.id), "restored_to": restore_to},
         actor_user_id=user.id,
     )
     await db.commit()

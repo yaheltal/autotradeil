@@ -22,7 +22,11 @@ class InventoryItemCreate(BaseModel):
         default=None, pattern="^(petrol|diesel|electric|hybrid)$"
     )
     engine_volume: Decimal | None = Field(default=None, ge=Decimal("0.5"), le=Decimal("9.9"))
-    notes: str | None = Field(default=None, max_length=2000)
+    # Wave 2 — notes split. public_notes surfaces on the marketplace
+    # detail view; private_notes is owner-only and is never returned
+    # to non-owners.
+    public_notes: str | None = Field(default=None, max_length=2000)
+    private_notes: str | None = Field(default=None, max_length=2000)
     purchase_cost: int | None = Field(default=None, ge=0)
     warranty_type: str | None = Field(
         default=None, pattern="^(manufacturer|dealer|extended|none)$"
@@ -46,7 +50,12 @@ class InventoryItemUpdate(BaseModel):
         default=None, pattern="^(petrol|diesel|electric|hybrid)$"
     )
     engine_volume: Decimal | None = Field(default=None, ge=Decimal("0.5"), le=Decimal("9.9"))
-    notes: str | None = Field(default=None, max_length=2000)
+    public_notes: str | None = Field(default=None, max_length=2000)
+    private_notes: str | None = Field(default=None, max_length=2000)
+    # status mutation via PATCH is restricted to active|hidden|sold.
+    # pending_deletion is not settable here — it must go through the
+    # dedicated /request-deletion endpoint so the reason + timestamp
+    # are captured and the audit trail is intact.
     status: str | None = Field(default=None, pattern="^(active|sold|hidden)$")
     is_b2b: bool | None = Field(default=None)
     b2b_price: int | None = Field(default=None, ge=0)
@@ -75,14 +84,20 @@ class InventoryItemResponse(BaseModel):
     transmission: str | None
     fuel_type: str | None
     engine_volume: Decimal | None
-    notes: str | None
+    # Wave 2 — notes split. Both fields are owner-facing here;
+    # marketplace consumers see public_notes only via
+    # MarketplaceVehicleDetail.
+    public_notes: str | None
+    private_notes: str | None
     status: str
     is_b2b: bool
     b2b_price: int | None
     visibility: str
     b2c_price: int | None
-    paused_until: datetime | None
-    pause_reason: str | None
+    # Wave 2 — pending-deletion workflow fields.
+    pending_deletion_reason: str | None
+    pending_deletion_requested_at: datetime | None
+    previous_status: str | None
     purchase_cost: int | None
     sale_price: int | None
     sold_at: datetime | None

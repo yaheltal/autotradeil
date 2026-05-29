@@ -62,8 +62,9 @@ type Row = {
   b2b_price: number | null;
   b2c_price: number | null;
   visibility: "private" | "b2b" | "b2c" | "both";
-  status: "active" | "sold" | "hidden";
-  paused_until: string | null;
+  // Wave 2 — paused_until retired; pending_deletion / in_transaction
+  // join the status enum.
+  status: "active" | "sold" | "hidden" | "in_transaction" | "pending_deletion";
   dealer_id: string;
   dealer_business_name: string;
   dealer_city: string | null;
@@ -89,11 +90,15 @@ const STATUS_LABEL: Record<Row["status"], string> = {
   active: "פעיל",
   sold: "נמכר",
   hidden: "מוסתר",
+  in_transaction: "בעסקה פעילה",
+  pending_deletion: "ממתין למחיקה",
 };
 
 function statusVariant(s: Row["status"]): "ink" | "neutral" | "danger" | "accent" {
   if (s === "active") return "ink";
-  if (s === "hidden") return "danger";
+  // hidden + pending_deletion both want admin attention — off-marketplace
+  // states the dealer either initiated themselves or that need a follow-up.
+  if (s === "hidden" || s === "pending_deletion") return "danger";
   return "neutral";
 }
 
@@ -338,11 +343,6 @@ export default function AdminInventoryPage() {
                           <AdminStatusPill variant={statusVariant(r.status)}>
                             {STATUS_LABEL[r.status]}
                           </AdminStatusPill>
-                          {r.paused_until ? (
-                            <span className="text-warn-fg mt-xxs font-tabular block text-xs">
-                              מושהה עד {new Date(r.paused_until).toLocaleDateString("he-IL")}
-                            </span>
-                          ) : null}
                         </TableCell>
                         <TableCell className="text-end">
                           <span className="font-tabular text-ink text-sm">

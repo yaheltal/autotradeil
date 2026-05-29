@@ -353,16 +353,12 @@ async def _run_marketplace_search(
 ) -> VehicleSearchResponse:
     """Apply the same conditions as /marketplace/search using AI-derived
     filters. Kept inline so AI search and the manual search stay in sync on
-    the same B2B / status / paused-until rules."""
-    from datetime import datetime, timezone as _tz
-
-    now = datetime.now(tz=_tz.utc)
+    the same B2B / status rules (Wave 2 retired paused_until)."""
 
     conds = [
         Inventory.visibility.in_(["b2b", "both"]),
         Inventory.status == "active",
         Inventory.dealer_id != caller_dealer_id,
-        (Inventory.paused_until.is_(None)) | (Inventory.paused_until <= now),
     ]
 
     if filters.make:
@@ -950,8 +946,6 @@ async def recommendations(
     caller hasn't already offered on. Falls back to "newest" when there is no
     history yet.
     """
-    from datetime import datetime, timezone as _tz
-
     _, caller = ud
 
     # 1. Build interest signal from history.
@@ -983,12 +977,12 @@ async def recommendations(
         )
         interest_pairs = [(r.make, r.model) for r in rows]
 
-    now = datetime.now(tz=_tz.utc)
+    # Wave 2 retired paused_until — status='active' already excludes
+    # pending_deletion / hidden / sold / in_transaction.
     base_conds = [
         Inventory.visibility.in_(["b2b", "both"]),
         Inventory.status == "active",
         Inventory.dealer_id != caller.id,
-        (Inventory.paused_until.is_(None)) | (Inventory.paused_until <= now),
     ]
     if offered_inv_ids:
         base_conds.append(Inventory.id.notin_(list(offered_inv_ids)))
