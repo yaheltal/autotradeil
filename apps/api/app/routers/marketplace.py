@@ -453,11 +453,19 @@ async def get_vehicle_detail(
         await db.execute(select(User).where(User.id == seller.user_id))
     ).scalar_one()
 
+    # Owner sees every image (including hidden ones) so they can unhide
+    # them from this same view. Non-owner viewers only see non-hidden
+    # images — matches _primary_images_bulk's behavior. Without the
+    # hidden filter, the dealer's intent to hide an image leaked to
+    # marketplace viewers (security audit 2026-05-29, finding #3).
+    img_conds = [InventoryImage.inventory_id == inventory_id]
+    if not is_seller_viewing:
+        img_conds.append(InventoryImage.hidden.is_(False))
     images = (
         (
             await db.execute(
                 select(InventoryImage)
-                .where(InventoryImage.inventory_id == inventory_id)
+                .where(*img_conds)
                 .order_by(InventoryImage.position)
             )
         )

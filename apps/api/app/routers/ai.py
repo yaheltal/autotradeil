@@ -821,15 +821,13 @@ async def price_analysis(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> PriceAnalysisResponse:
     """Compare a listing's price to comparable B2B listings. 1h memory cache."""
-    cache_key = str(payload.inventory_id)
-    cached = _PRICE_CACHE.get(cache_key)
-    now = time.time()
-    if cached and (now - cached[0]) < _PRICE_CACHE_TTL_SECONDS:
-        return PriceAnalysisResponse(**cached[1])
-
     _, dealer = ud
-    await check_and_increment_ai_usage(dealer, db)
 
+    # Visibility check runs BEFORE the cache lookup. If we trusted the
+    # cache first, a row that was B2B-published an hour ago and has since
+    # been flipped to private would still serve its asking-price-derived
+    # response from the stale cache entry. Match get_vehicle_detail's
+    # gate in marketplace.py (security audit 2026-05-29, finding #1).
     vehicle = (
         await db.execute(select(Inventory).where(Inventory.id == payload.inventory_id))
     ).scalar_one_or_none()
@@ -837,6 +835,20 @@ async def price_analysis(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="רכב לא נמצא"
         )
+    if vehicle.dealer_id != dealer.id and (
+        vehicle.visibility not in ("b2b", "both") or vehicle.status != "active"
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="רכב לא נמצא"
+        )
+
+    cache_key = str(payload.inventory_id)
+    cached = _PRICE_CACHE.get(cache_key)
+    now = time.time()
+    if cached and (now - cached[0]) < _PRICE_CACHE_TTL_SECONDS:
+        return PriceAnalysisResponse(**cached[1])
+
+    await check_and_increment_ai_usage(dealer, db)
 
     asking = vehicle.b2b_price or vehicle.price
 

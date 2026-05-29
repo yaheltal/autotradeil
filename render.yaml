@@ -60,6 +60,12 @@ services:
         sync: false
       - key: ANTHROPIC_API_KEY
         sync: false
+      # Admin email allowlist — comma-separated. When set, require_admin
+      # additionally checks the caller's email is on this list, even if
+      # users.user_type='admin'. Empty/unset preserves historical
+      # behavior. Set the value in the Render dashboard.
+      - key: ADMIN_EMAIL_ALLOWLIST
+        sync: false
       - key: ENVIRONMENT
         value: production
       - key: WEB_CONCURRENCY

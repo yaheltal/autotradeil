@@ -294,6 +294,26 @@ async def require_admin(user: CurrentUser) -> User:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
         )
+    # Email allowlist tripwire — closes the path where a compromised DB
+    # write or a bad migration flips users.user_type='admin' without
+    # going through /api/v1/admin/admins. When ADMIN_EMAIL_ALLOWLIST is
+    # set, the caller's email must appear in it; an empty/unset value
+    # preserves historical behavior so deploys without the var don't
+    # break (security audit 2026-05-29, finding #5).
+    allowlist_raw = (settings.admin_email_allowlist or "").strip()
+    if allowlist_raw:
+        allowed = {e.strip().lower() for e in allowlist_raw.split(",") if e.strip()}
+        if user.email.lower() not in allowed:
+            logger.error(
+                "admin user_type set on non-allowlisted email — denying access "
+                "user_id=%s email=%s",
+                user.id,
+                user.email,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin access denied",
+            )
     return user
 
 
