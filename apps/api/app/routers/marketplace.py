@@ -290,17 +290,12 @@ async def search_vehicles(
     """
     _, caller_dealer = ud
 
-    from datetime import datetime, timezone as _tz
-
-    now = datetime.now(tz=_tz.utc)
+    # Wave 2 retired paused_until. status='active' is the sole
+    # marketplace gate — pending_deletion / hidden / sold / in_transaction
+    # are all excluded by that predicate.
     conds = [
         Inventory.visibility.in_(["b2b", "both"]),
         Inventory.status == "active",
-        # Filter out paused items — either paused_until is NULL-and-not-paused
-        # (caller is looking at active rows only, so status=active is already
-        # the authoritative gate) OR paused_until has passed. We include the
-        # check as belt-and-suspenders so a race on auto-unpause doesn't leak.
-        (Inventory.paused_until.is_(None)) | (Inventory.paused_until <= now),
     ]
     # Caller's own vehicles ARE included in the marketplace listing now;
     # the frontend renders them with a green "הרכב שלך" badge so the
@@ -311,11 +306,14 @@ async def search_vehicles(
 
     if q:
         needle = f"%{q.strip()}%"
+        # Marketplace search only matches public_notes — private_notes
+        # is owner-only and must not influence non-owner results
+        # (Wave 2 notes split).
         conds.append(
             or_(
                 Inventory.make.ilike(needle),
                 Inventory.model.ilike(needle),
-                Inventory.notes.ilike(needle),
+                Inventory.public_notes.ilike(needle),
             )
         )
     if make:
@@ -485,7 +483,7 @@ async def get_vehicle_detail(
         transmission=inv.transmission,
         fuel_type=inv.fuel_type,
         engine_volume=inv.engine_volume,
-        notes=inv.notes,
+        public_notes=inv.public_notes,
         status=inv.status,
         created_at=inv.created_at,
         seller=MarketplaceSellerInfo(
@@ -1580,14 +1578,9 @@ async def dealer_analytics(
     ).all()
     counts_by_status = {row[0]: row[1] for row in inv_rows}
     total_vehicles = sum(counts_by_status.values())
-    paused_count = (
-        await db.execute(
-            select(func.count()).where(
-                Inventory.dealer_id == dealer.id,
-                Inventory.paused_until.isnot(None),
-            )
-        )
-    ).scalar_one()
+    # Wave 2 retired paused_until — there is no separate paused
+    # tally. Hidden rows roll up under counts_by_status["hidden"]
+    # already.
 
     # Views this week
     views_week = (
@@ -1663,7 +1656,10 @@ async def dealer_analytics(
     return {
         "total_vehicles": total_vehicles,
         "active_vehicles": counts_by_status.get("active", 0),
-        "paused_vehicles": int(paused_count),
+        # Wave 2 retired the paused mechanism. Keeping the key as 0 so
+        # any legacy frontend rendering doesn't crash; a follow-up
+        # frontend cleanup drops the dial entirely.
+        "paused_vehicles": 0,
         "sold_vehicles": counts_by_status.get("sold", 0),
         "total_views": int(dealer.total_views or 0),
         "views_this_week": int(views_week),
