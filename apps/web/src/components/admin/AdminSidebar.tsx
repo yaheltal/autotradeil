@@ -7,6 +7,7 @@ import {
   Settings,
   ShieldCheck,
   ShoppingBag,
+  Trash2,
   Users,
   type LucideIcon,
 } from "lucide-react";
@@ -30,6 +31,7 @@ export const ADMIN_NAV_ITEMS: NavItem[] = [
   { href: "/admin", label: "בית", icon: Home, exact: true },
   { href: "/admin/dealers", label: "סוחרים", icon: Users },
   { href: "/admin/inventory", label: "מלאי", icon: Car },
+  { href: "/admin/deletion-requests", label: "בקשות מחיקה", icon: Trash2 },
   { href: "/admin/transactions", label: "עסקאות בתהליך", icon: ShoppingBag },
   { href: "/admin/kyc", label: "אימות זהות", icon: ShieldCheck },
   { href: "/admin/settings", label: "הגדרות", icon: Settings },
