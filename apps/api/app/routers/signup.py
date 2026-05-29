@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import uuid as uuid_pkg
 from typing import Annotated
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -510,6 +511,44 @@ class ForgotPasswordRequest(BaseModel):
     redirect_to: str | None = None
 
 
+# Hostnames the password-reset `redirect_to` URL is allowed to point at.
+# Mirrors the CORS allowlist in app/core/config.py so requests from any
+# legitimate frontend origin (apex or www, prod or Vercel main) survive
+# the open-redirect guard below.
+_ALLOWED_RESET_HOSTS: frozenset[str] = frozenset(
+    {
+        "localhost",
+        "autotradeil.com",
+        "www.autotradeil.com",
+        "autotradeil.co.il",
+        "www.autotradeil.co.il",
+        "autotradeil-web.vercel.app",
+    }
+)
+
+
+def _is_allowed_reset_redirect(url: str) -> bool:
+    """Strict host allowlist for password-reset redirect URLs.
+
+    Uses URL parsing instead of `startswith` to defend against
+    open-redirect attacks like `https://autotradeil.com.attacker.com`
+    — the previous startswith tuple let those through. Also fixes
+    the apex/www split that was bouncing real requests from
+    www.autotradeil.com back to the broken default fallback.
+
+    Returns True iff the URL is http(s) and its hostname is in the
+    allowlist.
+    """
+    try:
+        parsed = urlparse(url)
+    except (ValueError, TypeError):
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = (parsed.hostname or "").lower()
+    return host in _ALLOWED_RESET_HOSTS
+
+
 async def _supabase_generate_recovery_link(
     email: str, redirect_to: str
 ) -> str | None:
@@ -562,12 +601,19 @@ async def _supabase_generate_recovery_link(
 async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
     """Trigger a password-reset email. Always returns 200 so callers can
     not enumerate valid emails."""
-    default_reset = f"{settings.frontend_url.rstrip('/')}/auth/reset-password"
+    # Default points to the actual frontend route — the previous
+    # default was `/auth/reset-password`, which doesn't exist (the page
+    # lives at `/reset-password`). When the allowlist below rejected
+    # the supplied redirect_to, we ended up sending a non-existent
+    # path to Supabase; Supabase then dropped the URL on the floor
+    # and fell back to Site URL, dumping the dealer on the homepage.
+    default_reset = f"{settings.frontend_url.rstrip('/')}/reset-password"
     redirect_to = body.redirect_to or default_reset
-    # Basic allowlist so we don't turn this into an open redirect.
-    if not redirect_to.startswith(
-        ("http://localhost", "https://autotradeil.com", "https://autotradeil.co.il")
-    ):
+    # Strict host allowlist defeats open-redirect attempts AND fixes
+    # the apex/www split — requests originating from www.autotradeil.com
+    # were silently swapped for the default fallback because the prior
+    # startswith tuple only listed the apex. See docs/password-reset.md.
+    if not _is_allowed_reset_redirect(redirect_to):
         redirect_to = default_reset
 
     try:
