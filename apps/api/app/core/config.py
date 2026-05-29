@@ -122,6 +122,15 @@ class Settings(BaseSettings):
     sentry_dsn: str = Field(default="")
     sentry_traces_sample_rate: float = Field(default=0.1, ge=0.0, le=1.0)
 
+    # Admin email allowlist — comma-separated. When set and non-empty,
+    # `require_admin` additionally requires the caller's email to appear
+    # in this list, even if their users.user_type='admin' flag is set.
+    # Tripwire against a compromised DB write or a bad migration that
+    # flips the flag without going through /api/v1/admin/admins. Empty
+    # (the default) preserves historical behavior so existing deploys
+    # without this var set don't break.
+    admin_email_allowlist: str = Field(default="")
+
     # Web Push — VAPID keypair for the Push API. Empty values mean
     # the /api/v1/notifications/push/vapid-key endpoint returns ""
     # and the frontend hides the toggle. Generate via:
