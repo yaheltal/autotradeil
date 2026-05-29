@@ -559,6 +559,15 @@ function InventoryPageInner() {
         </p>
       ) : null}
 
+      {/* ── PENDING DELETION REQUESTS ─────────────────────────────────── */}
+      {pendingDeletionRows.length > 0 ? (
+        <PendingDeletionSection
+          rows={pendingDeletionRows}
+          onCancel={(item) => cancelDeletionMutation.mutate(item)}
+          busy={cancelDeletionMutation.isPending}
+        />
+      ) : null}
+
       {/* ── TOOLBAR (search + status tabs) ────────────────────────────── */}
       <div className="mt-3xl gap-lg md:gap-2xl flex flex-col md:flex-row md:items-center md:justify-between">
         <form
@@ -882,6 +891,87 @@ function StatusTabs({
         })}
       </ul>
     </nav>
+  );
+}
+
+// ============================================================================
+// PendingDeletionSection — Wave 2 inline panel listing rows the dealer has
+// asked admin to hard-delete. Native <details> opens by default so a dealer
+// returning to the page sees the queue without an extra click; the section
+// hides itself entirely when there are no pending requests.
+// ============================================================================
+
+function PendingDeletionSection({
+  rows,
+  onCancel,
+  busy,
+}: {
+  rows: Item[];
+  onCancel: (item: Item) => void;
+  busy: boolean;
+}) {
+  return (
+    <details open className="border-warn/30 bg-warn-bg/40 mt-2xl px-lg py-md rounded-md border">
+      <summary className="gap-xs flex cursor-pointer select-none items-baseline">
+        <span className="text-ink font-serif text-base font-medium">בקשות בטיפול</span>
+        <span className="text-muted font-tabular text-sm">
+          {rows.length} {rows.length === 1 ? "בקשה" : "בקשות"}
+        </span>
+      </summary>
+      <ul className="mt-lg space-y-md">
+        {rows.map((item) => (
+          <li
+            key={item.id}
+            className="border-hairline gap-md pb-md flex items-start border-b last:border-b-0 last:pb-0"
+          >
+            {item.primary_image_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.primary_image_url}
+                alt=""
+                loading="lazy"
+                className="border-hairline h-14 w-20 shrink-0 rounded-md border object-cover"
+              />
+            ) : (
+              <div
+                aria-hidden="true"
+                className="border-hairline bg-paper text-subtle flex h-14 w-20 shrink-0 items-center justify-center rounded-md border"
+              >
+                <Car className="h-4 w-4" />
+              </div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-ink text-sm font-medium">
+                {item.make} {item.model}{" "}
+                <span className="text-muted font-tabular font-normal">· {item.year}</span>
+              </p>
+              {item.pending_deletion_requested_at ? (
+                <p className="text-muted font-tabular mt-xxs text-xs">
+                  הוגשה ב-
+                  {new Date(item.pending_deletion_requested_at).toLocaleDateString("he-IL")}
+                </p>
+              ) : null}
+              {item.pending_deletion_reason ? (
+                <p className="text-ink/70 mt-xs line-clamp-2 text-sm">
+                  {item.pending_deletion_reason}
+                </p>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={busy}
+              onClick={() => onCancel(item)}
+              aria-label={`בטל את בקשת המחיקה של ${item.make} ${item.model} ${item.year}`}
+            >
+              <RotateCcw aria-hidden="true" />
+              <span>בטל בקשה</span>
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
