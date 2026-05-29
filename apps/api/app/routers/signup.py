@@ -608,18 +608,47 @@ async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
     # path to Supabase; Supabase then dropped the URL on the floor
     # and fell back to Site URL, dumping the dealer on the homepage.
     default_reset = f"{settings.frontend_url.rstrip('/')}/reset-password"
-    redirect_to = body.redirect_to or default_reset
+    redirect_to_from_body = body.redirect_to or default_reset
     # Strict host allowlist defeats open-redirect attempts AND fixes
     # the apex/www split — requests originating from www.autotradeil.com
     # were silently swapped for the default fallback because the prior
     # startswith tuple only listed the apex. See docs/password-reset.md.
-    if not _is_allowed_reset_redirect(redirect_to):
-        redirect_to = default_reset
+    allowed = _is_allowed_reset_redirect(redirect_to_from_body)
+    redirect_to = redirect_to_from_body if allowed else default_reset
+
+    # TEMPORARY DIAGNOSTIC — production reset email still lands users on
+    # the homepage despite the apex/www allowlist fix in PR #18. These
+    # logs disambiguate the three remaining candidates: (a) Supabase is
+    # stripping the path despite us sending it correctly, (b) our default
+    # fallback is malformed, (c) the body never carried the path. Read
+    # the next run's Render logs; revert this commit once we know.
+    logger.info(
+        "forgot-password debug: body.redirect_to=%r default_reset=%r "
+        "allowed=%s redirect_to_final=%r",
+        body.redirect_to,
+        default_reset,
+        allowed,
+        redirect_to,
+    )
 
     try:
         link = await _supabase_generate_recovery_link(body.email, redirect_to)
         if link:
+            # Surface the FULL action_link Supabase returns. If our
+            # redirect_to argument was honored, that URL will contain
+            # the path; if Supabase silently substituted Site URL, the
+            # path will be missing here too.
+            logger.info(
+                "forgot-password debug: supabase action_link=%s",
+                link,
+            )
             await send_password_reset(to_email=body.email, reset_link=link)
+        else:
+            logger.info(
+                "forgot-password debug: _supabase_generate_recovery_link "
+                "returned None — user not found OR upstream error (see "
+                "earlier supabase generate_link warning)."
+            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("forgot-password handler failed: %s", exc)
 
