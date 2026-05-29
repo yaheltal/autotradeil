@@ -551,7 +551,7 @@ async def get_audit_log(
 @router.get("/inventory/{inventory_id}")
 async def admin_get_inventory_item(
     inventory_id: uuid.UUID,
-    _admin: Annotated[User, Depends(require_admin)],
+    admin: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> dict[str, object]:
     """Admin view of a single vehicle: every column on the row + the
@@ -589,6 +589,20 @@ async def admin_get_inventory_item(
         .scalars()
         .all()
     )
+
+    # Forensic trail — record that this admin viewed this specific row.
+    # Browsing one dealer's full vehicle detail (including purchase_cost,
+    # buyer PII, notes) is the highest-privilege admin read; capturing
+    # it lets us audit competitor-data harvesting after the fact
+    # (security audit 2026-05-29, finding #6).
+    await log_admin_action(
+        db,
+        actor_user_id=admin.id,
+        action="admin.inventory.read",
+        target_type="inventory",
+        target_id=inventory_id,
+    )
+    await db.commit()
 
     return {
         "id": str(inv.id),
@@ -657,7 +671,7 @@ async def admin_get_inventory_item(
 
 @router.get("/inventory")
 async def admin_list_inventory(
-    _admin: Annotated[User, Depends(require_admin)],
+    admin: Annotated[User, Depends(require_admin)],
     db: Annotated[AsyncSession, Depends(get_db)],
     dealer_id: uuid.UUID | None = Query(default=None),
     visibility: str | None = Query(
@@ -730,6 +744,33 @@ async def admin_list_inventory(
     ]
 
     pages = math.ceil(total / per_page) if total > 0 else 1
+
+    # Forensic trail — record the list query with its filters so we can
+    # see *which slice* of inventory the admin browsed, not just that
+    # they hit the route. target_id is null because the call returned
+    # many rows, not one (security audit 2026-05-29, finding #6).
+    list_filters: dict[str, object] = {}
+    if dealer_id is not None:
+        list_filters["dealer_id"] = str(dealer_id)
+    if visibility is not None:
+        list_filters["visibility"] = visibility
+    if status_filter is not None:
+        list_filters["status"] = status_filter
+    if make is not None:
+        list_filters["make"] = make
+    if model is not None:
+        list_filters["model"] = model
+    list_filters["page"] = page
+    list_filters["result_count"] = int(total)
+    await log_admin_action(
+        db,
+        actor_user_id=admin.id,
+        action="admin.inventory.read",
+        target_type="inventory",
+        target_id=None,
+        metadata={"filters": list_filters},
+    )
+    await db.commit()
 
     return {
         "items": items,
