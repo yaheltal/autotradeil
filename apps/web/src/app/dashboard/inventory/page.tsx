@@ -3,12 +3,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Car,
+  EyeOff,
+  Eye,
   ImageIcon,
   MoreHorizontal,
-  Pause,
   Pencil,
-  Play,
   Plus,
+  RotateCcw,
   Search,
   Tag,
   Trash2,
@@ -20,10 +21,9 @@ import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 
-import { DeleteInventoryDialog } from "@/components/DeleteInventoryDialog";
 import type { InventoryInitial, InventoryPayload } from "@/components/InventoryFormDialog";
 import { MobileFAB } from "@/components/MobileFAB";
-import { PauseDialog } from "@/components/PauseDialog";
+import { RequestDeletionDialog } from "@/components/RequestDeletionDialog";
 import { type InventoryStatus } from "@/components/StatusBadge";
 import { VehicleFullDetailsDialog } from "@/components/VehicleFullDetailsDialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -104,14 +104,18 @@ type Item = {
   transmission: "automatic" | "manual" | null;
   fuel_type: "petrol" | "diesel" | "electric" | "hybrid" | null;
   engine_volume: number | string | null;
-  notes: string | null;
+  // Wave 2 — notes split.
+  public_notes: string | null;
+  private_notes: string | null;
   status: InventoryStatus;
   is_b2b: boolean;
   b2b_price: number | null;
   visibility: "private" | "b2b" | "b2c" | "both";
   b2c_price: number | null;
-  paused_until: string | null;
-  pause_reason: string | null;
+  // Wave 2 — pending-deletion workflow.
+  pending_deletion_reason: string | null;
+  pending_deletion_requested_at: string | null;
+  previous_status: string | null;
   purchase_cost: number | null;
   sale_price: number | null;
   sold_at: string | null;
@@ -132,11 +136,13 @@ type ListResponse = {
 };
 
 // Tabs render in source order; with the page in dir="rtl" the FIRST tab
-// sits visually on the RIGHT. "פעיל" leads, "הכל" closes the row.
+// sits visually on the RIGHT. Wave 2 order: פעיל · מוסתר · נמכר · הכל.
+// pending_deletion rows surface in a separate "בקשות בטיפול" section
+// below the list rather than as a top-row tab.
 const STATUS_TABS = [
   { key: "active", label: "פעיל" },
-  { key: "sold", label: "נמכר" },
   { key: "hidden", label: "מוסתר" },
+  { key: "sold", label: "נמכר" },
   { key: "", label: "הכל" },
 ] as const;
 
@@ -147,10 +153,12 @@ const VISIBILITY_LABELS: Record<Item["visibility"], string> = {
   both: "B2B + B2C",
 };
 
-const STATUS_LABELS: Record<InventoryStatus, string> = {
+const STATUS_LABELS: Record<string, string> = {
   active: "פעיל",
   sold: "נמכר",
   hidden: "מוסתר",
+  in_transaction: "בעסקה פעילה",
+  pending_deletion: "ממתין למחיקה",
 };
 
 const FUEL_LABELS: Record<NonNullable<Item["fuel_type"]>, string> = {
@@ -196,17 +204,17 @@ function InventoryPageInner() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingInitial, setEditingInitial] = useState<InventoryInitial | null>(null);
 
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deletingItem, setDeletingItem] = useState<Item | null>(null);
+  // Wave 2 — deletion request goes through an admin-approved flow
+  // rather than the legacy soft-delete endpoint. The old
+  // DeleteInventoryDialog is retired here.
+  const [requestDeletionOpen, setRequestDeletionOpen] = useState(false);
+  const [requestDeletionItem, setRequestDeletionItem] = useState<Item | null>(null);
 
   const [imagesOpen, setImagesOpen] = useState(false);
   const [imagesVehicle, setImagesVehicle] = useState<Item | null>(null);
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsVehicleId, setDetailsVehicleId] = useState<string | null>(null);
-
-  const [pauseOpen, setPauseOpen] = useState(false);
-  const [pauseVehicle, setPauseVehicle] = useState<Item | null>(null);
 
   const [sellOpen, setSellOpen] = useState(false);
   const [sellVehicle, setSellVehicle] = useState<Item | null>(null);
@@ -300,9 +308,18 @@ function InventoryPageInner() {
       active: items.filter((i) => i.status === "active").length,
       sold: items.filter((i) => i.status === "sold").length,
       hidden: items.filter((i) => i.status === "hidden").length,
+      pendingDeletion: items.filter((i) => i.status === "pending_deletion").length,
       total: items.length,
     };
   }, [tallyQuery.data]);
+
+  // Pending-deletion rows surface in their own section ("בקשות בטיפול").
+  // We pull them from the cached unfiltered tally response — already
+  // fetched — so no extra request is needed.
+  const pendingDeletionRows = useMemo<Item[]>(
+    () => (tallyQuery.data?.items ?? []).filter((i) => i.status === "pending_deletion"),
+    [tallyQuery.data],
+  );
 
   // Dealer-facing — generic Hebrew, no raw fetch detail to the sales floor.
   useEffect(() => {
@@ -379,7 +396,12 @@ function InventoryPageInner() {
       transmission: item.transmission,
       fuel_type: item.fuel_type,
       engine_volume: item.engine_volume == null ? null : Number(item.engine_volume),
-      notes: item.notes,
+      // Wave 2 — notes split. The form still surfaces a single "הערות"
+      // textarea today (split UI lands in commit 5/7) so we route
+      // public_notes through to it. private_notes round-trips
+      // separately via the wizard's hidden field on save.
+      public_notes: item.public_notes,
+      private_notes: item.private_notes,
       visibility: item.visibility,
       b2b_price: item.b2b_price,
       b2c_price: item.b2c_price,
@@ -424,46 +446,70 @@ function InventoryPageInner() {
     }
   };
 
-  const openDelete = (item: Item) => {
-    setDeletingItem(item);
-    setDeleteOpen(true);
-  };
-
-  const unpauseMutation = useMutation({
+  // Wave 2 — lifecycle endpoints. hide/unhide are owner-toggles;
+  // request-deletion opens an admin-approved hard-delete flow;
+  // cancel-deletion withdraws a pending request and restores the
+  // previous state.
+  const hideMutation = useMutation({
     mutationFn: (item: Item) =>
-      apiFetch(`/api/v1/inventory/${item.id}/unpause`, { method: "POST", token: token! }),
+      apiFetch(`/api/v1/inventory/${item.id}/hide`, { method: "POST", token: token! }),
     onSuccess: () => {
-      setToast("הרכב חודש");
+      setToast("הרכב הוסתר");
       void refresh();
     },
-    onError: () => setError("אירעה שגיאה בחידוש הרכב, אנא נסה שוב"),
+    onError: () => setError("אירעה שגיאה בהסתרת הרכב, אנא נסה שוב"),
   });
 
-  const unpauseVehicle = (item: Item) => unpauseMutation.mutate(item);
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) =>
-      apiFetch(`/api/v1/inventory/${id}?mode=soft`, { method: "DELETE", token: token! }),
-    onSuccess: async () => {
-      setToast("הרכב נמחק");
-      await refresh();
+  const unhideMutation = useMutation({
+    mutationFn: (item: Item) =>
+      apiFetch(`/api/v1/inventory/${item.id}/unhide`, { method: "POST", token: token! }),
+    onSuccess: () => {
+      setToast("ההסתרה בוטלה");
+      void refresh();
     },
+    onError: () => setError("אירעה שגיאה בביטול ההסתרה, אנא נסה שוב"),
   });
 
-  const confirmDelete = async () => {
-    if (!token || !deletingItem) return;
-    // Compute focus target BEFORE the list refreshes.
-    const items = data?.items ?? [];
-    const idx = items.findIndex((i) => i.id === deletingItem.id);
-    const targetId = items[idx + 1]?.id ?? items[idx - 1]?.id ?? null;
-    await deleteMutation.mutateAsync(deletingItem.id);
-    queueMicrotask(() => {
-      if (targetId && editBtnRefs.current.get(targetId)) {
-        editBtnRefs.current.get(targetId)?.focus();
-      } else {
-        addBtnRef.current?.focus();
-      }
+  const requestDeletionMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiFetch(`/api/v1/inventory/${id}/request-deletion`, {
+        method: "POST",
+        token: token!,
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      setToast("בקשת המחיקה נשלחה לאדמין");
+      void refresh();
+    },
+    onError: () => setError("אירעה שגיאה בשליחת בקשת המחיקה, אנא נסה שוב"),
+  });
+
+  const cancelDeletionMutation = useMutation({
+    mutationFn: (item: Item) =>
+      apiFetch(`/api/v1/inventory/${item.id}/cancel-deletion`, {
+        method: "POST",
+        token: token!,
+      }),
+    onSuccess: () => {
+      setToast("בקשת המחיקה בוטלה");
+      void refresh();
+    },
+    onError: () => setError("אירעה שגיאה בביטול הבקשה, אנא נסה שוב"),
+  });
+
+  const openRequestDeletion = (item: Item) => {
+    setRequestDeletionItem(item);
+    setRequestDeletionOpen(true);
+  };
+
+  const submitRequestDeletion = async (reason: string) => {
+    if (!token || !requestDeletionItem) return;
+    await requestDeletionMutation.mutateAsync({
+      id: requestDeletionItem.id,
+      reason,
     });
+    setRequestDeletionOpen(false);
+    setRequestDeletionItem(null);
   };
 
   useEffect(() => {
@@ -632,7 +678,7 @@ function InventoryPageInner() {
                       item={item}
                       editBtnRefs={editBtnRefs}
                       onEdit={openEdit}
-                      onDelete={openDelete}
+                      onRequestDeletion={openRequestDeletion}
                       onManageImages={() => {
                         setImagesVehicle(item);
                         setImagesOpen(true);
@@ -645,11 +691,8 @@ function InventoryPageInner() {
                         setSellVehicle(item);
                         setSellOpen(true);
                       }}
-                      onPause={() => {
-                        setPauseVehicle(item);
-                        setPauseOpen(true);
-                      }}
-                      onUnpause={() => unpauseVehicle(item)}
+                      onHide={() => hideMutation.mutate(item)}
+                      onUnhide={() => unhideMutation.mutate(item)}
                     />
                   ))}
                 </TableBody>
@@ -664,7 +707,7 @@ function InventoryPageInner() {
                   item={item}
                   editBtnRefs={editBtnRefs}
                   onEdit={openEdit}
-                  onDelete={openDelete}
+                  onRequestDeletion={openRequestDeletion}
                   onManageImages={() => {
                     setImagesVehicle(item);
                     setImagesOpen(true);
@@ -677,11 +720,8 @@ function InventoryPageInner() {
                     setSellVehicle(item);
                     setSellOpen(true);
                   }}
-                  onPause={() => {
-                    setPauseVehicle(item);
-                    setPauseOpen(true);
-                  }}
-                  onUnpause={() => unpauseVehicle(item)}
+                  onHide={() => hideMutation.mutate(item)}
+                  onUnhide={() => unhideMutation.mutate(item)}
                 />
               ))}
             </ul>
@@ -708,31 +748,20 @@ function InventoryPageInner() {
         />
       ) : null}
 
-      <DeleteInventoryDialog
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        onConfirm={confirmDelete}
-        label={
-          deletingItem ? `${deletingItem.make} ${deletingItem.model} שנת ${deletingItem.year}` : ""
+      <RequestDeletionDialog
+        open={requestDeletionOpen}
+        onOpenChange={(v) => {
+          setRequestDeletionOpen(v);
+          if (!v) setRequestDeletionItem(null);
+        }}
+        onSubmit={submitRequestDeletion}
+        vehicleLabel={
+          requestDeletionItem
+            ? `${requestDeletionItem.make} ${requestDeletionItem.model} שנת ${requestDeletionItem.year}`
+            : ""
         }
+        busy={requestDeletionMutation.isPending}
       />
-
-      {pauseVehicle && token ? (
-        <PauseDialog
-          open={pauseOpen}
-          onOpenChange={(v) => {
-            setPauseOpen(v);
-            if (!v) setPauseVehicle(null);
-          }}
-          token={token}
-          inventoryId={pauseVehicle.id}
-          vehicleLabel={`${pauseVehicle.make} ${pauseVehicle.model} ${pauseVehicle.year}`}
-          onDone={() => {
-            setToast("הרכב הושהה");
-            void refresh();
-          }}
-        />
-      ) : null}
 
       {sellVehicle && token ? (
         <SellVehicleDialog
@@ -811,7 +840,13 @@ function StatusTabs({
   tallies,
 }: {
   current: string;
-  tallies: { active: number; sold: number; hidden: number; total: number };
+  tallies: {
+    active: number;
+    sold: number;
+    hidden: number;
+    pendingDeletion: number;
+    total: number;
+  };
 }) {
   const counts: Record<string, number> = {
     active: tallies.active,
@@ -876,12 +911,12 @@ function FilterChip({ children, onClear }: { children: React.ReactNode; onClear:
 
 type RowActions = {
   onEdit: (item: Item) => void;
-  onDelete: (item: Item) => void;
+  onRequestDeletion: (item: Item) => void;
   onManageImages: () => void;
   onShowDetails: () => void;
   onMarkSold: () => void;
-  onPause: () => void;
-  onUnpause: () => void;
+  onHide: () => void;
+  onUnhide: () => void;
 };
 
 function InventoryRow({
@@ -895,7 +930,6 @@ function InventoryRow({
   const priceF = formatPrice(item.price);
   const mileageF = formatMileage(item.mileage);
   const fullLabel = `${item.make} ${item.model} שנת ${item.year}`;
-  const isPaused = !!(item.paused_until || item.pause_reason);
   const subMeta = [
     item.transmission ? TRANSMISSION_LABELS[item.transmission] : null,
     item.fuel_type ? FUEL_LABELS[item.fuel_type] : null,
@@ -930,15 +964,6 @@ function InventoryRow({
           <span className="text-muted font-tabular font-normal">· {item.year}</span>
         </div>
         {subMeta ? <div className="text-muted text-xs">{subMeta}</div> : null}
-        {isPaused ? (
-          <div className="text-warn-fg gap-xxs mt-xxs inline-flex items-center text-xs">
-            <Pause className="h-3 w-3" aria-hidden="true" />
-            מושהה
-            {item.paused_until
-              ? ` · עד ${new Date(item.paused_until).toLocaleDateString("he-IL")}`
-              : ""}
-          </div>
-        ) : null}
       </TableCell>
       <TableCell>
         <Badge variant="outline" className="font-normal">
@@ -979,7 +1004,7 @@ function InventoryRow({
           >
             <Pencil aria-hidden="true" />
           </Button>
-          <RowKebab item={item} isPaused={isPaused} fullLabel={fullLabel} {...actions} />
+          <RowKebab item={item} fullLabel={fullLabel} {...actions} />
         </div>
       </TableCell>
     </TableRow>
@@ -1001,7 +1026,6 @@ function InventoryCardRow({
   const priceF = formatPrice(item.price);
   const mileageF = formatMileage(item.mileage);
   const fullLabel = `${item.make} ${item.model} שנת ${item.year}`;
-  const isPaused = !!(item.paused_until || item.pause_reason);
 
   return (
     <li className="border-hairline gap-md py-md flex items-start border-b last:border-b-0">
@@ -1041,12 +1065,6 @@ function InventoryCardRow({
               <Badge variant="outline" className="font-normal">
                 {VISIBILITY_LABELS[item.visibility]}
               </Badge>
-              {isPaused ? (
-                <span className="text-warn-fg gap-xxs inline-flex items-center text-xs">
-                  <Pause className="h-3 w-3" aria-hidden="true" />
-                  מושהה
-                </span>
-              ) : null}
             </div>
           </div>
           <div className="gap-xxs flex shrink-0 items-center">
@@ -1063,7 +1081,7 @@ function InventoryCardRow({
             >
               <Pencil aria-hidden="true" />
             </Button>
-            <RowKebab item={item} isPaused={isPaused} fullLabel={fullLabel} {...actions} />
+            <RowKebab item={item} fullLabel={fullLabel} {...actions} />
           </div>
         </div>
       </div>
@@ -1077,19 +1095,22 @@ function InventoryCardRow({
 
 function RowKebab({
   item,
-  isPaused,
   fullLabel,
-  onDelete,
   onManageImages,
   onShowDetails,
   onMarkSold,
-  onPause,
-  onUnpause,
+  onHide,
+  onUnhide,
+  onRequestDeletion,
 }: {
   item: Item;
-  isPaused: boolean;
   fullLabel: string;
 } & RowActions) {
+  // "בקש מחיקה" is offered only from active or hidden. Sold rows are
+  // terminal and pending_deletion rows already have a deletion request
+  // open (cancel-deletion lives in the "בקשות בטיפול" section).
+  const canRequestDeletion = item.status === "active" || item.status === "hidden";
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -1114,26 +1135,30 @@ function RowKebab({
             <span>סמן כנמכר</span>
           </DropdownMenuItem>
         ) : null}
-        {item.status === "active" && !isPaused ? (
-          <DropdownMenuItem onSelect={onPause}>
-            <Pause aria-hidden="true" />
-            <span>השהה זמנית</span>
+        {item.status === "active" ? (
+          <DropdownMenuItem onSelect={onHide}>
+            <EyeOff aria-hidden="true" />
+            <span>הסתר</span>
           </DropdownMenuItem>
         ) : null}
-        {isPaused ? (
-          <DropdownMenuItem onSelect={onUnpause}>
-            <Play aria-hidden="true" />
-            <span>חדש כעת</span>
+        {item.status === "hidden" ? (
+          <DropdownMenuItem onSelect={onUnhide}>
+            <Eye aria-hidden="true" />
+            <span>בטל הסתרה</span>
           </DropdownMenuItem>
         ) : null}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          onSelect={() => onDelete(item)}
-          className="text-danger-fg focus:text-danger-fg focus:bg-danger-bg"
-        >
-          <Trash2 aria-hidden="true" />
-          <span>מחק</span>
-        </DropdownMenuItem>
+        {canRequestDeletion ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onRequestDeletion(item)}
+              className="text-danger-fg focus:text-danger-fg focus:bg-danger-bg"
+            >
+              <Trash2 aria-hidden="true" />
+              <span>בקש מחיקה</span>
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
