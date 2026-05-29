@@ -53,14 +53,51 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     engine_volume: Mapped[Decimal | None] = mapped_column(
         Numeric(3, 1), nullable=True
     )
+    # Legacy column — retained on the row during the Wave 2
+    # expand/contract window. New writes use public_notes / private_notes
+    # below; this column receives no writes from app code and is dropped
+    # in a follow-up migration once Wave 2 is stable in prod. Kept here
+    # so a code rollback inside the deploy window can still SELECT it.
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    # Wave 2 — notes split. public_notes is the only notes field
+    # returned to non-owner viewers via /marketplace/vehicles/{id};
+    # private_notes is owner-only and MUST NEVER appear in any
+    # marketplace-facing schema.
+    public_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    private_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # ---- lifecycle ----
+    # Statuses (Wave 2):
+    #   active            — listed, accepts offers (default)
+    #   hidden            — dealer hid it; owner-only, not in marketplace
+    #   sold              — terminal; cannot revert
+    #   in_transaction    — admin-escort window (admin /transactions flow)
+    #   pending_deletion  — dealer requested admin-approved hard delete;
+    #                       owner can cancel until admin acts
+    # The pre-Wave-2 paused pseudo-state (status='hidden' +
+    # paused_until set) is retired — auto-pausing during negotiation
+    # was a product mistake; sellers should keep receiving offers
+    # regardless of negotiation activity.
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="active",
         server_default="active",
+    )
+
+    # Wave 2 — pending-deletion workflow. previous_status remembers the
+    # state at request time so cancel-deletion can revert to either
+    # 'active' or 'hidden' correctly, instead of always reverting to
+    # 'active'.
+    pending_deletion_reason: Mapped[str | None] = mapped_column(
+        Text, nullable=True
+    )
+    pending_deletion_requested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    previous_status: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
     )
 
     # ---- B2B marketplace (Phase 4.1) ----
@@ -72,7 +109,7 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
     )
     b2b_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # ---- Phase 4.3: visibility + B2C + pause ----
+    # ---- Phase 4.3: visibility + B2C ----
     # Default is "b2b" (not "private") because the entire point of the
     # platform is dealer-to-dealer trading — defaulting to private meant
     # newly-added vehicles never appeared on the marketplace until the
@@ -84,10 +121,6 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
         server_default="b2b",
     )
     b2c_price: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    paused_until: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    pause_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # ---- Phase 6.5: sale lifecycle ----
     purchase_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -144,7 +177,7 @@ class Inventory(UUIDPrimaryKey, TimestampMixin, Base):
             name="inventory_engine_volume_range",
         ),
         CheckConstraint(
-            "status IN ('active', 'sold', 'hidden', 'in_transaction')",
+            "status IN ('active', 'sold', 'hidden', 'in_transaction', 'pending_deletion')",
             name="inventory_status_check",
         ),
         CheckConstraint(

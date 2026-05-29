@@ -104,7 +104,10 @@ class MarketplaceVehicleDetail(BaseModel):
     transmission: str | None
     fuel_type: str | None
     engine_volume: Decimal | None
-    notes: str | None
+    # Wave 2 — only the public-notes half of the dealer's notes is
+    # ever surfaced here. private_notes never appears in any
+    # marketplace-facing schema.
+    public_notes: str | None
     status: str
     created_at: datetime
     seller: MarketplaceSellerInfo
