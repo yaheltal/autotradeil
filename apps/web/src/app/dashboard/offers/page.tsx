@@ -94,6 +94,43 @@ type OfferListResponse = {
   per_page: number;
 };
 
+// Wave 2 — group offers by vehicle so the offers page scales past
+// "flat list of every offer the dealer ever received". One vehicle can
+// gather many simultaneous bids; rendering each as a separate top-level
+// card buries the underlying question — "what's happening on this car?"
+type VehicleGroup = {
+  inventory_id: string;
+  vehicle: OfferVehicle;
+  offers: Offer[];
+  highestPrice: number;
+  latestActivity: string;
+};
+
+function groupOffersByVehicle(offers: Offer[]): VehicleGroup[] {
+  const map = new Map<string, VehicleGroup>();
+  for (const o of offers) {
+    // counter_price (if present) is the latest agreed-on number from
+    // that side; otherwise the original offered_price.
+    const price = o.counter_price ?? o.offered_price;
+    const existing = map.get(o.inventory_id);
+    if (!existing) {
+      map.set(o.inventory_id, {
+        inventory_id: o.inventory_id,
+        vehicle: o.vehicle,
+        offers: [o],
+        highestPrice: price,
+        latestActivity: o.updated_at,
+      });
+    } else {
+      existing.offers.push(o);
+      if (price > existing.highestPrice) existing.highestPrice = price;
+      if (o.updated_at > existing.latestActivity) existing.latestActivity = o.updated_at;
+    }
+  }
+  // Vehicles whose offer book changed most recently surface first.
+  return Array.from(map.values()).sort((a, b) => b.latestActivity.localeCompare(a.latestActivity));
+}
+
 type Tab = "received" | "sent";
 
 const TABS: { id: Tab; label: string }[] = [
@@ -146,6 +183,16 @@ export default function OffersPage() {
 
   const received = receivedQuery.data ?? null;
   const sent = sentQuery.data ?? null;
+
+  // Wave 2 — derive the per-vehicle groupings once. The lists themselves
+  // are still the source of truth (mutations update them; we re-derive on
+  // every render so a counter-offer that bumps highestPrice is reflected
+  // without a separate refetch).
+  const receivedGroups = useMemo(
+    () => (received ? groupOffersByVehicle(received.items) : []),
+    [received],
+  );
+  const sentGroups = useMemo(() => (sent ? groupOffersByVehicle(sent.items) : []), [sent]);
 
   // Resolve the currently-open detail offer from whichever list it's in.
   // Looked up live so accept/counter mutations that invalidate the lists
@@ -351,27 +398,28 @@ export default function OffersPage() {
         {!received ? (
           <OfferListSkeleton />
         ) : received.items.length === 0 ? (
-          <EmptyState>עדיין לא התקבלו הצעות על המלאי שלך.</EmptyState>
+          <EmptyState>עוד לא קיבלת הצעות.</EmptyState>
         ) : (
           <ul className="space-y-xl">
-            {received.items.map((o) => (
-              <OfferCard
-                key={o.id}
-                offer={o}
-                direction="received"
-                onOpenDetail={() => setSelectedOfferId(o.id)}
-                onAccept={() => setConfirm({ action: "accept", offer: o })}
-                onReject={() => setConfirm({ action: "reject", offer: o })}
-                onCancel={() => setConfirm({ action: "cancel", offer: o })}
-                onCounter={() =>
-                  setCounter({
-                    offer: o,
-                    originalPrice: o.offered_price,
-                    originalSideLabel: "הצעת הקונה",
-                  })
-                }
-                onConfirmDeal={() => setConfirm({ action: "confirm-deal", offer: o })}
-              />
+            {receivedGroups.map((g) => (
+              <li key={g.inventory_id}>
+                <VehicleOfferGroup
+                  group={g}
+                  direction="received"
+                  onOpenDetail={(o) => setSelectedOfferId(o.id)}
+                  onAccept={(o) => setConfirm({ action: "accept", offer: o })}
+                  onReject={(o) => setConfirm({ action: "reject", offer: o })}
+                  onCancel={(o) => setConfirm({ action: "cancel", offer: o })}
+                  onCounter={(o) =>
+                    setCounter({
+                      offer: o,
+                      originalPrice: o.offered_price,
+                      originalSideLabel: "הצעת הקונה",
+                    })
+                  }
+                  onConfirmDeal={(o) => setConfirm({ action: "confirm-deal", offer: o })}
+                />
+              </li>
             ))}
           </ul>
         )}
@@ -389,7 +437,7 @@ export default function OffersPage() {
           <OfferListSkeleton />
         ) : sent.items.length === 0 ? (
           <EmptyState>
-            לא שלחת עדיין הצעות.{" "}
+            עוד לא שלחת הצעות.{" "}
             <Link
               href="/dashboard/marketplace"
               className="text-ink duration-fast hover:text-accent rounded-sm font-medium underline underline-offset-4 transition-colors"
@@ -399,24 +447,25 @@ export default function OffersPage() {
           </EmptyState>
         ) : (
           <ul className="space-y-xl">
-            {sent.items.map((o) => (
-              <OfferCard
-                key={o.id}
-                offer={o}
-                direction="sent"
-                onOpenDetail={() => setSelectedOfferId(o.id)}
-                onAccept={() => setConfirm({ action: "accept", offer: o })}
-                onReject={() => setConfirm({ action: "reject", offer: o })}
-                onCancel={() => setConfirm({ action: "cancel", offer: o })}
-                onCounter={() =>
-                  setCounter({
-                    offer: o,
-                    originalPrice: o.counter_price ?? o.offered_price,
-                    originalSideLabel: "הצעת המוכר",
-                  })
-                }
-                onConfirmDeal={() => setConfirm({ action: "confirm-deal", offer: o })}
-              />
+            {sentGroups.map((g) => (
+              <li key={g.inventory_id}>
+                <VehicleOfferGroup
+                  group={g}
+                  direction="sent"
+                  onOpenDetail={(o) => setSelectedOfferId(o.id)}
+                  onAccept={(o) => setConfirm({ action: "accept", offer: o })}
+                  onReject={(o) => setConfirm({ action: "reject", offer: o })}
+                  onCancel={(o) => setConfirm({ action: "cancel", offer: o })}
+                  onCounter={(o) =>
+                    setCounter({
+                      offer: o,
+                      originalPrice: o.counter_price ?? o.offered_price,
+                      originalSideLabel: "הצעת המוכר",
+                    })
+                  }
+                  onConfirmDeal={(o) => setConfirm({ action: "confirm-deal", offer: o })}
+                />
+              </li>
             ))}
           </ul>
         )}
@@ -512,6 +561,93 @@ export default function OffersPage() {
         onConfirmDeal={(o) => setConfirm({ action: "confirm-deal", offer: o })}
       />
     </main>
+  );
+}
+
+// ============================================================================
+// VehicleOfferGroup — Wave 2 collapsible accordion of every offer on one
+// vehicle. Summary surface tells the dealer the rollup ("3 הצעות, top is
+// ₪148,000, updated yesterday") so most decisions can be made without
+// expanding. The body re-uses the existing OfferCard so each individual
+// offer keeps every action and timeline it had in the flat layout.
+//
+// open by default — the user came to this page because something is
+// happening; collapsing every group hides exactly what they came for.
+// They can fold an individual group to focus on another.
+// ============================================================================
+
+type VehicleGroupActions = {
+  onOpenDetail: (offer: Offer) => void;
+  onAccept: (offer: Offer) => void;
+  onReject: (offer: Offer) => void;
+  onCancel: (offer: Offer) => void;
+  onCounter: (offer: Offer) => void;
+  onConfirmDeal: (offer: Offer) => void;
+};
+
+function VehicleOfferGroup({
+  group,
+  direction,
+  ...actions
+}: {
+  group: VehicleGroup;
+  direction: "received" | "sent";
+} & VehicleGroupActions) {
+  const priceF = formatPrice(group.highestPrice);
+  const v = group.vehicle;
+  const count = group.offers.length;
+  // Most-recent activity first within the group.
+  const sortedOffers = useMemo(
+    () => [...group.offers].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+    [group.offers],
+  );
+
+  return (
+    <details open className="border-hairline bg-paper rounded-md border">
+      <summary className="px-lg py-md hover:bg-muted/5 duration-fast cursor-pointer select-none transition-colors">
+        <div className="gap-md flex items-center">
+          <OfferThumbnail url={v.primary_image_url} />
+          <div className="min-w-0 flex-1">
+            <p className="text-ink font-serif text-base font-medium leading-tight">
+              {v.make} {v.model}{" "}
+              <span className="text-muted font-tabular font-normal">· {v.year}</span>
+            </p>
+            <p className="text-muted mt-xxs font-tabular text-xs">
+              עדכון אחרון {shortDate(group.latestActivity)}
+            </p>
+          </div>
+          <div className="gap-md flex shrink-0 items-baseline">
+            <div className="text-end">
+              <p className="text-muted text-xs">
+                {direction === "received" ? "הצעה גבוהה" : "ההצעה הגבוהה שלי"}
+              </p>
+              <p className="text-ink font-tabular text-sm font-medium">
+                <span aria-hidden="true">{priceF.visual}</span>
+                <span className="sr-only">{priceF.sr}</span>
+              </p>
+            </div>
+            <span className="bg-accent/10 text-accent border-accent/30 inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium">
+              {count} {count === 1 ? "הצעה" : "הצעות"}
+            </span>
+          </div>
+        </div>
+      </summary>
+      <ul className="border-hairline px-lg py-lg space-y-lg border-t">
+        {sortedOffers.map((o) => (
+          <OfferCard
+            key={o.id}
+            offer={o}
+            direction={direction}
+            onOpenDetail={() => actions.onOpenDetail(o)}
+            onAccept={() => actions.onAccept(o)}
+            onReject={() => actions.onReject(o)}
+            onCancel={() => actions.onCancel(o)}
+            onCounter={() => actions.onCounter(o)}
+            onConfirmDeal={() => actions.onConfirmDeal(o)}
+          />
+        ))}
+      </ul>
+    </details>
   );
 }
 
