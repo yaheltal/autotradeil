@@ -21,7 +21,12 @@
  */
 
 export type DealerStatus = "pending" | "verified" | "rejected";
-export type InventoryStatus = "active" | "sold" | "hidden";
+// Wave 2 adds in_transaction (admin-escort window during deal closure)
+// and pending_deletion (dealer requested admin-approved hard delete).
+// The inventory page renders pending_deletion in its own section, but
+// the type must list every backend-admissible status so filter
+// predicates stop TS error-ing on the new literals.
+export type InventoryStatus = "active" | "sold" | "hidden" | "in_transaction" | "pending_deletion";
 export type OfferStatus = "pending" | "accepted" | "rejected" | "countered" | "cancelled";
 
 type AllStatus = DealerStatus | InventoryStatus | OfferStatus;
@@ -59,6 +64,16 @@ const MAP: Record<AllStatus, Entry> = {
   hidden: {
     label: "מוסתר",
     aria: "סטטוס: מוסתר",
+    cls: "bg-amber-100 text-amber-900 ring-amber-600/30",
+  },
+  in_transaction: {
+    label: "בעסקה פעילה",
+    aria: "סטטוס: בעסקה פעילה",
+    cls: "bg-indigo-100 text-indigo-950 ring-indigo-700/30",
+  },
+  pending_deletion: {
+    label: "ממתין למחיקה",
+    aria: "סטטוס: ממתין למחיקה",
     cls: "bg-amber-100 text-amber-900 ring-amber-600/30",
   },
   accepted: {
