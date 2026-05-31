@@ -44,10 +44,16 @@ export default function ResetPasswordPage() {
   const [busy, setBusy] = useState(false);
   const [mismatch, setMismatch] = useState(false);
 
-  // verifying — gates the form fieldset. Flipped to false synchronously
-  // inside the mount effect; we do NOT await setSession before flipping
-  // (that's what was leaving the form stuck disabled in production).
-  const [verifying, setVerifying] = useState(true);
+  // verifying — historically gated the fieldset while the mount effect
+  // verified the recovery hash. Initial value is now FALSE so the form
+  // is interactive on the first paint: any setSession failure surfaces
+  // via linkError, and a submit-before-setSession-lands path is already
+  // handled by the "auth session missing" branch in onSubmit below.
+  // The mount effect still runs and still fires setSession in the
+  // background — the variable + setter stay so the existing flow can
+  // explicitly null this gate out in the future without re-introducing
+  // it everywhere.
+  const [verifying, setVerifying] = useState(false);
 
   // Two error surfaces:
   //   - linkError fires when the URL itself can't carry the recovery
