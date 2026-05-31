@@ -16,24 +16,25 @@ import { createClient } from "@/lib/supabase";
  *      `/reset-password#access_token=…&refresh_token=…&type=recovery`
  *      (or `#error=…&error_code=otp_expired&…` on a stale/tampered link).
  *
- * We DON'T wait for `onAuthStateChange("PASSWORD_RECOVERY")` — that
- * proved unreliable in production; the event sometimes never fires
- * even with a valid hash, leaving users on the verifying spinner
- * forever. Instead, on mount we parse window.location.hash directly,
- * call `supabase.auth.setSession({ access_token, refresh_token })`
- * ourselves, and flip state to "ready" the moment that promise
- * resolves. After setSession resolves we strip the tokens from the
- * URL via history.replaceState so they don't end up in history /
- * referrer headers / autofill.
+ * Form-unlock policy — IMMEDIATE on hash detection. The form unlocks
+ * the moment we have plausibly-valid tokens. setSession is fired in
+ * the background; if it fails the error surfaces via `linkError`
+ * state, and the submit handler also catches "Auth session missing"
+ * from updateUser if the user beats setSession to the punch. Earlier
+ * versions awaited setSession before unlocking and the form sat
+ * disabled forever in production tabs where setSession never returned.
  *
- * A11y (approved):
+ * The ONLY state that gates the form is `verifying || busy`:
+ *   - `verifying` flips to false synchronously inside the mount effect
+ *     (no awaits before it gets flipped).
+ *   - `busy` toggles only during the submit's updateUser round-trip.
+ *
+ * A11y:
  *   - H1 focusable on mount.
  *   - Both password inputs carry autocomplete="new-password".
  *   - Mismatch error wired via aria-describedby on the confirm field.
- *   - Form is disabled until session is ready — disabled state is
- *     announced as "dimmed" by VoiceOver.
- *   - "Session ready" transition announced via role="status" so SR
- *     users know they can now interact.
+ *   - Form is disabled only while verifying or while busy submitting.
+ *   - "Form unlocked" transition announced via role="status".
  */
 
 export default function ResetPasswordPage() {
@@ -41,12 +42,24 @@ export default function ResetPasswordPage() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [mismatch, setMismatch] = useState(false);
 
-  // Recovery-session state — start "checking", flip to "ready" once
-  // Supabase fires PASSWORD_RECOVERY (or we find an existing session).
-  const [sessionState, setSessionState] = useState<"checking" | "ready" | "missing">("checking");
+  // verifying — gates the form fieldset. Flipped to false synchronously
+  // inside the mount effect; we do NOT await setSession before flipping
+  // (that's what was leaving the form stuck disabled in production).
+  const [verifying, setVerifying] = useState(true);
+
+  // Two error surfaces:
+  //   - linkError fires when the URL itself can't carry the recovery
+  //     flow (expired token, missing tokens, setSession failure, or
+  //     "Auth session missing" from updateUser). Renders with the
+  //     "בקש איפוס חדש" link to /forgot-password.
+  //   - submitError fires for in-form validation + generic submit
+  //     failures. Renders without the link (the user just needs to
+  //     fix their input).
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const [readyAnnounce, setReadyAnnounce] = useState("");
 
   const h1Ref = useRef<HTMLHeadingElement>(null);
@@ -55,93 +68,81 @@ export default function ResetPasswordPage() {
     h1Ref.current?.focus();
   }, []);
 
-  // Recovery handler — parses window.location.hash directly and calls
-  // setSession ourselves. We don't subscribe to onAuthStateChange
-  // because the PASSWORD_RECOVERY event was missing in production
-  // even when the hash carried valid tokens; the UI hung on the
-  // verifying spinner indefinitely.
+  // Recovery handler — parses window.location.hash, flips verifying
+  // OFF synchronously the moment we have plausibly-valid tokens, then
+  // fires setSession as fire-and-forget. The submit handler will
+  // surface "Auth session missing" if the user races setSession to
+  // the finish line.
   //
-  // Deps are intentionally empty: this runs exactly once on mount.
-  // Re-running on every render would re-call setSession and clobber
-  // the URL clean-up that already happened.
+  // Deps intentionally empty — this MUST run exactly once on mount.
+  // Re-running would re-trigger setSession and clobber the URL
+  // clean-up that already happened.
   useEffect(() => {
     if (typeof window === "undefined") return;
     const supabase = createClient();
-    let cancelled = false;
 
-    const failMissing = () => {
-      if (!cancelled) setSessionState("missing");
-    };
+    const rawHash = window.location.hash.startsWith("#")
+      ? window.location.hash.slice(1)
+      : window.location.hash;
+    const params = new URLSearchParams(rawHash);
 
-    void (async () => {
-      const rawHash = window.location.hash.startsWith("#")
-        ? window.location.hash.slice(1)
-        : window.location.hash;
-      const params = new URLSearchParams(rawHash);
+    // Supabase puts `error=…&error_code=otp_expired&…` on the hash
+    // when the link has expired or been tampered with.
+    const hashError = params.get("error") || params.get("error_code");
+    if (hashError) {
+      setLinkError("הקישור פג או אינו תקין. בקש איפוס חדש.");
+      setVerifying(false);
+      return;
+    }
 
-      // Supabase puts `error=…&error_code=…&error_description=…` on
-      // the hash when the link has expired (otp_expired) or been
-      // tampered with. Show the actionable message immediately.
-      if (params.get("error") || params.get("error_code")) {
-        failMissing();
-        return;
-      }
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
+    const type = params.get("type");
 
-      const accessToken = params.get("access_token");
-      const refreshToken = params.get("refresh_token");
-      const type = params.get("type");
+    if (access_token && refresh_token && type === "recovery") {
+      // Unlock the form IMMEDIATELY. No await before this point —
+      // every state that disables the form is now flipped off.
+      setVerifying(false);
+      setReadyAnnounce("הקישור אומת — ניתן לקבוע סיסמה חדשה");
 
-      if (accessToken && refreshToken && type === "recovery") {
-        try {
-          const { error: setErr } = await supabase.auth.setSession({
-            access_token: accessToken,
-            refresh_token: refreshToken,
-          });
-          if (cancelled) return;
+      // Fire setSession in the background. If it succeeds, strip the
+      // tokens from the URL so they don't leak via history, referrer,
+      // or autofill. If it fails, surface the error — the submit
+      // handler will also catch "Auth session missing" from
+      // updateUser if the user races us to the finish line.
+      supabase.auth
+        .setSession({ access_token, refresh_token })
+        .then(({ error: setErr }) => {
           if (setErr) {
-            failMissing();
+            setLinkError("שגיאה באימות הקישור: " + setErr.message);
             return;
           }
-          setSessionState("ready");
-          setReadyAnnounce("הקישור אומת — ניתן לקבוע סיסמה חדשה");
-          // Strip the tokens from the URL so they don't leak via
-          // history, referrer headers, or browser autocomplete.
           window.history.replaceState(null, "", window.location.pathname);
-        } catch {
-          failMissing();
-        }
-        return;
-      }
+        })
+        .catch((e: unknown) => {
+          const msg = e instanceof Error ? e.message : String(e);
+          setLinkError("שגיאה באימות הקישור: " + msg);
+        });
+      return;
+    }
 
-      // No recovery tokens on the URL — maybe the tab already has a
-      // session (e.g. user navigated back). Honor it; otherwise the
-      // user reached this page without clicking a real link.
-      const { data } = await supabase.auth.getSession();
-      if (cancelled) return;
-      if (data.session) {
-        setSessionState("ready");
-        setReadyAnnounce("הקישור אומת — ניתן לקבוע סיסמה חדשה");
-        return;
-      }
-      failMissing();
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+    // No recovery tokens on the URL — the user reached this page
+    // without clicking a real link.
+    setLinkError("לא נמצא קישור איפוס תקין בכתובת.");
+    setVerifying(false);
   }, []);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setError(null);
+    setSubmitError(null);
 
     if (password.length < 8) {
-      setError("הסיסמה חייבת להכיל לפחות 8 תווים");
+      setSubmitError("הסיסמה חייבת להכיל לפחות 8 תווים");
       return;
     }
     if (password !== confirm) {
       setMismatch(true);
-      setError("הסיסמאות אינן תואמות");
+      setSubmitError("הסיסמאות אינן תואמות");
       return;
     }
 
@@ -149,16 +150,27 @@ export default function ResetPasswordPage() {
     try {
       const supabase = createClient();
       const { error: authError } = await supabase.auth.updateUser({ password });
-      if (authError) throw new Error(authError.message);
+      if (authError) {
+        // "Auth session missing!" means setSession never landed (or
+        // got invalidated). Nudge the user to request a fresh reset
+        // by routing the error into linkError so the "בקש איפוס חדש"
+        // link is the visible CTA.
+        if (authError.message.toLowerCase().includes("auth session missing")) {
+          setLinkError("אימות הקישור נכשל. בקש איפוס חדש דרך עמוד 'שכחתי סיסמה'.");
+          return;
+        }
+        throw new Error(authError.message);
+      }
       router.push("/login?reset=1");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "שגיאה בעדכון הסיסמה");
+      setSubmitError(err instanceof Error ? err.message : "שגיאה בעדכון הסיסמה");
     } finally {
       setBusy(false);
     }
   };
 
-  const formDisabled = sessionState !== "ready" || busy;
+  // verifying || busy — and ONLY these two — gate the fieldset.
+  const formDisabled = verifying || busy;
 
   return (
     <main id="main" tabIndex={-1} className="min-h-screen focus:outline-none">
@@ -184,7 +196,7 @@ export default function ResetPasswordPage() {
           </p>
         ) : null}
 
-        {sessionState === "checking" ? (
+        {verifying ? (
           <p
             role="status"
             aria-live="polite"
@@ -194,12 +206,12 @@ export default function ResetPasswordPage() {
           </p>
         ) : null}
 
-        {sessionState === "missing" ? (
+        {linkError ? (
           <div
             role="alert"
             className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3 text-sm"
           >
-            <p className="font-semibold">הקישור פג או אינו תקין</p>
+            <p className="font-semibold">{linkError}</p>
             <p className="mt-1">
               <a href="/forgot-password" className="font-semibold underline">
                 בקש איפוס חדש
@@ -208,12 +220,12 @@ export default function ResetPasswordPage() {
           </div>
         ) : null}
 
-        {error ? (
+        {submitError ? (
           <div
             role="alert"
             className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3 text-sm"
           >
-            {error}
+            {submitError}
           </div>
         ) : null}
 
