@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { BottomNav } from "@/components/dashboard/BottomNav";
 import { MobileSidebarSheet } from "@/components/dashboard/MobileSidebarSheet";
@@ -13,6 +13,8 @@ import { Sidebar } from "@/components/dashboard/Sidebar";
 // the dark palette ships.
 // import { ThemeToggle } from "@/components/dashboard/ThemeToggle";
 import { TopBar } from "@/components/dashboard/TopBar";
+import { NotificationBell } from "@/components/NotificationBell";
+import { createClient } from "@/lib/supabase";
 
 /**
  * DashboardShell — the global chrome that wraps every authenticated
@@ -32,6 +34,29 @@ import { TopBar } from "@/components/dashboard/TopBar";
  *     to the right edge in RTL.
  */
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  // Token probe — non-blocking; the bell hides until resolved. Same
+  // pattern as TopBar so the mobile header's bell shares the same
+  // NotificationBell component (poll/markRead/etc) as desktop instead
+  // of the dead placeholder it used to render (QA #6).
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!cancelled) setToken(session?.access_token ?? null);
+    })();
+    const sub = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled) setToken(session?.access_token ?? null);
+    });
+    return () => {
+      cancelled = true;
+      sub.data.subscription.unsubscribe();
+    };
+  }, []);
+
   return (
     <div className="bg-brand-cream dark:bg-brand-night flex min-h-[100dvh]">
       <Sidebar />
@@ -58,13 +83,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         >
           <MobileSidebarSheet />
           <div className="flex-1" aria-hidden="true" />
-          <button
-            type="button"
-            aria-label="התראות"
-            className="text-ink duration-fast hover:bg-muted/10 focus-visible:outline-accent relative inline-flex h-10 w-10 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            <Bell className="h-5 w-5" aria-hidden />
-          </button>
+          {token ? <NotificationBell token={token} /> : null}
           {/* <ThemeToggle /> — hidden, see import comment above */}
         </header>
 

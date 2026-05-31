@@ -1,6 +1,11 @@
 "use client";
 
-import { Bell, Search } from "lucide-react";
+import { Search } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+
+import { NotificationBell } from "@/components/NotificationBell";
+import { createClient } from "@/lib/supabase";
 
 // Dark mode infrastructure ready (Phase 1 complete — next-themes wired,
 // tailwind darkMode: "class" enabled, RGB-triplet CSS vars declared in
@@ -12,11 +17,51 @@ import { Bell, Search } from "lucide-react";
 /**
  * TopBar — desktop horizontal bar above the page content. Sticky at
  * the top of the scroll container so the search + notifications +
- * theme toggle stay reachable. NotificationBell is intentionally not
- * imported here yet — each page still mounts its own; once we refactor
- * pages we'll move the bell into here.
+ * theme toggle stay reachable.
+ *
+ * Notifications: mounts the shared NotificationBell once we resolve
+ * a Supabase session. The chrome owns the bell directly now — pages
+ * used to mount their own and the previous decorative placeholder
+ * here had no onClick (QA #6).
+ *
+ * Search: Enter (or clicking the magnifier) navigates to
+ * /dashboard/inventory?q=<trimmed>. Empty query is a no-op. The
+ * inventory page reads ?q= on mount and pre-fills its smart fallback
+ * filter so results land already filtered (QA #7).
  */
 export function TopBar({ rightSlot }: { rightSlot?: React.ReactNode }) {
+  const router = useRouter();
+  const [query, setQuery] = useState("");
+  // session token for NotificationBell. Mirrors useDealerAuth's
+  // getSession() probe but without the redirect side-effect — the
+  // chrome shouldn't drive navigation when the page itself manages
+  // auth. Bell hides until the token resolves; that's better UX than
+  // a never-firing button.
+  const [token, setToken] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createClient();
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!cancelled) setToken(session?.access_token ?? null);
+    })();
+    const sub = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!cancelled) setToken(session?.access_token ?? null);
+    });
+    return () => {
+      cancelled = true;
+      sub.data.subscription.unsubscribe();
+    };
+  }, []);
+
+  const submitSearch = () => {
+    const trimmed = query.trim();
+    if (!trimmed) return;
+    router.push(`/dashboard/inventory?q=${encodeURIComponent(trimmed)}`);
+  };
+
   return (
     <header
       className={[
@@ -28,14 +73,27 @@ export function TopBar({ rightSlot }: { rightSlot?: React.ReactNode }) {
       aria-label="סרגל עליון"
     >
       <div className="flex w-full items-center gap-4">
-        {/* Search box (visual only for now — wired to existing CommandCenter on each page) */}
-        <div className="relative max-w-md flex-1">
-          <span className="text-brand-navy/40 dark:text-brand-cream/40 absolute inset-y-0 start-0 flex items-center ps-3">
+        {/* Search box — Enter navigates to /dashboard/inventory?q=… */}
+        <form
+          role="search"
+          className="relative max-w-md flex-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitSearch();
+          }}
+        >
+          <button
+            type="submit"
+            aria-label="חפש"
+            className="text-brand-navy/40 dark:text-brand-cream/40 hover:text-brand-navy dark:hover:text-brand-cream absolute inset-y-0 start-0 flex items-center rounded-s-lg ps-3 transition-colors"
+          >
             <Search className="h-4 w-4" aria-hidden />
-          </span>
+          </button>
           <input
             type="search"
             placeholder="חיפוש מהיר…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
             className={[
               "h-9 w-full rounded-lg border pe-3 ps-9 text-sm transition-colors",
               "border-brand-navy/15 bg-brand-cream/40 text-brand-navy placeholder:text-brand-ink/40",
@@ -44,17 +102,11 @@ export function TopBar({ rightSlot }: { rightSlot?: React.ReactNode }) {
             ].join(" ")}
             aria-label="חיפוש"
           />
-        </div>
+        </form>
 
         <div className="ms-auto flex items-center gap-1">
           {rightSlot}
-          <button
-            type="button"
-            aria-label="התראות"
-            className="text-brand-navy/70 hover:bg-brand-navy/5 hover:text-brand-navy dark:text-brand-cream/70 dark:hover:text-brand-cream relative inline-flex h-10 w-10 items-center justify-center rounded-lg transition-colors dark:hover:bg-white/5"
-          >
-            <Bell className="h-5 w-5" aria-hidden />
-          </button>
+          {token ? <NotificationBell token={token} /> : null}
           {/* <ThemeToggle /> — hidden, see import comment above */}
         </div>
       </div>
