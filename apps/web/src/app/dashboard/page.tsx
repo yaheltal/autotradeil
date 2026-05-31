@@ -229,10 +229,14 @@ function DashboardPageInner() {
   );
   const inventoryCount = inStockItems.length;
   const recentVehicles = useMemo(() => {
-    // Backend default order is created_at DESC; sort defensively in case
-    // that changes. Use the same in-stock filter so the recent panel
-    // never surfaces a sold vehicle.
-    return [...inStockItems]
+    // Backend default order is created_at DESC; sort defensively in
+    // case that changes. The recent widget shows ONLY status='active'
+    // — hidden / pending_deletion / in_transaction rows are
+    // intentionally off-marketplace and shouldn't surface here. The
+    // hero value + count above keep using inStockItems so a dealer's
+    // total lot is still represented in the masthead.
+    return inStockItems
+      .filter((i) => i.status === "active")
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .slice(0, 4);
   }, [inStockItems]);

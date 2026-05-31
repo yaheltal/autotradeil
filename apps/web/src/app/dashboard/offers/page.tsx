@@ -992,7 +992,9 @@ function DealConfirmationBlock({
             ) : (
               <span className="text-ink">אתה טרם אישרת</span>
             )}
-            <span className="text-subtle mx-xs">|</span>
+            <span aria-hidden="true" className="text-subtle mx-xs">
+              ·
+            </span>
             {theirsConfirmed ? (
               <span className="text-ok-fg inline-flex items-center gap-1">
                 <Check aria-hidden="true" className="h-3.5 w-3.5" />

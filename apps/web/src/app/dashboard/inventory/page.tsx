@@ -1028,8 +1028,26 @@ function InventoryRow({
     .filter(Boolean)
     .join(" · ");
 
+  // Row-level activation — clicking anywhere in the row opens the
+  // VehicleFullDetailsDialog (same surface as the kebab's "פרטים
+  // מלאים" action). Action cells stop propagation so Edit + Kebab
+  // clicks don't navigate.
+  const handleRowKey = (e: React.KeyboardEvent<HTMLTableRowElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      actions.onShowDetails();
+    }
+  };
+
   return (
-    <TableRow className="border-hairline hover:bg-muted/5 duration-fast transition-colors">
+    <TableRow
+      role="button"
+      tabIndex={0}
+      onClick={actions.onShowDetails}
+      onKeyDown={handleRowKey}
+      aria-label={`פתיחת פרטי ${fullLabel}`}
+      className="border-hairline hover:bg-muted/5 focus-visible:outline-accent duration-fast cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2"
+    >
       <TableCell>
         {item.primary_image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -1079,7 +1097,7 @@ function InventoryRow({
           <span className="sr-only">{mileageF.sr}</span>
         </span>
       </TableCell>
-      <TableCell>
+      <TableCell onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
         <div className="gap-xs flex items-center justify-end">
           <Button
             ref={(el) => {
@@ -1117,8 +1135,25 @@ function InventoryCardRow({
   const mileageF = formatMileage(item.mileage);
   const fullLabel = `${item.make} ${item.model} שנת ${item.year}`;
 
+  // Card-level activation mirrors the desktop row: tap opens the
+  // VehicleFullDetailsDialog. The trailing actions cluster stops
+  // propagation so Edit + Kebab keep working.
+  const handleCardKey = (e: React.KeyboardEvent<HTMLLIElement>) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      actions.onShowDetails();
+    }
+  };
+
   return (
-    <li className="border-hairline gap-md py-md flex items-start border-b last:border-b-0">
+    <li
+      role="button"
+      tabIndex={0}
+      onClick={actions.onShowDetails}
+      onKeyDown={handleCardKey}
+      aria-label={`פתיחת פרטי ${fullLabel}`}
+      className="border-hairline focus-visible:outline-accent gap-md py-md flex cursor-pointer items-start border-b last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2"
+    >
       {item.primary_image_url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -1157,7 +1192,11 @@ function InventoryCardRow({
               </Badge>
             </div>
           </div>
-          <div className="gap-xxs flex shrink-0 items-center">
+          <div
+            className="gap-xxs flex shrink-0 items-center"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
             <Button
               ref={(el) => {
                 if (el) editBtnRefs.current.set(item.id, el);
