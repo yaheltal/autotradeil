@@ -21,7 +21,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDealerAuth } from "@/hooks/useDealerAuth";
-import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { apiFetch } from "@/lib/api";
 import { CAR_MAKES, getModelsForMake } from "@/lib/car-data";
 import { queryKeys } from "@/lib/query-keys";
@@ -169,39 +168,23 @@ export default function MarketplacePage() {
     if (data) h1Ref.current?.focus();
   }, [data]);
 
-  const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
-
-  const applyFilters = async () => {
-    let next = filters;
-    const q = filters.q.trim();
-    if (q) {
-      const parsed = await parseSmart(q);
-      if (parsed) {
-        const f = parsed.filters;
-        // Explicit dropdown values WIN — Claude only fills gaps.
-        next = {
-          ...filters,
-          q: parsed.fallback_q ?? "",
-          make: filters.make || f.make || "",
-          model: filters.model || f.model || "",
-          year_min: filters.year_min || (f.year_min ? String(f.year_min) : ""),
-          year_max: filters.year_max || (f.year_max ? String(f.year_max) : ""),
-          price_min: filters.price_min || (f.price_min ? String(f.price_min) : ""),
-          price_max: filters.price_max || (f.price_max ? String(f.price_max) : ""),
-          mileage_max: filters.mileage_max || (f.mileage_max ? String(f.mileage_max) : ""),
-          transmission: filters.transmission || (f.transmission ?? ""),
-          fuel_type: filters.fuel_type || (f.fuel_type ?? ""),
-        };
-        setFilters(next);
-      }
-    }
-    setAppliedFilters(next);
+  // Basic search: Enter applies the raw q substring + any advanced
+  // filters the user has set directly. The smart-parse (Claude NL)
+  // trip used to be baked into every submit, which (a) gated the
+  // basic flow on Anthropic's latency / availability and (b)
+  // AND-combined a potentially-mistranslated structured make filter
+  // with q, collapsing perfectly-good queries to 0 results until the
+  // user opened the advanced panel (QA #4). Smart-parse for NL
+  // queries like "טויוטה 2018 עד 100 אלף" can come back as an
+  // explicit "השלם פילטרים" button — out of scope for this fix.
+  const applyFilters = () => {
+    setAppliedFilters(filters);
     setPage(1);
   };
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    await applyFilters();
+    applyFilters();
   };
 
   const resetFilters = () => {
@@ -282,7 +265,6 @@ export default function MarketplacePage() {
               onChange={(e) => setFilters({ ...filters, q: e.target.value })}
               placeholder="חפש יצרן, דגם, שנה, או טווח מחירים"
               className="pe-10"
-              aria-busy={parsingSmart || undefined}
             />
           </div>
         </div>
@@ -307,8 +289,8 @@ export default function MarketplacePage() {
               ].join(" ")}
             />
           </Button>
-          <Button type="submit" size="sm" disabled={parsingSmart}>
-            {parsingSmart ? "מנתח…" : "חפש"}
+          <Button type="submit" size="sm">
+            חפש
           </Button>
           {hasAppliedFilter ? (
             <Button type="button" variant="link" size="sm" onClick={resetFilters}>

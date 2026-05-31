@@ -238,14 +238,21 @@ function InventoryPageInner() {
   // Smart filters — Hebrew NL query parsed by Claude → make/model/year/
   // price filters that the backend accepts. The status tab and smart
   // filters compose.
-  const [smartQuery, setSmartQuery] = useState("");
+  //
+  // Initial seed for smartQuery + smartFallbackQ comes from the URL's
+  // ?q= param when present. That's the entry point TopBar's global
+  // search uses (QA #7) — landing here with ?q=טויוטה pre-fills the
+  // search input AND seeds the fallback so the inventory list filters
+  // immediately, without requiring another Enter.
+  const initialQ = params.get("q") ?? "";
+  const [smartQuery, setSmartQuery] = useState(initialQ);
   const [smartMake, setSmartMake] = useState("");
   const [smartModel, setSmartModel] = useState("");
   const [smartYearMin, setSmartYearMin] = useState<number | null>(null);
   const [smartYearMax, setSmartYearMax] = useState<number | null>(null);
   const [smartPriceMin, setSmartPriceMin] = useState<number | null>(null);
   const [smartPriceMax, setSmartPriceMax] = useState<number | null>(null);
-  const [smartFallbackQ, setSmartFallbackQ] = useState("");
+  const [smartFallbackQ, setSmartFallbackQ] = useState(initialQ);
   const { parse: parseSmart, busy: parsingSmart } = useSmartFilters(token);
 
   const filters = useMemo(
