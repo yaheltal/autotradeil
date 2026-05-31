@@ -8,18 +8,23 @@ import { BrandMark } from "@/components/BrandMark";
 import { createClient } from "@/lib/supabase";
 
 /*
- * Reset-password page (Phase 4.3 + Phase 4.4 fix).
+ * Reset-password page.
  *
  * Supabase recovery flow:
  *   1. User clicks the link in their email.
  *   2. Supabase verifies the token and redirects to
- *      `/reset-password#access_token=…&refresh_token=…&type=recovery`.
- *   3. Supabase JS picks up the hash params on mount and fires a
- *      PASSWORD_RECOVERY event. ONLY after that does
- *      `auth.updateUser({password})` succeed.
+ *      `/reset-password#access_token=…&refresh_token=…&type=recovery`
+ *      (or `#error=…&error_code=otp_expired&…` on a stale/tampered link).
  *
- * We listen for that event before enabling the form. If the user lands
- * here without a valid hash, we surface a clear message.
+ * We DON'T wait for `onAuthStateChange("PASSWORD_RECOVERY")` — that
+ * proved unreliable in production; the event sometimes never fires
+ * even with a valid hash, leaving users on the verifying spinner
+ * forever. Instead, on mount we parse window.location.hash directly,
+ * call `supabase.auth.setSession({ access_token, refresh_token })`
+ * ourselves, and flip state to "ready" the moment that promise
+ * resolves. After setSession resolves we strip the tokens from the
+ * URL via history.replaceState so they don't end up in history /
+ * referrer headers / autofill.
  *
  * A11y (approved):
  *   - H1 focusable on mount.
@@ -50,22 +55,67 @@ export default function ResetPasswordPage() {
     h1Ref.current?.focus();
   }, []);
 
-  // Listen for the recovery event AND check for an existing session,
-  // since Supabase may have already processed the URL hash by the time
-  // we mount.
+  // Recovery handler — parses window.location.hash directly and calls
+  // setSession ourselves. We don't subscribe to onAuthStateChange
+  // because the PASSWORD_RECOVERY event was missing in production
+  // even when the hash carried valid tokens; the UI hung on the
+  // verifying spinner indefinitely.
+  //
+  // Deps are intentionally empty: this runs exactly once on mount.
+  // Re-running on every render would re-call setSession and clobber
+  // the URL clean-up that already happened.
   useEffect(() => {
+    if (typeof window === "undefined") return;
     const supabase = createClient();
     let cancelled = false;
 
-    const sub = supabase.auth.onAuthStateChange((event, session) => {
-      if (cancelled) return;
-      if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && session)) {
-        setSessionState("ready");
-        setReadyAnnounce("הקישור אומת — ניתן לקבוע סיסמה חדשה");
-      }
-    });
+    const failMissing = () => {
+      if (!cancelled) setSessionState("missing");
+    };
 
     void (async () => {
+      const rawHash = window.location.hash.startsWith("#")
+        ? window.location.hash.slice(1)
+        : window.location.hash;
+      const params = new URLSearchParams(rawHash);
+
+      // Supabase puts `error=…&error_code=…&error_description=…` on
+      // the hash when the link has expired (otp_expired) or been
+      // tampered with. Show the actionable message immediately.
+      if (params.get("error") || params.get("error_code")) {
+        failMissing();
+        return;
+      }
+
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+      const type = params.get("type");
+
+      if (accessToken && refreshToken && type === "recovery") {
+        try {
+          const { error: setErr } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (cancelled) return;
+          if (setErr) {
+            failMissing();
+            return;
+          }
+          setSessionState("ready");
+          setReadyAnnounce("הקישור אומת — ניתן לקבוע סיסמה חדשה");
+          // Strip the tokens from the URL so they don't leak via
+          // history, referrer headers, or browser autocomplete.
+          window.history.replaceState(null, "", window.location.pathname);
+        } catch {
+          failMissing();
+        }
+        return;
+      }
+
+      // No recovery tokens on the URL — maybe the tab already has a
+      // session (e.g. user navigated back). Honor it; otherwise the
+      // user reached this page without clicking a real link.
       const { data } = await supabase.auth.getSession();
       if (cancelled) return;
       if (data.session) {
@@ -73,22 +123,12 @@ export default function ResetPasswordPage() {
         setReadyAnnounce("הקישור אומת — ניתן לקבוע סיסמה חדשה");
         return;
       }
-      // Give Supabase JS one tick to parse the URL hash, then decide.
-      const hasRecoveryHash =
-        typeof window !== "undefined" && window.location.hash.includes("type=recovery");
-      if (!hasRecoveryHash) {
-        // No hash AND no session — user reached this page without a link.
-        setTimeout(() => {
-          if (!cancelled && sessionState === "checking") setSessionState("missing");
-        }, 1500);
-      }
+      failMissing();
     })();
 
     return () => {
       cancelled = true;
-      sub.data.subscription.unsubscribe();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -159,13 +199,11 @@ export default function ResetPasswordPage() {
             role="alert"
             className="bg-danger-bg text-danger-text mt-6 rounded-md px-4 py-3 text-sm"
           >
-            <p className="font-semibold">הקישור לא תקין או שפג תוקפו</p>
+            <p className="font-semibold">הקישור פג או אינו תקין</p>
             <p className="mt-1">
-              ניתן לבקש קישור חדש דרך עמוד{" "}
-              <a href="/forgot-password" className="underline">
-                איפוס סיסמה
+              <a href="/forgot-password" className="font-semibold underline">
+                בקש איפוס חדש
               </a>
-              .
             </p>
           </div>
         ) : null}
