@@ -603,52 +603,42 @@ async def forgot_password(body: ForgotPasswordRequest) -> dict[str, str]:
     not enumerate valid emails."""
     # Default points to the actual frontend route — the previous
     # default was `/auth/reset-password`, which doesn't exist (the page
-    # lives at `/reset-password`). When the allowlist below rejected
-    # the supplied redirect_to, we ended up sending a non-existent
-    # path to Supabase; Supabase then dropped the URL on the floor
-    # and fell back to Site URL, dumping the dealer on the homepage.
+    # lives at `/reset-password`).
     default_reset = f"{settings.frontend_url.rstrip('/')}/reset-password"
-    redirect_to_from_body = body.redirect_to or default_reset
+    redirect_to = body.redirect_to or default_reset
     # Strict host allowlist defeats open-redirect attempts AND fixes
     # the apex/www split — requests originating from www.autotradeil.com
     # were silently swapped for the default fallback because the prior
     # startswith tuple only listed the apex. See docs/password-reset.md.
-    allowed = _is_allowed_reset_redirect(redirect_to_from_body)
-    redirect_to = redirect_to_from_body if allowed else default_reset
-
-    # TEMPORARY DIAGNOSTIC — production reset email still lands users on
-    # the homepage despite the apex/www allowlist fix in PR #18. These
-    # logs disambiguate the three remaining candidates: (a) Supabase is
-    # stripping the path despite us sending it correctly, (b) our default
-    # fallback is malformed, (c) the body never carried the path. Read
-    # the next run's Render logs; revert this commit once we know.
-    logger.info(
-        "forgot-password debug: body.redirect_to=%r default_reset=%r "
-        "allowed=%s redirect_to_final=%r",
-        body.redirect_to,
-        default_reset,
-        allowed,
-        redirect_to,
-    )
+    if not _is_allowed_reset_redirect(redirect_to):
+        redirect_to = default_reset
 
     try:
         link = await _supabase_generate_recovery_link(body.email, redirect_to)
         if link:
-            # Surface the FULL action_link Supabase returns. If our
-            # redirect_to argument was honored, that URL will contain
-            # the path; if Supabase silently substituted Site URL, the
-            # path will be missing here too.
-            logger.info(
-                "forgot-password debug: supabase action_link=%s",
-                link,
+            # Supabase admin generate_link ignores the redirect_to we
+            # pass even when the URL is allow-listed (verified via the
+            # PR #19 diagnostic log — action_link came back stripped of
+            # /reset-password). Rewrite redirect_to on the action_link
+            # before sending the email. The /verify endpoint
+            # re-validates redirect_to against the allowlist at click
+            # time and honors it — the same mechanism that already
+            # makes our Google OAuth login work.
+            from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
+
+            parts = urlsplit(link)
+            q = parse_qs(parts.query)
+            q["redirect_to"] = [redirect_to]
+            link = urlunsplit(
+                (
+                    parts.scheme,
+                    parts.netloc,
+                    parts.path,
+                    urlencode(q, doseq=True),
+                    parts.fragment,
+                )
             )
             await send_password_reset(to_email=body.email, reset_link=link)
-        else:
-            logger.info(
-                "forgot-password debug: _supabase_generate_recovery_link "
-                "returned None — user not found OR upstream error (see "
-                "earlier supabase generate_link warning)."
-            )
     except Exception as exc:  # noqa: BLE001
         logger.warning("forgot-password handler failed: %s", exc)
 
