@@ -849,7 +849,9 @@ function DealConfirmation({ offer, myRole }: { offer: Offer; myRole: "buyer" | "
           ) : (
             <span className="text-ink">אתה טרם אישרת</span>
           )}
-          <span className="text-subtle mx-xs">|</span>
+          <span aria-hidden="true" className="text-subtle mx-xs">
+            ·
+          </span>
           {theirsConfirmed ? (
             <span className="text-ok-fg gap-xxs inline-flex items-center">
               <Check aria-hidden="true" className="h-3.5 w-3.5" />
