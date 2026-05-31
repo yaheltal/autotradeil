@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Frank_Ruhl_Libre, Inter } from "next/font/google";
 
+import { AuthSync } from "@/components/AuthSync";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { Toaster } from "@/components/ui/sonner";
@@ -177,6 +178,7 @@ export default function RootLayout({
         </a>
         <ThemeProvider>
           <QueryProvider>
+            <AuthSync />
             <ImpersonationBanner />
             {children}
             <PWAInstallPrompt />
