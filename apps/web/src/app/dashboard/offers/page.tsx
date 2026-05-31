@@ -1065,7 +1065,19 @@ function offerVehicleLabel(o: Offer): string {
   return `${o.vehicle.make} ${o.vehicle.model} ${o.vehicle.year}`;
 }
 
+// Hebrew-locale short date — day/month only, pinned to Asia/Jerusalem
+// so server (UTC) and client (typically Asia/Jerusalem) emit the
+// same string. Reusing the pinned Intl instance from lib/format
+// directly here would require exporting it; since this is the only
+// caller on this page, a local instance is fine.
+const SHORT_DATE_HE = new Intl.DateTimeFormat("he-IL", {
+  timeZone: "Asia/Jerusalem",
+  day: "2-digit",
+  month: "2-digit",
+});
+
 function shortDate(iso: string): string {
   const d = new Date(iso);
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  if (Number.isNaN(d.getTime())) return "";
+  return SHORT_DATE_HE.format(d);
 }

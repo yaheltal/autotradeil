@@ -28,9 +28,77 @@ export function formatMileage(value: number): Formatted {
 }
 
 /**
+ * Hebrew calendar-date formatter pinned to Asia/Jerusalem.
+ *
+ * Why the pin: server-rendered HTML uses the host process timezone
+ * (Render runs in UTC), the browser uses the user's local zone
+ * (overwhelmingly Asia/Jerusalem for this product). Calling
+ * `new Date(iso).toLocaleDateString("he-IL")` on each side produces
+ * different output and Next.js raises a hydration mismatch. The
+ * pinned formatter below is identical on both sides — server HTML
+ * and the first client render agree, hydration is clean.
+ *
+ * Both helpers accept an ISO string OR a Date; pass null/undefined
+ * for a "—" placeholder (mirrors what most call sites already
+ * compute by hand).
+ */
+const dateHE = new Intl.DateTimeFormat("he-IL", {
+  timeZone: "Asia/Jerusalem",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
+const dateTimeHE = new Intl.DateTimeFormat("he-IL", {
+  timeZone: "Asia/Jerusalem",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+const dateLongHE = new Intl.DateTimeFormat("he-IL", {
+  timeZone: "Asia/Jerusalem",
+  weekday: "long",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
+export function formatDateHe(iso: string | Date | null | undefined): string {
+  if (!iso) return "—";
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return dateHE.format(d);
+}
+
+export function formatDateTimeHe(iso: string | Date | null | undefined): string {
+  if (!iso) return "—";
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return dateTimeHE.format(d);
+}
+
+export function formatDateLongHe(iso: string | Date | null | undefined): string {
+  if (!iso) return "—";
+  const d = iso instanceof Date ? iso : new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return dateLongHE.format(d);
+}
+
+/**
  * "לפני X דקות" / "לפני שעה" / "לפני 3 ימים" style Hebrew time-ago.
  * Precise enough for a notification feed. Input is ISO 8601; we also
  * return the ISO value so callers can render `<time datetime=...>`.
+ *
+ * Uses Date.now() at call time, so callers MUST gate this behind a
+ * post-mount effect — calling it directly in a render body that
+ * also renders on the server causes a hydration mismatch (the
+ * server's clock and the client's clock disagree by at least one
+ * network round-trip). The notification panel already gates this
+ * by being a click-to-open Headless UI menu (children only render
+ * after the user interacts).
  */
 export function formatRelativeTime(iso: string): { visual: string; iso: string } {
   const then = new Date(iso).getTime();

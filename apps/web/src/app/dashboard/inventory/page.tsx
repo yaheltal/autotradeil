@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/table";
 import { useSmartFilters } from "@/hooks/useSmartFilters";
 import { apiFetch } from "@/lib/api";
-import { formatMileage, formatPrice } from "@/lib/format";
+import { formatDateHe, formatMileage, formatPrice } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 import { createClient } from "@/lib/supabase";
 
@@ -954,8 +954,7 @@ function PendingDeletionSection({
               </p>
               {item.pending_deletion_requested_at ? (
                 <p className="text-muted font-tabular mt-xxs text-xs">
-                  הוגשה ב-
-                  {new Date(item.pending_deletion_requested_at).toLocaleDateString("he-IL")}
+                  הוגשה ב-{formatDateHe(item.pending_deletion_requested_at)}
                 </p>
               ) : null}
               {item.pending_deletion_reason ? (

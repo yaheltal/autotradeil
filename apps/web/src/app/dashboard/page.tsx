@@ -9,7 +9,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { SuspensionBanner } from "@/components/SuspensionBanner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiFetch } from "@/lib/api";
-import { formatPrice, formatRelativeTime } from "@/lib/format";
+import { formatDateLongHe, formatPrice, formatRelativeTime } from "@/lib/format";
 import { queryKeys } from "@/lib/query-keys";
 import { createClient } from "@/lib/supabase";
 
@@ -88,13 +88,9 @@ type OfferListResponse = {
   per_page: number;
 };
 
-const formatDate = (d: Date) =>
-  d.toLocaleDateString("he-IL", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+// formatDate moved to lib/format#formatDateLongHe (timezone-pinned
+// to Asia/Jerusalem so server-side render and client-side hydrate
+// produce identical output — Render runs in UTC).
 
 const OFFER_STATUS_COPY: Record<string, string> = {
   pending: "ממתינה",
@@ -137,6 +133,14 @@ function DashboardPageInner() {
   // -- Auth bootstrap (Supabase isn't a TanStack resource) -----------------
   const [token, setToken] = useState<string | null>(null);
   const [sessionResolved, setSessionResolved] = useState(false);
+  // Today's date in the masthead is rendered client-only — calling
+  // new Date() during SSR would produce a different timestamp than
+  // the client paint (clock skew + timezone) and trigger a hydration
+  // mismatch on every dashboard mount.
+  const [today, setToday] = useState<Date | null>(null);
+  useEffect(() => {
+    setToday(new Date());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -367,7 +371,7 @@ function DashboardPageInner() {
               </span>
             </>
           ) : null}
-          <time dateTime={new Date().toISOString()}>{formatDate(new Date())}</time>
+          {today ? <time dateTime={today.toISOString()}>{formatDateLongHe(today)}</time> : null}
         </p>
       </header>
 
