@@ -584,53 +584,90 @@ async def send_offer_reminder(
 async def send_password_reset(to_email: str, reset_link: str) -> bool:
     """Send password-reset email via Resend (supersedes Supabase default).
 
-    A11y/email decisions (approved):
-      - `<html dir="rtl" lang="he">` (set by _BASE_STYLE's shell below).
-      - CTA is a real `<a>` with meaningful text ("אפס סיסמה") — no role=button,
-        no "click here", and underlined + navy bg so the affordance is not
-        color-only.
-      - Plain-text fallback URL rendered below the button so users whose
-        mail client strips styling, or who prefer to copy/paste, get the link.
+    Branded email-safe template — fully inline styles, table-based layout,
+    no flexbox/grid/web fonts. Colors are pulled directly from the locked
+    design tokens in apps/web/tailwind.config.ts + apps/web/src/app/
+    globals.css:
+
+      ink            #0A0A0A   primary text + heading
+      paper          #FFFFFF   card surface
+      muted          #6B6B6E   secondary body text
+      subtle         #9A9A9D   footer caption
+      accent         #A8723A   CTA button — the one editorial accent
+      accent.subtle  #F4ECDF   URL fallback callout
+      shadcn --muted #F4F4F5   outer body background (token in the system)
+
+    Logo is the production-hosted full wordmark; the file lives at
+    apps/web/public/logo-full.png so it ships with every Vercel deploy
+    and email clients can fetch it from the public origin.
+
+    A11y / deliverability:
+      - <html dir="rtl" lang="he"> for screen readers.
+      - alt="AutoTradeIL" on the logo so image-blocking clients still
+        announce the brand.
+      - CTA renders as a styled <a> inside a single-cell table so Outlook
+        gives it a real bounding box (text-only fallback if the table is
+        stripped).
+      - A plain-text MIME alternative is sent alongside the HTML for
+        clients that strip styling and for spam-filter scoring.
+      - Hidden preheader line at the top of the body controls the
+        notification-preview snippet on iOS / Gmail.
     """
-    # Minimal inline underline on the CTA to ensure a non-color affordance.
+    preheader = "איפוס סיסמה ב-AutoTradeIL — הקישור תקף לזמן מוגבל."
     html = f"""<!DOCTYPE html>
 <html dir="rtl" lang="he">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <title>איפוס סיסמה ב-AutoTradeIL</title>
-  <style>{_BASE_STYLE}
-    a.cta {{ text-decoration: underline; }}
-    .url-box {{ background: #f8f8f6; border: 1px solid #e5e5e0;
-                padding: 12px 14px; border-radius: 6px; margin: 16px 0;
-                word-break: break-all; font-size: 13px; color: #1a1a2e; }}
-    .url-box a {{ color: #1a1a2e; text-decoration: underline; }}
-  </style>
 </head>
-<body>
-  <div class="container">
-    <div class="header"><h1>AutoTradeIL</h1></div>
-    <div class="body">
-      <h2>איפוס סיסמה</h2>
-      <p>קיבלנו בקשה לאיפוס הסיסמה שלך. לחץ על הכפתור למטה לאיפוס.</p>
-      <p style="text-align:center;">
-        <a class="cta" href="{reset_link}">אפס סיסמה</a>
-      </p>
-      <p>או העתק את הקישור הבא לדפדפן:</p>
-      <p class="url-box"><a href="{reset_link}">{reset_link}</a></p>
-      <p>אם לא ביקשת איפוס סיסמה, התעלם מהודעה זו.</p>
-    </div>
-    <div class="footer">
-      AutoTradeIL &copy; 2026 &middot; המערכת המקצועית לסחר רכבים
-    </div>
-  </div>
+<body style="margin:0; padding:0; background-color:#F4F4F5; font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif; color:#0A0A0A;">
+  <div style="display:none; max-height:0; overflow:hidden; mso-hide:all;">{preheader}</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color:#F4F4F5;">
+    <tr>
+      <td align="center" style="padding:32px 16px;">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%; max-width:600px; background-color:#FFFFFF; border:1px solid #ECECEC; border-radius:8px;">
+          <tr>
+            <td align="center" style="padding:32px 32px 24px 32px; border-bottom:1px solid #ECECEC;">
+              <img src="https://www.autotradeil.com/logo-full.png" alt="AutoTradeIL" width="180" style="max-width:180px; height:auto; border:0; display:block; outline:none; text-decoration:none;">
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:32px;">
+              <h1 style="margin:0 0 16px 0; font-family:Georgia, 'Times New Roman', serif; font-size:28px; line-height:1.2; font-weight:500; color:#0A0A0A; text-align:right;">איפוס סיסמה</h1>
+              <p style="margin:0 0 24px 0; font-size:15px; line-height:1.6; color:#0A0A0A; text-align:right;">קיבלנו בקשה לאיפוס הסיסמה לחשבון שלך. לחץ על הכפתור למטה כדי לקבוע סיסמה חדשה.</p>
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:24px auto;">
+                <tr>
+                  <td align="center" style="background-color:#A8723A; border-radius:6px;">
+                    <a href="{reset_link}" target="_blank" style="display:inline-block; padding:14px 32px; font-size:15px; font-weight:600; color:#FFFFFF; text-decoration:none; font-family:'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;">איפוס הסיסמה</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:24px 0 8px 0; font-size:13px; line-height:1.5; color:#6B6B6E; text-align:right;">או העתק את הקישור לדפדפן:</p>
+              <p style="margin:0 0 24px 0; padding:12px 14px; background-color:#F4ECDF; border-radius:6px; font-size:12px; line-height:1.5; word-break:break-all; direction:ltr; text-align:left;"><a href="{reset_link}" style="color:#0A0A0A; text-decoration:underline;">{reset_link}</a></p>
+              <p style="margin:24px 0 0 0; padding-top:24px; border-top:1px solid #ECECEC; font-size:13px; line-height:1.5; color:#6B6B6E; text-align:right;">הקישור תקף לזמן מוגבל. אם לא ביקשת איפוס, התעלם מהודעה זו.</p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding:20px 32px; border-top:1px solid #ECECEC; background-color:#FAFAF9; border-radius:0 0 8px 8px;">
+              <p style="margin:0; font-size:12px; line-height:1.5; color:#9A9A9D; text-align:center;">&copy; 2026 AutoTradeIL</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
 </body>
 </html>"""
     text = (
-        "איפוס סיסמה ב-AutoTradeIL\n\n"
-        "קיבלנו בקשה לאיפוס הסיסמה שלך. השתמש בקישור הבא לאיפוס:\n\n"
+        "איפוס סיסמה ב-AutoTradeIL\n"
+        "===========================\n\n"
+        "קיבלנו בקשה לאיפוס הסיסמה לחשבון שלך.\n"
+        "לחץ על הקישור הבא כדי לקבוע סיסמה חדשה:\n\n"
         f"{reset_link}\n\n"
-        "אם לא ביקשת איפוס סיסמה, התעלם מהודעה זו.\n"
+        "הקישור תקף לזמן מוגבל. אם לא ביקשת איפוס, התעלם מהודעה זו.\n\n"
+        "© 2026 AutoTradeIL\n"
     )
     return await _send(
         to=to_email,
